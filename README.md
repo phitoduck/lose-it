@@ -1,5 +1,7 @@
 <h1 align="center">lose-it</h1>
 
+<p align="center"><em>⚠️ <b>Reverse-engineered & unofficial.</b> Talks to Lose It!'s private GWT-RPC web endpoints. No official API exists; the protocol is brittle and may break without notice. Not affiliated with Lose It! / FitNow, Inc.</em></p>
+
 <p align="center">
   <img src="docs/diagram.svg" alt="lose-it CLI → Lose It! web API" width="640"/>
 </p>
@@ -11,141 +13,38 @@
   <img src="https://img.shields.io/badge/httpx-async%20client-1d2d44?style=flat-square&logo=python&logoColor=white" alt="httpx"/>
   <img src="https://img.shields.io/badge/ruff-lint%20%2B%20format-d7ff64?style=flat-square&logo=ruff&logoColor=000000" alt="ruff"/>
   <img src="https://img.shields.io/badge/gitleaks-secret%20scan-f24c4c?style=flat-square&logo=git&logoColor=white" alt="gitleaks"/>
-  <img src="https://img.shields.io/badge/tests-18%2F18-26a269?style=flat-square&logo=pytest&logoColor=white" alt="tests"/>
+  <img src="https://img.shields.io/badge/tests-44%2F44-26a269?style=flat-square&logo=pytest&logoColor=white" alt="tests"/>
   <img src="https://img.shields.io/badge/license-MIT-2dba4e?style=flat-square" alt="License"/>
 </p>
 
 <p align="center">Unofficial Python SDK + CLI for <a href="https://www.loseit.com/"><b>Lose It!</b></a> — log meals, query your diary, and delete entries from the command line.</p>
 
-> ⚠️ **Reverse-engineered & unofficial.** Talks to Lose It!'s private GWT-RPC web endpoints. No official API exists; the protocol is brittle and may break without notice. Not affiliated with Lose It! / FitNow, Inc.
+## Quickstart
 
-## Try it without installing (`uvx`)
-
-```bash
-# Run a one-off command directly from GitHub (no install)
-uvx --from git+https://github.com/phitoduck/lose-it lose-it diary
-
-# Or pin to a specific commit / tag
-uvx --from git+https://github.com/phitoduck/lose-it@main lose-it search "tortilla"
-```
-
-`uvx` pulls the package straight from the `main` branch, builds it in an ephemeral environment, and runs the entrypoint.
-
-## Install from the tip of main
+You need to already be signed into [loseit.com](https://www.loseit.com/) in Chrome or Brave.
 
 ```bash
-# Install into a uv-managed tool environment (re-runnable as `lose-it`)
+# 1. Install the CLI (system-wide via uv)
 uv tool install git+https://github.com/phitoduck/lose-it
 
-# Or pin to a commit
-uv tool install git+https://github.com/phitoduck/lose-it@<sha>
+# 2. Import your auth token from the browser you're signed in on
+lose-it login                       # default: --browser chrome
+# or:  lose-it login --browser brave
 
-# Upgrade to the latest main later
-uv tool upgrade lose-it-utils
-```
-
-After install, `lose-it --help` works system-wide.
-
-## Develop
-
-```bash
-git clone https://github.com/phitoduck/lose-it
-cd lose-it
-uv sync
-prek install                           # set up pre-commit hooks
-uv run pytest                          # mocked unit tests
-LOSEIT_RUN_FUNCTIONAL=1 uv run pytest  # incl. real-API CRUD
-```
-
-## Configure
-
-The SDK follows [12-factor](https://12factor.net/config) configuration: every
-setting can come from a YAML file, an environment variable, or a CLI flag, in
-that *lowest-to-highest* priority order. The pydantic-settings model in
-[`src/lose_it_utils/client/_settings.py`](src/lose_it_utils/client/_settings.py)
-is the single source of truth and the spec of the YAML file.
-
-### Priority (highest wins)
-
-1. **CLI flag** — e.g. `--user-id`, `--policy-hash` (passed to any subcommand)
-2. **`LOSEIT_*` env var** — e.g. `LOSEIT_USER_ID=…`
-3. **YAML file** — default path `~/.config/loseit/config.yaml`
-   (override with `--config-file` or `LOSEIT_CONFIG_FILE`)
-4. **Built-in default** — applied when no other layer sets the field
-
-Required fields (`user_id`, `user_name`, `hours_from_gmt`) have **no defaults**;
-if no layer sets them, the SDK raises `MissingConfigError` rather than silently
-posting to the wrong account.
-
-### Config properties
-
-| YAML key / field  | CLI flag             | Env var                 | Type             | Default                                  | Description                                                                 |
-|-------------------|----------------------|-------------------------|------------------|------------------------------------------|-----------------------------------------------------------------------------|
-| `user_id`         | `--user-id`          | `LOSEIT_USER_ID`        | `str`            | *(required, no default)*                 | Numeric `sub` claim of your `liauth` JWT (decode at jwt.io).                |
-| `user_name`       | `--user-name`        | `LOSEIT_USER_NAME`      | `str`            | *(required, no default)*                 | Your loseit.com username.                                                   |
-| `hours_from_gmt`  | `--hours-from-gmt`   | `LOSEIT_HOURS_FROM_GMT` | `int`            | *(required, no default)*                 | Your local offset from UTC (e.g. `-6`).                                     |
-| `policy_hash`     | `--policy-hash`      | `LOSEIT_POLICY_HASH`    | `str`            | last-known-good                          | 5th `\|`-field of any `/web/service` POST body. Refresh on LoseIt redeploy. |
-| `strong_name`     | `--strong-name`      | `LOSEIT_STRONG_NAME`    | `str`            | last-known-good                          | `x-gwt-permutation` request header. Refresh on LoseIt redeploy.             |
-| `base_url`        | *(not exposed)*      | `LOSEIT_BASE_URL`       | `str`            | `https://d3hsih69yn4d89.cloudfront.net/web/` | GWT module base URL.                                                    |
-| `service_url`     | *(not exposed)*      | `LOSEIT_SERVICE_URL`    | `str`            | `https://www.loseit.com/web/service`     | GWT-RPC service endpoint.                                                   |
-| `token`           | *(not exposed)*      | `LOSEIT_TOKEN`          | `str`            | `None` → read from `token_file`          | `liauth` JWT. If unset, falls back to reading `token_file`.                 |
-| `token_file`      | *(not exposed)*      | `LOSEIT_TOKEN_FILE`     | `Path`           | `~/.config/loseit/token`                 | Where to read the JWT when `token` is unset.                                |
-| `config_file`     | `--config-file`      | `LOSEIT_CONFIG_FILE`    | `Path`           | `~/.config/loseit/config.yaml`           | YAML file consulted as the lowest-priority layer (after defaults).          |
-
-### YAML file (default `~/.config/loseit/config.yaml`)
-
-```yaml
-# Every key matches a field in the Settings model.
-user_id: "12345678"
-user_name: your.username
-hours_from_gmt: -6
-
-# Optional — defaults are last-known-good. Refresh from any /web/service POST
-# in DevTools when requests start failing with IncompatibleRemoteServiceException.
-# policy_hash: 8F87EC8969F17AE77B6283D3A83F6D4C
-# strong_name: 351AE5DC0CA36AD3BA9C7CBA7B0E07B8
-```
-
-### Env vars (override YAML)
-
-```bash
-export LOSEIT_USER_ID=12345678
+# 3. Tell the CLI who you are (one-time)
+export LOSEIT_USER_ID=12345678      # numeric `sub` claim of your liauth JWT (decode at jwt.io)
 export LOSEIT_USER_NAME=your.username
-export LOSEIT_HOURS_FROM_GMT=-6
-export LOSEIT_POLICY_HASH=...   # optional
-export LOSEIT_STRONG_NAME=...   # optional
+export LOSEIT_HOURS_FROM_GMT=-6     # your local offset from UTC
+
+# 4. You're ready
+lose-it diary
 ```
 
-### CLI flags (override env)
+If `lose-it login` reports the cookie is missing or expired, it opens the Lose It! signin page in the chosen browser — sign in, then re-run `lose-it login`.
 
-```bash
-lose-it \
-  --config-file ./project.yaml \
-  --user-id 12345678 \
-  --user-name your.username \
-  --hours-from-gmt -6 \
-  whoami
-```
+Want to skip the install? `uvx --from git+https://github.com/phitoduck/lose-it lose-it diary` runs any command in an ephemeral environment.
 
-### Not user-specific (and not secrets)
-
-The `Class/<digits>` strings you'll see in the SDK source — `UserId/4281239478`, `ServiceRequestToken/1076571655`, `FoodIdentifier/2763145970`, … — are **GWT type-serialization hashes** computed by GWT at compile time from each Java class's structure. They're the same for every user of the same LoseIt build and are inlined in the public `*.cache.js` bundle on `d3hsih69yn4d89.cloudfront.net`. They're protocol type tags, not user/session/account identifiers.
-
-Plus the `liauth` JWT in `~/.config/loseit/token` (or `$LOSEIT_TOKEN`):
-
-```bash
-# 1. Log into loseit.com in any browser
-# 2. DevTools → Application → Cookies → www.loseit.com → liauth → copy value
-mkdir -p ~/.config/loseit
-echo "<paste JWT here>" > ~/.config/loseit/token
-chmod 600 ~/.config/loseit/token
-```
-
-For a more sustainable setup, `lose_it_utils.client.auth.refresh_token_from_chrome()` reads the cookie out of Chrome's encrypted store via `browser-cookie3` (triggers a one-time macOS Keychain prompt; then it's silent).
-
-When LoseIt redeploys, requests start failing with `LoseItError("…IncompatibleRemoteServiceException…")`. Refresh `LOSEIT_POLICY_HASH` / `LOSEIT_STRONG_NAME` from any `/web/service` POST in DevTools — `STRONG_NAME` is the `x-gwt-permutation` header, `POLICY_HASH` is the 5th `|`-separated field of the request body.
-
-## CLI
+## Examples
 
 ```text
 $ lose-it --help
@@ -155,6 +54,7 @@ $ lose-it --help
  Unofficial Lose It! food logger / diary CLI.
 
 ╭─ Commands ──────────────────────────────────────────────────────╮
+│ login   Import the liauth JWT from Chrome or Brave.             │
 │ search  Search the LoseIt food database.                        │
 │ log     Search for a food and log it to a meal.                 │
 │ diary   List the diary for a given date (default: today).       │
@@ -163,7 +63,23 @@ $ lose-it --help
 ╰─────────────────────────────────────────────────────────────────╯
 ```
 
-### Example: `search`
+### `login` — import the auth token from a browser
+
+```text
+$ lose-it login --browser chrome
+✅ Imported liauth from Chrome → /Users/you/.config/loseit/token
+   JWT exp: 2026-06-22T20:41:44+00:00
+
+$ lose-it login --browser brave
+❌ liauth cookie in Brave is expired.
+   JWT exp: 2026-04-01T12:00:00+00:00 (now: 2026-06-08T19:30:00+00:00)
+   Opened https://www.loseit.com/ in Brave.
+   Then re-run: lose-it login --browser brave
+```
+
+The first run on macOS triggers a Keychain prompt so the OS can unlock the browser's cookie store. After that it's silent.
+
+### `search`
 
 ```text
 $ lose-it search "x-treme carb balance tortilla"
@@ -174,7 +90,7 @@ $ lose-it search "x-treme carb balance tortilla"
   2  Tortilla Wraps, High Fiber, Low Carb, Xtreme Welln Mission Tortillas Ca
 ```
 
-### Example: `log`
+### `log`
 
 ```text
 $ lose-it log "x-treme carb balance tortilla" --meal lunch --pick 2 --servings 1
@@ -187,7 +103,7 @@ $ lose-it log "x-treme carb balance tortilla" --meal lunch --pick 2 --servings 1
 ✅ Logged Tortilla Wraps, High Fiber, Low Carb, Xtreme Wellness → lunch × 1.0
 ```
 
-### Example: `diary`
+### `diary`
 
 ```text
 $ lose-it diary
@@ -203,7 +119,7 @@ $ lose-it diary
     1. Greek Yogurt, Strawberry, Non Fat (Chobani)                      × 1.0  [110 cal]
 ```
 
-### Example: `delete`
+### `delete`
 
 ```text
 $ lose-it delete --meal lunch --pick 1 --yes
@@ -212,7 +128,7 @@ $ lose-it delete --meal lunch --pick 1 --yes
 ✅ Deleted
 ```
 
-### Example: `whoami`
+### `whoami`
 
 ```text
 $ lose-it whoami
@@ -226,18 +142,9 @@ strong_name    : 351AE5DC0CA36AD3BA9C7CBA7B0E07B8
 
 ### Script-friendly output: `--output json` / `-o json`
 
-Every subcommand accepts a global `--output` (alias `-o`) flag. The default is `text`; pass `json` to get a JSON document on stdout suitable for piping into `jq` or a script.
+Every subcommand accepts a global `--output` (alias `-o`) flag. The default is `text`; pass `json` to get a JSON document on stdout suitable for piping into `jq`.
 
 ```text
-$ lose-it -o json whoami
-{
-  "user_id": "12345678",
-  "user_name": "your.username",
-  "hours_from_gmt": -6,
-  "policy_hash": "8F87EC8969F17AE77B6283D3A83F6D4C",
-  "strong_name": "351AE5DC0CA36AD3BA9C7CBA7B0E07B8"
-}
-
 $ lose-it -o json diary --date 2026-06-08 | jq '.entries[] | .food_name'
 "Tortilla Wraps, High Fiber, Low Carb, Xtreme Wellness"
 "Avocado, whole"
@@ -246,27 +153,81 @@ $ lose-it -o json diary --date 2026-06-08 | jq '.entries[] | .food_name'
 
 ### Preview without mutating: `--dry-run`
 
-`log` and `delete` both accept `--dry-run`. Read-only lookups still run (so you see what *would* be logged or deleted), but the mutating GWT-RPC call is skipped.
+`log` and `delete` accept `--dry-run`. Read-only lookups still run (so you see what *would* be logged or deleted), but the mutating RPC is skipped.
 
 ```text
 $ lose-it log "x-treme carb balance tortilla" -m lunch --pick 2 --dry-run
 
 🟡 DRY RUN — would log Tortilla Wraps, High Fiber, Low Carb, Xtreme Wellness → lunch × 1.0 (70 cal)
-
-$ lose-it -o json delete --meal snacks --pick 1 --dry-run
-{
-  "action": "delete",
-  "dry_run": true,
-  "date": "2026-06-08",
-  "meal": "snacks",
-  "target": {
-    "food_name": "Tortilla Wraps, High Fiber, Low Carb, Xtreme Wellness",
-    "food_brand": "...",
-    "servings": 1.0,
-    ...
-  }
-}
 ```
+
+## Configuration
+
+The Quickstart used env vars because they're the fastest path. For anything more permanent, every setting can also come from a YAML file or a CLI flag.
+
+### Priority (highest wins)
+
+1. **CLI flag** — e.g. `lose-it --user-id 12345678 whoami`
+2. **`LOSEIT_*` env var** — e.g. `LOSEIT_USER_ID=…`
+3. **YAML file** — default path `~/.config/loseit/config.yaml`
+   (override with `--config-file` or `LOSEIT_CONFIG_FILE`)
+4. **Built-in default** — applied when no other layer sets the field
+
+Required fields (`user_id`, `user_name`, `hours_from_gmt`) have **no defaults**. If no layer sets them, the SDK raises `MissingConfigError` rather than silently posting to the wrong account.
+
+### YAML file (most ergonomic for long-term setup)
+
+```yaml
+# ~/.config/loseit/config.yaml — every key matches a field in the Settings model.
+user_id: "12345678"
+user_name: your.username
+hours_from_gmt: -6
+
+# Optional — refresh from any /web/service POST in DevTools when requests
+# start failing with IncompatibleRemoteServiceException.
+# policy_hash: 8F87EC8969F17AE77B6283D3A83F6D4C
+# strong_name: 351AE5DC0CA36AD3BA9C7CBA7B0E07B8
+```
+
+### All settings
+
+| YAML key / field  | CLI flag             | Env var                 | Type   | Default                                  | Description                                                                 |
+|-------------------|----------------------|-------------------------|--------|------------------------------------------|-----------------------------------------------------------------------------|
+| `user_id`         | `--user-id`          | `LOSEIT_USER_ID`        | `str`  | *(required)*                             | Numeric `sub` claim of your `liauth` JWT (decode at jwt.io).                |
+| `user_name`       | `--user-name`        | `LOSEIT_USER_NAME`      | `str`  | *(required)*                             | Your loseit.com username.                                                   |
+| `hours_from_gmt`  | `--hours-from-gmt`   | `LOSEIT_HOURS_FROM_GMT` | `int`  | *(required)*                             | Your local offset from UTC (e.g. `-6`).                                     |
+| `policy_hash`     | `--policy-hash`      | `LOSEIT_POLICY_HASH`    | `str`  | last-known-good                          | 5th `\|`-field of any `/web/service` POST body. Refresh on LoseIt redeploy. |
+| `strong_name`     | `--strong-name`      | `LOSEIT_STRONG_NAME`    | `str`  | last-known-good                          | `x-gwt-permutation` request header. Refresh on LoseIt redeploy.             |
+| `base_url`        | *(not exposed)*      | `LOSEIT_BASE_URL`       | `str`  | `https://d3hsih69yn4d89.cloudfront.net/web/` | GWT module base URL.                                                    |
+| `service_url`     | *(not exposed)*      | `LOSEIT_SERVICE_URL`    | `str`  | `https://www.loseit.com/web/service`     | GWT-RPC service endpoint.                                                   |
+| `token`           | *(not exposed)*      | `LOSEIT_TOKEN`          | `str`  | `None` → read from `token_file`          | `liauth` JWT. If unset, falls back to reading `token_file`.                 |
+| `token_file`      | *(not exposed)*      | `LOSEIT_TOKEN_FILE`     | `Path` | `~/.config/loseit/token`                 | Where `lose-it login` writes the JWT, and where the SDK reads it from.      |
+
+The pydantic-settings model in [`src/lose_it_utils/client/_settings.py`](src/lose_it_utils/client/_settings.py) is the single source of truth and the spec of the YAML file.
+
+### Refreshing the auth token
+
+`lose-it login` is the easy path; it reads the cookie out of Chrome or Brave (via `browser-cookie3`) and writes it to `~/.config/loseit/token`. The manual fallback:
+
+```bash
+# DevTools → Application → Cookies → www.loseit.com → liauth → copy value
+mkdir -p ~/.config/loseit
+echo "<paste JWT here>" > ~/.config/loseit/token
+chmod 600 ~/.config/loseit/token
+```
+
+You can also set `LOSEIT_TOKEN=<jwt>` directly.
+
+### Refreshing `policy_hash` / `strong_name`
+
+When LoseIt redeploys, requests start failing with `LoseItError("…IncompatibleRemoteServiceException…")`. Open DevTools, find any `/web/service` POST:
+
+- `strong_name` = the `x-gwt-permutation` request header
+- `policy_hash` = the 5th `|`-separated field of the request body
+
+### Not user-specific (and not secrets)
+
+The `Class/<digits>` strings you'll see in the SDK source — `UserId/4281239478`, `ServiceRequestToken/1076571655`, `FoodIdentifier/2763145970`, … — are **GWT type-serialization hashes** computed by GWT at compile time from each Java class's structure. They're the same for every user of the same LoseIt build and are inlined in the public `*.cache.js` bundle on `d3hsih69yn4d89.cloudfront.net`. They're protocol type tags, not user/session/account identifiers.
 
 ## SDK
 
@@ -296,7 +257,18 @@ with Client.from_env() as client:
             entries.delete(client.http, e)
 ```
 
-## Package layout
+## Develop
+
+```bash
+git clone https://github.com/phitoduck/lose-it
+cd lose-it
+uv sync
+prek install                           # set up pre-commit hooks
+uv run pytest                          # mocked unit tests
+LOSEIT_RUN_FUNCTIONAL=1 uv run pytest  # incl. real-API CRUD
+```
+
+### Package layout
 
 ```text
 src/lose_it_utils/
@@ -304,12 +276,13 @@ src/lose_it_utils/
 ├── cli.py                  # typer CLI
 └── client/
     ├── __init__.py         # `Client` class
-    ├── _config.py          # Config dataclass + LOSEIT_* env reading
+    ├── _settings.py        # pydantic-settings layered config (CLI > env > YAML > defaults)
+    ├── _config.py          # backwards-compat `Config` façade over Settings
     ├── _http.py            # httpx wrapper + error types
     ├── _gwt.py             # GWT-RPC serialization primitives
     ├── _models.py          # FoodSearchResult / UnsavedFoodLogEntry / FoodLogEntry
     ├── _dates.py           # date ↔ day-number conversion
-    ├── auth.py             # token loading + Chrome cookie refresh
+    ├── auth.py             # token loading + Chrome/Brave cookie import
     ├── init.py             # getInitializationData → DayDate key lookup
     ├── foods.py            # searchFoods + getUnsavedFoodLogEntry
     ├── entries.py          # updateFoodLogEntry (log) + deleteFoodLogEntry
@@ -318,40 +291,35 @@ src/lose_it_utils/
 
 Module structure mirrors the underlying GWT-RPC resources: one module per backend resource, one function per RPC method.
 
-## Tests
+### Tests
 
 ```bash
 # Unit tests (mocked httpx, replay captured fixtures)
 uv run pytest tests/conformance
 
-# Real-API CRUD (requires LOSEIT_RUN_FUNCTIONAL=1 + valid token + config env vars)
+# Real-API CRUD (requires LOSEIT_RUN_FUNCTIONAL=1 + valid token + config)
 LOSEIT_RUN_FUNCTIONAL=1 uv run pytest tests/functional
-
-# Everything
-LOSEIT_RUN_FUNCTIONAL=1 uv run pytest
 ```
 
 The functional suite is the *source of truth* for the mock fixtures: each CRUD step writes the raw response body to `tests/conformance/fixtures/` (after redacting user_id / username). The unit tests then replay those fixtures through `pytest-httpx` mocks, so the mocked request/response shapes are guaranteed to match what the real Lose It! servers actually emit.
 
-## Lint, format, secret-scan (prek)
+### Lint, format, secret-scan (prek)
 
-`prek` (the Rust pre-commit drop-in) runs three classes of checks on every commit:
+`prek` (the Rust pre-commit drop-in) runs three classes of checks at commit *and* push time:
 
 ```bash
 prek install            # one-time: wire the git hook
 prek run --all-files    # run everything explicitly
 ```
 
-Hooks (declared in `.pre-commit-config.yaml`):
-
 | Hook | What it does |
 |---|---|
 | `pre-commit-hooks` | trailing whitespace, EOL, merge conflicts, large files, YAML/TOML syntax, `detect-private-key` |
 | `ruff-check --fix` | lint + auto-fix Python with the ruleset in `pyproject.toml` |
 | `ruff-format` | format all `.py` files (PEP 8, 100-char lines) |
-| `gitleaks` | scan the staged diff for secrets, with a `.gitleaks.toml` rule for LoseIt's exact `liauth` JWT shape (`ES384` + `kid=MD2BMUN8VL`) |
+| `gitleaks` | scan for secrets (default ruleset + custom Lose It! JWT rules); runs at both `pre-commit` and `pre-push` |
 
-The gitleaks allowlist permits the sanitized JWT placeholders in `tests/conformance/fixtures/`. Everything else — real tokens, AWS keys, GitHub PATs, generic high-entropy strings — gets caught.
+The gitleaks config has two custom rules: a tight ES384-JWT match (kid-agnostic, so signing-key rotations still trip it) and a fallback that catches any `liauth`/`fn_auth` cookie name beside a JWT-shaped value regardless of algorithm. The sanitized JWT placeholders in `tests/conformance/fixtures/` are allowlisted; everything else gets caught.
 
 ## Known quirks (annotated in the parser)
 
