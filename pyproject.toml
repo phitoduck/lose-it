@@ -1,0 +1,35 @@
+[project]
+name = "lose-it-utils"
+version = "0.1.0"
+description = "Unofficial Lose It! Python SDK and CLI (reverse-engineered GWT-RPC)"
+readme = "README.md"
+authors = [
+    { name = "phitoduck", email = "eric.riddoch@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "browser-cookie3>=0.20.1",
+    "httpx>=0.28.1",
+    "typer>=0.26.7",
+]
+
+[project.scripts]
+lose-it = "lose_it_utils.cli:main"
+lose-it-utils = "lose_it_utils.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.10.7,<0.11.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+    "pytest-httpx>=0.36.2",
+    "pytest-recording>=0.13.4",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "functional: hits the real Lose It! API; requires LOSEIT_RUN_FUNCTIONAL=1 + valid token",
+]
+testpaths = ["tests"]
