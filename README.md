@@ -1,50 +1,89 @@
-# lose-it
+<h1 align="center">lose-it</h1>
 
-[![Tests](https://img.shields.io/badge/tests-18%2F18-brightgreen)](#tests)
-[![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/)
-[![License](https://img.shields.io/badge/license-MIT-green)](#license)
+<p align="center">
+  <img src="docs/diagram.svg" alt="lose-it CLI → Lose It! web API" width="640"/>
+</p>
 
-**Unofficial Python SDK and CLI for [Lose It!](https://www.loseit.com/) — log meals, query your diary, and delete entries from the command line.**
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.12+-3776ab?style=flat-square&logo=python&logoColor=white" alt="Python 3.12+"/>
+  <img src="https://img.shields.io/badge/uv-package%20manager-de5fe9?style=flat-square&logo=astral&logoColor=white" alt="uv"/>
+  <img src="https://img.shields.io/badge/typer-CLI-009485?style=flat-square&logo=typer&logoColor=white" alt="typer"/>
+  <img src="https://img.shields.io/badge/httpx-async%20client-1d2d44?style=flat-square&logo=python&logoColor=white" alt="httpx"/>
+  <img src="https://img.shields.io/badge/ruff-lint%20%2B%20format-d7ff64?style=flat-square&logo=ruff&logoColor=000000" alt="ruff"/>
+  <img src="https://img.shields.io/badge/gitleaks-secret%20scan-f24c4c?style=flat-square&logo=git&logoColor=white" alt="gitleaks"/>
+  <img src="https://img.shields.io/badge/tests-18%2F18-26a269?style=flat-square&logo=pytest&logoColor=white" alt="tests"/>
+  <img src="https://img.shields.io/badge/license-MIT-2dba4e?style=flat-square" alt="License"/>
+</p>
+
+<p align="center">Unofficial Python SDK + CLI for <a href="https://www.loseit.com/"><b>Lose It!</b></a> — log meals, query your diary, and delete entries from the command line.</p>
 
 > ⚠️ **Reverse-engineered & unofficial.** Talks to Lose It!'s private GWT-RPC web endpoints. No official API exists; the protocol is brittle and may break without notice. Not affiliated with Lose It! / FitNow, Inc.
 
 ## Highlights
 
-- **SDK first**: ``lose_it_utils.Client`` + per-resource modules (``client.foods``, ``client.entries``, ``client.daily``, ``client.init``). Each RPC is a single function — no implicit state.
-- **CLI**: ``lose-it`` (typer) with subcommands ``search``, ``log``, ``diary``, ``delete``, ``whoami``.
-- **httpx** under the hood. No ``requests`` dependency.
+- **SDK first**: `lose_it_utils.Client` + per-resource modules (`client.foods`, `client.entries`, `client.daily`, `client.init`). Each RPC is a single function — no implicit state.
+- **CLI**: `lose-it` (typer) with subcommands `search`, `log`, `diary`, `delete`, `whoami`.
+- **httpx** under the hood. No `requests` dependency.
 - **Real-API + mocked-unit test coverage**: a single functional CRUD test exercises the live API and saves the raw GWT-RPC responses as fixtures; unit tests then mock httpx and replay those fixtures, so the mocks are guaranteed to match production wire shapes.
 - **Sanitized fixtures**: account-identifying values are scrubbed before being committed, so the captured request/response bodies are safe to publish.
+- **Secret scanning**: a `prek` pre-commit pipeline runs `ruff` (lint + format) and `gitleaks` (with a custom rule for LoseIt's exact `liauth` JWT shape) on every commit so credentials can't be checked in by accident.
 
-## Install
+## Try it without installing (`uvx`)
 
-Requires Python 3.12+.
+```bash
+# Run a one-off command directly from GitHub (no install)
+uvx --from git+https://github.com/phitoduck/lose-it lose-it diary
+
+# Or pin to a specific commit / tag
+uvx --from git+https://github.com/phitoduck/lose-it@main lose-it search "tortilla"
+```
+
+`uvx` pulls the package straight from the `main` branch, builds it in an ephemeral environment, and runs the entrypoint.
+
+## Install from the tip of main
+
+```bash
+# Install into a uv-managed tool environment (re-runnable as `lose-it`)
+uv tool install git+https://github.com/phitoduck/lose-it
+
+# Or pin to a commit
+uv tool install git+https://github.com/phitoduck/lose-it@<sha>
+
+# Upgrade to the latest main later
+uv tool upgrade lose-it-utils
+```
+
+After install, `lose-it --help` works system-wide.
+
+## Develop
 
 ```bash
 git clone https://github.com/phitoduck/lose-it
 cd lose-it
 uv sync
+prek install                           # set up pre-commit hooks
+uv run pytest                          # mocked unit tests
+LOSEIT_RUN_FUNCTIONAL=1 uv run pytest  # incl. real-API CRUD
 ```
 
 ## Configure
 
-The SDK reads everything from environment variables (and a token file). All keys are optional but the defaults point to the original reverse-engineer's account, so you'll want to set the user-specific ones:
+The SDK reads everything from env vars + a token file. All keys are optional but the defaults point to the original reverse-engineer's account, so you'll want to set the user-specific ones:
 
 ```bash
 # Per-account (stable)
-export LOSEIT_USER_ID=12345678          # "sub" claim of your liauth JWT
+export LOSEIT_USER_ID=12345678          # "sub" claim of your liauth JWT (decode at jwt.io)
 export LOSEIT_USER_NAME=your.username   # loseit.com username
 export LOSEIT_HOURS_FROM_GMT=-6         # your local offset from UTC
 
 # Per-build (refresh whenever LoseIt redeploys their web app)
-export LOSEIT_POLICY_HASH=8F87EC8969F17AE77B6283D3A83F6D4C
-export LOSEIT_STRONG_NAME=351AE5DC0CA36AD3BA9C7CBA7B0E07B8
+export LOSEIT_POLICY_HASH=...
+export LOSEIT_STRONG_NAME=...
 ```
 
-Plus a JWT in ``~/.config/loseit/token`` (or ``$LOSEIT_TOKEN``):
+Plus the `liauth` JWT in `~/.config/loseit/token` (or `$LOSEIT_TOKEN`):
 
 ```bash
-# Manual capture (lasts ~2 weeks):
 # 1. Log into loseit.com in any browser
 # 2. DevTools → Application → Cookies → www.loseit.com → liauth → copy value
 mkdir -p ~/.config/loseit
@@ -52,13 +91,13 @@ echo "<paste JWT here>" > ~/.config/loseit/token
 chmod 600 ~/.config/loseit/token
 ```
 
-For a more sustainable setup, ``lose_it_utils.client.auth.refresh_token_from_chrome()`` reads the cookie out of Chrome's encrypted store via ``browser-cookie3`` (triggers a one-time macOS Keychain prompt; then it's silent).
+For a more sustainable setup, `lose_it_utils.client.auth.refresh_token_from_chrome()` reads the cookie out of Chrome's encrypted store via `browser-cookie3` (triggers a one-time macOS Keychain prompt; then it's silent).
 
-When LoseIt redeploys, requests start failing with ``LoseItError("…IncompatibleRemoteServiceException…")``. Refresh ``LOSEIT_POLICY_HASH`` / ``LOSEIT_STRONG_NAME`` from any ``/web/service`` POST in DevTools — ``STRONG_NAME`` is the ``x-gwt-permutation`` header, ``POLICY_HASH`` is the 5th ``|``-separated field of the request body.
+When LoseIt redeploys, requests start failing with `LoseItError("…IncompatibleRemoteServiceException…")`. Refresh `LOSEIT_POLICY_HASH` / `LOSEIT_STRONG_NAME` from any `/web/service` POST in DevTools — `STRONG_NAME` is the `x-gwt-permutation` header, `POLICY_HASH` is the 5th `|`-separated field of the request body.
 
 ## CLI
 
-```
+```text
 $ lose-it --help
 
  Usage: lose-it [OPTIONS] COMMAND [ARGS]...
@@ -74,17 +113,65 @@ $ lose-it --help
 ╰─────────────────────────────────────────────────────────────────╯
 ```
 
-### Examples
+### Example: `search`
 
-```bash
-lose-it search "x-treme carb balance tortilla"
+```text
+$ lose-it search "x-treme carb balance tortilla"
 
-lose-it log "x-treme carb balance tortilla" --meal lunch --pick 2 --servings 1
+  #  Food                                               Brand
+───  ────────────────────────────────────────────────── ────────────────────
+  1  Xtreme Wellness Tortilla Wrap High Fiber Low Carb  Carb balance
+  2  Tortilla Wraps, High Fiber, Low Carb, Xtreme Welln Mission Tortillas Ca
+```
 
-lose-it diary
-lose-it diary --date 2026-06-05
+### Example: `log`
 
-lose-it delete --meal lunch --pick 1 --yes
+```text
+$ lose-it log "x-treme carb balance tortilla" --meal lunch --pick 2 --servings 1
+
+  #  Food                                               Brand
+───  ────────────────────────────────────────────────── ────────────────────
+  1  Xtreme Wellness Tortilla Wrap High Fiber Low Carb  Carb balance
+  2  Tortilla Wraps, High Fiber, Low Carb, Xtreme Welln Mission Tortillas Ca
+
+✅ Logged Tortilla Wraps, High Fiber, Low Carb, Xtreme Wellness → lunch × 1.0
+```
+
+### Example: `diary`
+
+```text
+$ lose-it diary
+
+📅 Diary for 2026-06-08:
+
+  Lunch:
+    1. Tortilla Wraps, High Fiber, Low Carb, Xtreme Wellness (Mission)  × 1.0  [70 cal]
+    2. Avocado, whole (Ocado)                                           × 0.55 [177 cal]
+    3. Real Good Lightly Breaded Chicken Strips (Real Good Foods)       × 1.43 [186 cal]
+
+  Snacks:
+    1. Greek Yogurt, Strawberry, Non Fat (Chobani)                      × 1.0  [110 cal]
+```
+
+### Example: `delete`
+
+```text
+$ lose-it delete --meal lunch --pick 1 --yes
+
+🗑️  Deleting from lunch: Tortilla Wraps, High Fiber, Low Carb, Xtreme Wellness (Mission) × 1.0
+✅ Deleted
+```
+
+### Example: `whoami`
+
+```text
+$ lose-it whoami
+
+user_id        : 12345678
+user_name      : your.username
+hours_from_gmt : -6
+policy_hash    : 8F87EC8969F17AE77B6283D3A83F6D4C
+strong_name    : 351AE5DC0CA36AD3BA9C7CBA7B0E07B8
 ```
 
 ## SDK
@@ -117,16 +204,16 @@ with Client.from_env() as client:
 
 ## Package layout
 
-```
+```text
 src/lose_it_utils/
 ├── __init__.py             # exports `Client`
-├── cli.py                  # typer-based CLI
+├── cli.py                  # typer CLI
 └── client/
     ├── __init__.py         # `Client` class
     ├── _config.py          # Config dataclass + LOSEIT_* env reading
     ├── _http.py            # httpx wrapper + error types
     ├── _gwt.py             # GWT-RPC serialization primitives
-    ├── _models.py          # dataclasses (FoodSearchResult, UnsavedFoodLogEntry, FoodLogEntry)
+    ├── _models.py          # FoodSearchResult / UnsavedFoodLogEntry / FoodLogEntry
     ├── _dates.py           # date ↔ day-number conversion
     ├── auth.py             # token loading + Chrome cookie refresh
     ├── init.py             # getInitializationData → DayDate key lookup
@@ -150,14 +237,34 @@ LOSEIT_RUN_FUNCTIONAL=1 uv run pytest tests/functional
 LOSEIT_RUN_FUNCTIONAL=1 uv run pytest
 ```
 
-The functional suite is the *source of truth* for the mock fixtures: each CRUD step writes the raw response body to ``tests/conformance/fixtures/`` (after redacting user_id / username). The unit tests then replay those fixtures through ``pytest-httpx`` mocks, so the mocked request/response shapes are guaranteed to match what the real Lose It! servers actually emit.
+The functional suite is the *source of truth* for the mock fixtures: each CRUD step writes the raw response body to `tests/conformance/fixtures/` (after redacting user_id / username). The unit tests then replay those fixtures through `pytest-httpx` mocks, so the mocked request/response shapes are guaranteed to match what the real Lose It! servers actually emit.
+
+## Lint, format, secret-scan (prek)
+
+`prek` (the Rust pre-commit drop-in) runs three classes of checks on every commit:
+
+```bash
+prek install            # one-time: wire the git hook
+prek run --all-files    # run everything explicitly
+```
+
+Hooks (declared in `.pre-commit-config.yaml`):
+
+| Hook | What it does |
+|---|---|
+| `pre-commit-hooks` | trailing whitespace, EOL, merge conflicts, large files, YAML/TOML syntax, `detect-private-key` |
+| `ruff-check --fix` | lint + auto-fix Python with the ruleset in `pyproject.toml` |
+| `ruff-format` | format all `.py` files (PEP 8, 100-char lines) |
+| `gitleaks` | scan the staged diff for secrets, with a `.gitleaks.toml` rule for LoseIt's exact `liauth` JWT shape (`ES384` + `kid=MD2BMUN8VL`) |
+
+The gitleaks allowlist permits the sanitized JWT placeholders in `tests/conformance/fixtures/`. Everything else — real tokens, AWS keys, GitHub PATs, generic high-entropy strings — gets caught.
 
 ## Known quirks (annotated in the parser)
 
-- **GWT writes byte arrays in reverse**: both PKs you see in responses are reversed copies of their wire-form bytes. ``_gwt.reverse_bytes`` handles round-trips.
-- **GWT writes object fields in declaration order, dedup'd across an array**: when several ``FoodLogEntry`` objects share the same enum value (e.g. all in *snacks*) or the same nutrient HashMap (e.g. multiple identical logs), the response writes the shared value *once* and references it from each entry. The parser falls back to a global search when an entry's local range comes up empty.
-- **Food codes can contain ``$`` and ``_``**: e.g. ``DoA3$q``. The food-identifier-code regex allows the full GWT short-string alphabet.
-- **The serving-unit is the food's default**: passing ``--servings 1.1`` to a per-100g entry logs 110 g, but to a "1 Each" entry it logs 1.1 each. There's no "log in grams" override yet — pick the right base food.
+- **GWT writes byte arrays in reverse**: both PKs you see in responses are reversed copies of their wire-form bytes. `_gwt.reverse_bytes` handles round-trips.
+- **GWT writes object fields in declaration order, dedup'd across an array**: when several `FoodLogEntry` objects share the same enum value (e.g. all in *snacks*) or the same nutrient HashMap (e.g. multiple identical logs), the response writes the shared value *once* and references it from each entry. The parser falls back to a global search when an entry's local range comes up empty.
+- **Food codes can contain `$` and `_`**: e.g. `DoA3$q`. The food-identifier-code regex allows the full GWT short-string alphabet.
+- **The serving-unit is the food's default**: passing `--servings 1.1` to a per-100g entry logs 110 g, but to a "1 Each" entry it logs 1.1 each. There's no "log in grams" override yet — pick the right base food.
 
 ## License
 

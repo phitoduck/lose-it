@@ -11,6 +11,7 @@ Provides:
   ``pytest-httpx`` ``httpx_mock`` fixture; tests register canned responses to
   ``/web/service`` and assert on what the SDK sends + parses.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -27,6 +28,7 @@ FIXTURE_DIR = Path(__file__).parent / "conformance" / "fixtures"
 def fixture_path():
     def _path(name: str) -> Path:
         return FIXTURE_DIR / name
+
     return _path
 
 
@@ -34,6 +36,7 @@ def fixture_path():
 def fixture_text():
     def _text(name: str) -> str:
         return (FIXTURE_DIR / name).read_text()
+
     return _text
 
 

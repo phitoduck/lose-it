@@ -4,6 +4,7 @@ LoseIt uses a "day number" — an integer that increments by 1 per calendar day
 since some epoch. We anchor on a single observed mapping and arithmetic-shift
 to convert dates ↔ day numbers without an extra round-trip.
 """
+
 from __future__ import annotations
 
 from datetime import date, datetime

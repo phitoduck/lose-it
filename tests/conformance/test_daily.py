@@ -1,4 +1,5 @@
 """Conformance tests for ``daily.get_daily_details`` (parse + request shape)."""
+
 from __future__ import annotations
 
 from datetime import date
@@ -13,10 +14,12 @@ def test_daily_details_request_envelope(test_client, httpx_mock, fixture_text):
     """The getDailyDetails request encodes the target date + day key."""
     # 2 responses: getInitializationData (for day_key lookup) then daily details.
     httpx_mock.add_response(
-        url=SERVICE_URL, text=fixture_text("get_initialization_data.txt"),
+        url=SERVICE_URL,
+        text=fixture_text("get_initialization_data.txt"),
     )
     httpx_mock.add_response(
-        url=SERVICE_URL, text=fixture_text("get_daily_details_with_tortilla.txt"),
+        url=SERVICE_URL,
+        text=fixture_text("get_daily_details_with_tortilla.txt"),
     )
     daily.get_daily_details(test_client.http, date(2026, 6, 8))
 
@@ -53,8 +56,7 @@ def test_daily_details_after_delete_omits_target(fixture_text):
     before_tortillas = [e for e in before if "ortilla" in e.food_name]
     after_tortillas = [e for e in after if "ortilla" in e.food_name]
     assert len(after_tortillas) == len(before_tortillas) - 1, (
-        f"expected one entry removed; before={len(before_tortillas)}, "
-        f"after={len(after_tortillas)}"
+        f"expected one entry removed; before={len(before_tortillas)}, after={len(after_tortillas)}"
     )
 
 

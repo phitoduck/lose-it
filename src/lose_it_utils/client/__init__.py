@@ -15,13 +15,14 @@ argument, so the API surface looks like::
         for e in daily.get_daily_details(c.http, today):
             print(e.food_name, e.servings)
 """
+
 from __future__ import annotations
 
 import httpx
 
+from . import auth as _auth
 from ._config import Config
 from ._http import HttpClient, LoseItAuthError, LoseItError
-from . import auth as _auth
 
 
 class Client:
@@ -44,7 +45,7 @@ class Client:
         token: str | None = None,
         transport: httpx.BaseTransport | None = None,
         **config_overrides,
-    ) -> "Client":
+    ) -> Client:
         """Build a Client from ``LOSEIT_*`` env vars + the token file."""
         config = Config.from_env(**config_overrides)
         if token is None:
@@ -65,6 +66,6 @@ __all__ = [
     "Client",
     "Config",
     "HttpClient",
-    "LoseItError",
     "LoseItAuthError",
+    "LoseItError",
 ]

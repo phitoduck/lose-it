@@ -26,6 +26,7 @@ dev = [
     "pytest>=9.0.3",
     "pytest-httpx>=0.36.2",
     "pytest-recording>=0.13.4",
+    "ruff>=0.15.16",
 ]
 
 [tool.pytest.ini_options]
@@ -33,3 +34,34 @@ markers = [
     "functional: hits the real Lose It! API; requires LOSEIT_RUN_FUNCTIONAL=1 + valid token",
 ]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["tests/conformance/fixtures"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # flake8-bugbear
+    "UP",   # pyupgrade
+    "SIM",  # flake8-simplify
+    "RUF",  # ruff-specific
+]
+ignore = [
+    "E501",   # long lines — formatter handles them; many GWT comments are intentionally long
+    "B008",   # function call in default arg — typer relies on this
+    "SIM108", # ternary if-else (less readable in many cases)
+    "RUF001", # ambiguous chars in strings — `×` is intentional in CLI output
+    "RUF002", # same, in docstrings
+    "RUF003", # same, in comments
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]  # `assert False` is fine in tests
+
+[tool.ruff.format]
+quote-style = "double"

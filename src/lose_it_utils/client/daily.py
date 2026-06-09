@@ -4,6 +4,7 @@ Returns every ``FoodLogEntry`` logged on the target date, with enough field
 data to round-trip into a ``deleteFoodLogEntry`` (which requires the full
 entry body, not just a PK).
 """
+
 from __future__ import annotations
 
 import re
@@ -31,9 +32,24 @@ def _build_payload(config: Config, target_date: date, day_key: str) -> str:
     ]
     day_num = day_number_for(target_date)
     data = [
-        "1", "2", "3", "4", "2", "5", "6",
-        "5", "0", "7", config.user_id, "8", str(config.hours_from_gmt),
-        "6", "9", day_key, str(day_num), str(config.hours_from_gmt),
+        "1",
+        "2",
+        "3",
+        "4",
+        "2",
+        "5",
+        "6",
+        "5",
+        "0",
+        "7",
+        config.user_id,
+        "8",
+        str(config.hours_from_gmt),
+        "6",
+        "9",
+        day_key,
+        str(day_num),
+        str(config.hours_from_gmt),
     ]
     return build_envelope(strings, data)
 
@@ -42,14 +58,22 @@ def _resolve_refs(string_table: list[str]) -> dict[str, int]:
     refs: dict[str, int] = {}
     for i, s in enumerate(string_table):
         ref = i + 1
-        if s == "[B/3308590456": refs["bytes"] = ref
-        elif s.startswith("com.loseit.core.client.model.SimplePrimaryKey/"): refs["pk"] = ref
-        elif s.startswith("com.loseit.core.client.model.FoodLogEntry/"): refs["food_log_entry"] = ref
-        elif s.startswith("com.loseit.core.client.model.interfaces.FoodLogEntryType/"): refs["meal"] = ref
-        elif s.startswith("com.loseit.core.client.model.interfaces.FoodLogEntryTypeExtra/"): refs["extra"] = ref
-        elif s.startswith("com.loseit.core.client.model.FoodMeasure/"): refs["food_measure"] = ref
-        elif s.startswith("com.loseit.healthdata.model.shared.food.FoodMeasurement/"): refs["food_measurement"] = ref
-        elif s == "java.lang.Double/858496421": refs["double"] = ref
+        if s == "[B/3308590456":
+            refs["bytes"] = ref
+        elif s.startswith("com.loseit.core.client.model.SimplePrimaryKey/"):
+            refs["pk"] = ref
+        elif s.startswith("com.loseit.core.client.model.FoodLogEntry/"):
+            refs["food_log_entry"] = ref
+        elif s.startswith("com.loseit.core.client.model.interfaces.FoodLogEntryType/"):
+            refs["meal"] = ref
+        elif s.startswith("com.loseit.core.client.model.interfaces.FoodLogEntryTypeExtra/"):
+            refs["extra"] = ref
+        elif s.startswith("com.loseit.core.client.model.FoodMeasure/"):
+            refs["food_measure"] = ref
+        elif s.startswith("com.loseit.healthdata.model.shared.food.FoodMeasurement/"):
+            refs["food_measurement"] = ref
+        elif s == "java.lang.Double/858496421":
+            refs["double"] = ref
     return refs
 
 
@@ -57,15 +81,21 @@ def _find_pk_blocks(tokens: list, bytes_ref: int, pk_ref: int) -> list[dict]:
     """Locate every 16-byte PK block followed by ``[16, bytes_ref, pk_ref, "<key>"]``."""
     blocks: list[dict] = []
     for i in range(16, len(tokens) - 3):
-        if (tokens[i] == 16 and tokens[i + 1] == bytes_ref and tokens[i + 2] == pk_ref
-                and isinstance(tokens[i + 3], str)):
-            slice_ = tokens[i - 16:i]
+        if (
+            tokens[i] == 16
+            and tokens[i + 1] == bytes_ref
+            and tokens[i + 2] == pk_ref
+            and isinstance(tokens[i + 3], str)
+        ):
+            slice_ = tokens[i - 16 : i]
             if all(isinstance(x, (int, float)) for x in slice_):
-                blocks.append({
-                    "marker_i": i,
-                    "pk_bytes": [int(x) for x in slice_],
-                    "day_key": tokens[i + 3],
-                })
+                blocks.append(
+                    {
+                        "marker_i": i,
+                        "pk_bytes": [int(x) for x in slice_],
+                        "day_key": tokens[i + 3],
+                    }
+                )
     return blocks
 
 
@@ -115,9 +145,13 @@ def _extract_entry(
         if not (fmment_ref and dbl_ref):
             return out
         for j in range(start, end):
-            if (tokens[j] == fmment_ref and j >= 3 and tokens[j - 2] == dbl_ref
-                    and isinstance(tokens[j - 1], int)
-                    and isinstance(tokens[j - 3], (int, float))):
+            if (
+                tokens[j] == fmment_ref
+                and j >= 3
+                and tokens[j - 2] == dbl_ref
+                and isinstance(tokens[j - 1], int)
+                and isinstance(tokens[j - 3], (int, float))
+            ):
                 ord_ = int(tokens[j - 1])
                 if 0 <= ord_ <= 30:
                     out.append((ord_, float(tokens[j - 3])))
@@ -162,15 +196,22 @@ def _extract_entry(
     hours_from_gmt = default_hours_from_gmt
     for j in range(mid_start, mid_end):
         t = tokens[j]
-        if (isinstance(t, str) and t != day_key and not t.startswith("Do")
-                and re.match(r"^[A-Za-z0-9_$]+$", t) and len(t) >= 5):
+        if (
+            isinstance(t, str)
+            and t != day_key
+            and not t.startswith("Do")
+            and re.match(r"^[A-Za-z0-9_$]+$", t)
+            and len(t) >= 5
+        ):
             context_day_key = t
             for k in range(j - 1, max(j - 6, mid_start), -1):
                 if isinstance(tokens[k], int) and tokens[k] >= 5000:
-                    day_num = int(tokens[k]); break
+                    day_num = int(tokens[k])
+                    break
             for k in range(j - 1, max(j - 8, mid_start), -1):
                 if isinstance(tokens[k], int) and -12 <= tokens[k] <= 14 and tokens[k] != day_num:
-                    hours_from_gmt = int(tokens[k]); break
+                    hours_from_gmt = int(tokens[k])
+                    break
             break
 
     # Food name/brand/category — the FoodIdentifier's string refs are
@@ -200,11 +241,12 @@ def _extract_entry(
     servings = 1.0
     for j in range(mid_start + 1, min(mid_start + 5, len(tokens))):
         if isinstance(tokens[j], float):
-            servings = float(tokens[j]); break
+            servings = float(tokens[j])
+            break
 
     return FoodLogEntry(
-        food_pk_response=food_pk_block["pk_bytes"],   # SECOND PK in stream
-        entry_pk_response=entry_pk_block["pk_bytes"], # FIRST PK in stream (UUID)
+        food_pk_response=food_pk_block["pk_bytes"],  # SECOND PK in stream
+        entry_pk_response=entry_pk_block["pk_bytes"],  # FIRST PK in stream (UUID)
         entry_day_key=day_key,
         context_day_key=context_day_key,
         day_num=day_num,
@@ -246,20 +288,24 @@ def parse_entries(text: str, default_hours_from_gmt: int = -5) -> list[FoodLogEn
         a = pk_blocks[i]
         after_first = tokens[a["marker_i"] + 4] if a["marker_i"] + 4 < len(tokens) else None
         if not is_food_identifier_code(after_first):
-            i += 1; continue
+            i += 1
+            continue
         b = pk_blocks[i + 1]
         # Reject pairs that look too far apart — a real entry body is < 200 tokens.
         if b["marker_i"] - a["marker_i"] > 200:
-            i += 1; continue
+            i += 1
+            continue
         # Sanity check: the entry PK block should have a FoodLogEntry type
         # ref nearby (within the FoodIdentifier sub-section that follows).
         has_fle_ref = False
         if fle_ref is not None:
             for j in range(b["marker_i"] + 4, min(b["marker_i"] + 20, len(tokens))):
                 if tokens[j] == fle_ref:
-                    has_fle_ref = True; break
+                    has_fle_ref = True
+                    break
         if not has_fle_ref:
-            i += 1; continue
+            i += 1
+            continue
         # a = first PK block in stream = ENTRY PK (entry UUID).
         # b = second PK block in stream = FOOD PK (food's stable PK).
         entry = _extract_entry(tokens, strings, a, b, refs, default_hours_from_gmt)

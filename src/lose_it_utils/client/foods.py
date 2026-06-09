@@ -7,17 +7,16 @@ candidate foods with their primary keys.
 the food's serving size + nutrient template, which the client then scales
 by the desired number of servings when posting to ``updateFoodLogEntry``.
 """
-from __future__ import annotations
 
-import re
+from __future__ import annotations
 
 from ._config import Config
 from ._gwt import build_envelope, parse_response, resolve_string
 from ._http import HttpClient
 from ._models import FoodSearchResult, UnsavedFoodLogEntry
 
-
 # ── searchFoods ─────────────────────────────────────────────────────────────
+
 
 def _build_search_payload(config: Config, query: str) -> str:
     strings = [
@@ -62,7 +61,7 @@ def _extract_search_results(tokens: list, string_table: list[str]) -> list[FoodS
     delim = [16, bytes_type_ref, pk_type_ref, food_type_ref]
     ends: list[int] = []
     for i in range(len(tokens) - 3):
-        if tokens[i:i + 4] == delim:
+        if tokens[i : i + 4] == delim:
             ends.append(i + 3)
 
     # First entry starts after the first negative-int marker (a GWT idiom).
@@ -76,10 +75,10 @@ def _extract_search_results(tokens: list, string_table: list[str]) -> list[FoodS
     prev = start
     skip = {"All Foods", "BB", "BQ", "en-US", "I", "Z"}
     for end in ends:
-        chunk = tokens[prev:end + 1]
+        chunk = tokens[prev : end + 1]
         pk_bytes: list[int] = []
         if len(chunk) >= 4 + 16:
-            pk_bytes = [int(x) for x in chunk[-(4 + 16):-4]]
+            pk_bytes = [int(x) for x in chunk[-(4 + 16) : -4]]
 
         candidates: list[str] = []
         for t in chunk:
@@ -106,9 +105,14 @@ def _extract_search_results(tokens: list, string_table: list[str]) -> list[FoodS
                     break
 
         if name and pk_bytes and len(pk_bytes) == 16:
-            foods.append(FoodSearchResult(
-                name=name, brand=brand, category=category, pk_bytes=pk_bytes,
-            ))
+            foods.append(
+                FoodSearchResult(
+                    name=name,
+                    brand=brand,
+                    category=category,
+                    pk_bytes=pk_bytes,
+                )
+            )
         prev = end + 1
     return foods
 
@@ -122,8 +126,11 @@ def search(http: HttpClient, query: str) -> list[FoodSearchResult]:
 
 # ── getUnsavedFoodLogEntry ──────────────────────────────────────────────────
 
+
 def _build_unsaved_payload(
-    config: Config, food: FoodSearchResult, locale: str = "en-US",
+    config: Config,
+    food: FoodSearchResult,
+    locale: str = "en-US",
 ) -> str:
     if len(food.pk_bytes) != 16:
         raise ValueError("food.pk_bytes must be 16 bytes")
@@ -169,13 +176,19 @@ def _parse_unsaved_response(tokens: list, string_table: list[str]) -> UnsavedFoo
             food_measure_ref = ref
 
     out = UnsavedFoodLogEntry(
-        name="", brand="", category="", food_pk_bytes=None, day_key="",
+        name="",
+        brand="",
+        category="",
+        food_pk_bytes=None,
+        day_key="",
     )
 
     skip = {"en-US", "I", "Z", "All Foods", "P__________"}
     candidates = [
-        s for s in string_table
-        if s and not (s.startswith("com.") or s.startswith("java.") or s.startswith("["))
+        s
+        for s in string_table
+        if s
+        and not (s.startswith("com.") or s.startswith("java.") or s.startswith("["))
         and s not in skip
     ]
     if candidates:
@@ -197,8 +210,8 @@ def _parse_unsaved_response(tokens: list, string_table: list[str]) -> UnsavedFoo
     if bytes_ref and pk_ref:
         pk_positions = []
         for i in range(16, len(tokens) - 2):
-            if (tokens[i] == 16 and tokens[i + 1] == bytes_ref and tokens[i + 2] == pk_ref):
-                maybe = tokens[i - 16:i]
+            if tokens[i] == 16 and tokens[i + 1] == bytes_ref and tokens[i + 2] == pk_ref:
+                maybe = tokens[i - 16 : i]
                 if all(isinstance(x, (int, float)) for x in maybe):
                     pk_positions.append([int(x) for x in maybe])
         if len(pk_positions) >= 2:
@@ -208,9 +221,12 @@ def _parse_unsaved_response(tokens: list, string_table: list[str]) -> UnsavedFoo
 
     if fm_ref and dbl_ref:
         for i in range(len(tokens) - 3):
-            if (tokens[i + 3] == fm_ref and tokens[i + 1] == dbl_ref
-                    and isinstance(tokens[i + 2], int)
-                    and isinstance(tokens[i], (int, float))):
+            if (
+                tokens[i + 3] == fm_ref
+                and tokens[i + 1] == dbl_ref
+                and isinstance(tokens[i + 2], int)
+                and isinstance(tokens[i], (int, float))
+            ):
                 ord_ = int(tokens[i + 2])
                 if 0 <= ord_ <= 30:
                     out.nutrients[ord_] = float(tokens[i])
@@ -230,7 +246,8 @@ def _parse_unsaved_response(tokens: list, string_table: list[str]) -> UnsavedFoo
 
 
 def get_unsaved_food_log_entry(
-    http: HttpClient, food: FoodSearchResult,
+    http: HttpClient,
+    food: FoodSearchResult,
 ) -> UnsavedFoodLogEntry:
     """Return the food's nutrient + serving template (no diary write)."""
     text = http.post_rpc(_build_unsaved_payload(http.config, food))

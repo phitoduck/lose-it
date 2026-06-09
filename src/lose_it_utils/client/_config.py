@@ -5,11 +5,11 @@ redeploys their web app — these are the latest values observed during
 development and are expected to be overridden by env vars in production use.
 Defaults are kept here so tests can run without the env being set up.
 """
+
 from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-
 
 SERVICE_URL = "https://www.loseit.com/web/service"
 BASE_URL = "https://d3hsih69yn4d89.cloudfront.net/web/"
@@ -28,7 +28,7 @@ class Config:
     service_url: str = SERVICE_URL
 
     @classmethod
-    def from_env(cls, **overrides) -> "Config":
+    def from_env(cls, **overrides) -> Config:
         """Build a Config from LOSEIT_* env vars, with kwargs as final overrides."""
         env = os.environ
         defaults = {
@@ -48,8 +48,15 @@ MEAL_TYPES = {v: k for k, v in MEAL_NAMES.items()} | {"snack": 3}
 # Nutrient ordinals → human label. The server only accepts these 9 ordinals
 # in the FoodNutrients HashMap when constructing FoodLogEntry payloads.
 NUTRIENT_NAMES = {
-    0: "calories", 2: "fat", 3: "saturated_fat", 8: "cholesterol",
-    9: "sodium", 10: "carbs", 11: "fiber", 12: "sugar", 13: "protein",
+    0: "calories",
+    2: "fat",
+    3: "saturated_fat",
+    8: "cholesterol",
+    9: "sodium",
+    10: "carbs",
+    11: "fiber",
+    12: "sugar",
+    13: "protein",
 }
 
 # A known day_num/date anchor from the GWT request sniffing session.

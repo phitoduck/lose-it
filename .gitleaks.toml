@@ -1,0 +1,26 @@
+# gitleaks configuration for the lose-it repository.
+#
+# Inherits the default ruleset (`useDefault = true`) which catches AWS keys,
+# JWTs, generic high-entropy tokens, private keys, and dozens of provider
+# tokens. The allowlist below carves out the test fixtures only.
+#
+# IMPORTANT: do NOT broaden the allowlist beyond test fixtures. The whole
+# point of running gitleaks pre-commit is to make accidentally committing a
+# real liauth JWT (or any other secret) loud and blocking.
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "loseit-jwt"
+description = "LoseIt 'liauth' / 'fn_auth' JWT (ES384, custom kid)"
+# Matches LoseIt's specific JWT header (alg=ES384, kid=MD2BMUN8VL). Tighter
+# than the generic JWT rule so the hook surfaces real LoseIt tokens by name.
+regex = '''eyJhbGciOiJFUzM4NCIsInR5cCI6IkpXVCIsImtpZCI6Ik1EMkJNVU44VkwifQ\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}'''
+tags = ["jwt", "loseit"]
+
+[allowlist]
+description = "Test fixtures contain sanitized response bodies (placeholders, not real creds)."
+paths = [
+    '''tests/conformance/fixtures/.*\.txt''',
+]

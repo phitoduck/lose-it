@@ -3,6 +3,7 @@
 These mirror the relevant LoseIt domain objects but keep only the fields
 needed for the round-trip (search → unsaved → log; list → delete).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

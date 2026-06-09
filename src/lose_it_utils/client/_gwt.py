@@ -18,10 +18,11 @@ Two GWT-specific quirks to be aware of:
    ``Context``, ``PrimaryKey``, … appears in the response stream as the
    inverse sequence: PK, context, identifier, …
 """
+
 from __future__ import annotations
 
 import re
-from typing import Iterable
+from collections.abc import Iterable
 
 
 def reverse_bytes(byte_list: Iterable[int]) -> list[int]:
@@ -51,7 +52,7 @@ def parse_response(text: str) -> tuple[list, list[str]]:
         return [], []
 
     data_str = inner[:table_start]
-    table_str = inner[table_start + 1:]
+    table_str = inner[table_start + 1 :]
 
     string_table = []
     for m in re.finditer(r'"((?:[^"\\]|\\.)*)"', table_str):
@@ -88,11 +89,7 @@ def resolve_string(string_table: list[str], ref: int) -> str | None:
 
 def is_short_key(s: object) -> bool:
     """Heuristic: is this token a GWT short string (day_key / food_code)?"""
-    return (
-        isinstance(s, str)
-        and 4 <= len(s) <= 16
-        and bool(re.match(r"^[A-Za-z0-9_$]+$", s))
-    )
+    return isinstance(s, str) and 4 <= len(s) <= 16 and bool(re.match(r"^[A-Za-z0-9_$]+$", s))
 
 
 def is_food_identifier_code(s: object) -> bool:

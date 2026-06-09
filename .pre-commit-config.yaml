@@ -1,0 +1,47 @@
+# prek/pre-commit configuration.
+#
+# Run locally:
+#   prek install       # install git hook so commits are checked
+#   prek run --all-files   # run every hook against the whole tree
+#
+# Hooks (in execution order):
+#   1. trim-trailing-whitespace, end-of-file-fixer, check-merge-conflict, …
+#   2. ruff (lint + format)
+#   3. gitleaks (scan for accidentally-committed secrets — JWTs, tokens, keys)
+#
+# Secrets policy: the test fixtures under `tests/conformance/fixtures/` are
+# captured GWT-RPC bodies that have been sanitized (real user_id / username
+# replaced with `12345678` / `test.user`), but they still contain JWT-shaped
+# patterns and look like high-entropy strings. The gitleaks config in
+# `.gitleaks.toml` allowlists that directory specifically.
+
+default_install_hook_types: [pre-commit, pre-push]
+default_stages: [pre-commit]
+fail_fast: false
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^tests/conformance/fixtures/
+      - id: end-of-file-fixer
+        exclude: ^tests/conformance/fixtures/
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=200]
+      - id: check-yaml
+      - id: check-toml
+      - id: detect-private-key
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.16
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks

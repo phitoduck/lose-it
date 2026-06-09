@@ -1,4 +1,5 @@
 """Conformance tests for ``entries.log_food`` and ``entries.delete``."""
+
 from __future__ import annotations
 
 from lose_it_utils.client import daily, entries
@@ -11,7 +12,8 @@ SERVICE_URL = "https://www.loseit.com/web/service"
 def test_log_food_request_shape(test_client, httpx_mock, fixture_text):
     """``log_food`` sends an updateFoodLogEntry envelope with all required fields."""
     httpx_mock.add_response(
-        url=SERVICE_URL, text=fixture_text("update_food_log_entry_success.txt"),
+        url=SERVICE_URL,
+        text=fixture_text("update_food_log_entry_success.txt"),
     )
     unsaved = UnsavedFoodLogEntry(
         name="Test Food",
@@ -19,14 +21,17 @@ def test_log_food_request_shape(test_client, httpx_mock, fixture_text):
         category="TestCategory",
         food_pk_bytes=[1] * 16,
         day_key="Z6mB_lo",
-        nutrients={0: 100.0, 2: 5.0, 3: 1.0, 8: 0.0, 9: 50.0,
-                   10: 10.0, 11: 2.0, 12: 5.0, 13: 8.0},
+        nutrients={0: 100.0, 2: 5.0, 3: 1.0, 8: 0.0, 9: 50.0, 10: 10.0, 11: 2.0, 12: 5.0, 13: 8.0},
         serving_qty=1.0,
         food_measure_ordinal=27,
     )
     entries.log_food(
-        test_client.http, unsaved, meal_ordinal=3,
-        day_key="Z6mB_lo", day_num=9290, servings=1.5,
+        test_client.http,
+        unsaved,
+        meal_ordinal=3,
+        day_key="Z6mB_lo",
+        day_num=9290,
+        servings=1.5,
     )
 
     body = httpx_mock.get_request().content.decode()
@@ -50,7 +55,8 @@ def test_delete_request_shape(test_client, httpx_mock, fixture_text):
     target = diary_entries[0]
 
     httpx_mock.add_response(
-        url=SERVICE_URL, text=fixture_text("delete_food_log_entry_success.txt"),
+        url=SERVICE_URL,
+        text=fixture_text("delete_food_log_entry_success.txt"),
     )
     entries.delete(test_client.http, target)
 
@@ -70,7 +76,7 @@ def test_delete_request_shape(test_client, httpx_mock, fixture_text):
 def test_delete_response_parses_as_ok(fixture_text):
     """The captured delete success response parses to a non-error //OK envelope."""
     text = fixture_text("delete_food_log_entry_success.txt")
-    tokens, strings = parse_response(text)
+    _tokens, strings = parse_response(text)
     assert text.startswith("//OK[")
     # The response carries a UserId + Integer + Boolean shape — verify strings.
     assert any("UserId/" in s for s in strings)

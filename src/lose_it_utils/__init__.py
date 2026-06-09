@@ -8,6 +8,7 @@ Reverse-engineered GWT-RPC client for loseit.com. Provides:
   one function per RPC method.
 - A CLI (``lose-it-utils.cli``) covering search, log, list, delete, replay.
 """
+
 from .client import Client
 
 __all__ = ["Client"]

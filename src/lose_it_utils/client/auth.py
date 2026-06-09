@@ -9,6 +9,7 @@ Optionally, :func:`refresh_token_from_chrome` decrypts Chrome's cookie store
 (via ``browser-cookie3``) so the JWT can be refreshed silently from a live
 browser session instead of doing the every-2-weeks DevTools dance.
 """
+
 from __future__ import annotations
 
 import os
@@ -24,9 +25,7 @@ def load_token(token_file: Path = DEFAULT_TOKEN_FILE) -> str:
         return env_token.strip()
     if token_file.exists():
         return token_file.read_text().strip()
-    raise FileNotFoundError(
-        f"No token: set LOSEIT_TOKEN env var or write JWT to {token_file}"
-    )
+    raise FileNotFoundError(f"No token: set LOSEIT_TOKEN env var or write JWT to {token_file}")
 
 
 def refresh_token_from_chrome(domain: str = "loseit.com") -> str | None:
@@ -43,9 +42,7 @@ def refresh_token_from_chrome(domain: str = "loseit.com") -> str | None:
     import glob
 
     candidates = sorted(
-        glob.glob(os.path.expanduser(
-            "~/Library/Application Support/Google/Chrome/*/Cookies"
-        ))
+        glob.glob(os.path.expanduser("~/Library/Application Support/Google/Chrome/*/Cookies"))
     )
     for path in candidates:
         try:

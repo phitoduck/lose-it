@@ -7,6 +7,7 @@ Provides one method, :meth:`HttpClient.post_rpc`, that handles:
 - recognizing GWT-level ``//EX`` error responses and surfacing them as
   exceptions instead of returning a body the caller has to re-check.
 """
+
 from __future__ import annotations
 
 import re
@@ -43,7 +44,10 @@ class HttpClient:
         cookies.set("liauth", token, domain="www.loseit.com", path="/")
         cookies.set("fn_auth", token, domain="www.loseit.com", path="/")
         self._client = httpx.Client(
-            headers=headers, cookies=cookies, timeout=30.0, transport=transport,
+            headers=headers,
+            cookies=cookies,
+            timeout=30.0,
+            transport=transport,
         )
 
     def close(self) -> None:

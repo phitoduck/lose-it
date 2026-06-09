@@ -5,6 +5,7 @@ uses the account's numeric user ID and username in plaintext, so any captured
 request/response includes them. We replace both with stable test placeholders
 so the conformance tests are reproducible without leaking real account info.
 """
+
 from __future__ import annotations
 
 import os

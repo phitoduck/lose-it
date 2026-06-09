@@ -1,4 +1,5 @@
 """Unit tests for low-level GWT-RPC helpers."""
+
 from __future__ import annotations
 
 from lose_it_utils.client import _gwt
@@ -19,7 +20,7 @@ def test_parse_response_handles_non_ok() -> None:
 def test_parse_response_extracts_string_table() -> None:
     """A simple ``//OK`` response with a string table parses both sides."""
     text = '//OK[1,2,3,4,5,"hello","world",["alpha","beta"]]'
-    tokens, strings = _gwt.parse_response(text)
+    _tokens, strings = _gwt.parse_response(text)
     assert "alpha" in strings and "beta" in strings
 
 
@@ -29,8 +30,8 @@ def test_is_food_identifier_code_recognizes_dollar_signs() -> None:
     assert _gwt.is_food_identifier_code("DoA3$q")
     assert _gwt.is_food_identifier_code("DoA4_x")
     assert not _gwt.is_food_identifier_code("Z6pBKc4")  # day key
-    assert not _gwt.is_food_identifier_code("Plain")    # no Do prefix
-    assert not _gwt.is_food_identifier_code(0)           # non-string
+    assert not _gwt.is_food_identifier_code("Plain")  # no Do prefix
+    assert not _gwt.is_food_identifier_code(0)  # non-string
 
 
 def test_fmt_num_keeps_integers_integral() -> None:

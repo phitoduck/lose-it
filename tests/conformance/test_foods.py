@@ -1,11 +1,9 @@
 """Conformance tests for ``foods.search`` and ``foods.get_unsaved_food_log_entry``."""
-from __future__ import annotations
 
-import pytest
+from __future__ import annotations
 
 from lose_it_utils.client import foods
 from lose_it_utils.client._models import FoodSearchResult
-
 
 SERVICE_URL = "https://www.loseit.com/web/service"
 
@@ -13,7 +11,8 @@ SERVICE_URL = "https://www.loseit.com/web/service"
 def test_search_request_envelope(test_client, httpx_mock, fixture_text):
     """The search request body has the correct GWT envelope and method ref."""
     httpx_mock.add_response(
-        url=SERVICE_URL, text=fixture_text("search_foods_tortilla.txt"),
+        url=SERVICE_URL,
+        text=fixture_text("search_foods_tortilla.txt"),
     )
     results = foods.search(test_client.http, "x-treme carb balance tortilla")
 
@@ -29,13 +28,13 @@ def test_search_request_envelope(test_client, httpx_mock, fixture_text):
 def test_search_parses_captured_response(test_client, httpx_mock, fixture_text):
     """Parsing the captured search response yields recognizable tortilla results."""
     httpx_mock.add_response(
-        url=SERVICE_URL, text=fixture_text("search_foods_tortilla.txt"),
+        url=SERVICE_URL,
+        text=fixture_text("search_foods_tortilla.txt"),
     )
     results = foods.search(test_client.http, "x-treme carb balance tortilla")
     assert results, "no results parsed"
     # At least one result should look like a Mission Carb Balance entry.
-    assert any("Xtreme" in r.name or "Mission" in r.brand or "Mission" in r.name
-               for r in results)
+    assert any("Xtreme" in r.name or "Mission" in r.brand or "Mission" in r.name for r in results)
     # Every result has 16-byte PK bytes.
     for r in results:
         assert isinstance(r, FoodSearchResult)
@@ -45,7 +44,8 @@ def test_search_parses_captured_response(test_client, httpx_mock, fixture_text):
 def test_get_unsaved_request_envelope(test_client, httpx_mock, fixture_text):
     """The unsaved-entry request body contains the food name + reversed PK bytes."""
     httpx_mock.add_response(
-        url=SERVICE_URL, text=fixture_text("get_unsaved_tortilla.txt"),
+        url=SERVICE_URL,
+        text=fixture_text("get_unsaved_tortilla.txt"),
     )
     food = FoodSearchResult(
         name="Tortilla Wraps, High Fiber, Low Carb, Xtreme Wellness",
@@ -68,11 +68,13 @@ def test_get_unsaved_request_envelope(test_client, httpx_mock, fixture_text):
 def test_get_unsaved_parses_captured_response(test_client, httpx_mock, fixture_text):
     """Parsing the unsaved-entry response yields a usable template with nutrients."""
     httpx_mock.add_response(
-        url=SERVICE_URL, text=fixture_text("get_unsaved_tortilla.txt"),
+        url=SERVICE_URL,
+        text=fixture_text("get_unsaved_tortilla.txt"),
     )
     food = FoodSearchResult(
         name="Tortilla Wraps, High Fiber, Low Carb, Xtreme Wellness",
-        brand="Mission Tortillas Carb Balance", category="Tortilla",
+        brand="Mission Tortillas Carb Balance",
+        category="Tortilla",
         pk_bytes=list(range(16)),
     )
     unsaved = foods.get_unsaved_food_log_entry(test_client.http, food)
