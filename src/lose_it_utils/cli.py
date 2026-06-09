@@ -29,7 +29,9 @@ from __future__ import annotations
 
 import enum
 import json
-from datetime import date
+import webbrowser
+from datetime import UTC, date, datetime
+from pathlib import Path
 from typing import Annotated, Any
 
 import typer
@@ -37,6 +39,14 @@ import typer
 from .client import Client, MissingConfigError, daily, entries, foods
 from .client._config import MEAL_NAMES, MEAL_TYPES
 from .client._dates import day_number_for, parse_date_arg
+from .client.auth import (
+    DEFAULT_TOKEN_FILE,
+    SIGNIN_URL,
+    decode_jwt_exp,
+    is_token_expired,
+    refresh_token_from_browser,
+    save_token,
+)
 from .client.init import get_daydate_key
 
 
@@ -47,6 +57,13 @@ class OutputFormat(enum.StrEnum):
     json = "json"
 
 
+class Browser(enum.StrEnum):
+    """Browsers we can import the ``liauth`` cookie from."""
+
+    chrome = "chrome"
+    brave = "brave"
+
+
 app = typer.Typer(
     name="lose-it",
     help="Unofficial Lose It! food logger / diary CLI.",
@@ -55,7 +72,7 @@ app = typer.Typer(
 )
 
 
-# ── Top-level callback: --output / -o is a global option ─────────────────────
+# ── Top-level callback: global config + output options ──────────────────────
 
 
 @app.callback()
@@ -70,10 +87,70 @@ def _root(
             "`json` emits a script-friendly JSON document on stdout.",
         ),
     ] = OutputFormat.text,
+    config_file: Annotated[
+        Path | None,
+        typer.Option(
+            "--config-file",
+            help=(
+                "Path to the YAML config file. Default: "
+                "~/.config/loseit/config.yaml. Also overridable via "
+                "LOSEIT_CONFIG_FILE."
+            ),
+        ),
+    ] = None,
+    user_id: Annotated[
+        str | None,
+        typer.Option(
+            "--user-id",
+            help='Override LOSEIT_USER_ID / YAML "user_id".',
+        ),
+    ] = None,
+    user_name: Annotated[
+        str | None,
+        typer.Option(
+            "--user-name",
+            help='Override LOSEIT_USER_NAME / YAML "user_name".',
+        ),
+    ] = None,
+    hours_from_gmt: Annotated[
+        int | None,
+        typer.Option(
+            "--hours-from-gmt",
+            help='Override LOSEIT_HOURS_FROM_GMT / YAML "hours_from_gmt".',
+        ),
+    ] = None,
+    policy_hash: Annotated[
+        str | None,
+        typer.Option(
+            "--policy-hash",
+            help='Override LOSEIT_POLICY_HASH / YAML "policy_hash".',
+        ),
+    ] = None,
+    strong_name: Annotated[
+        str | None,
+        typer.Option(
+            "--strong-name",
+            help='Override LOSEIT_STRONG_NAME / YAML "strong_name".',
+        ),
+    ] = None,
 ) -> None:
-    """Set up the per-invocation context (output format)."""
+    """Set up the per-invocation context.
+
+    The global config flags here form the highest-priority layer
+    (CLI > env > YAML > defaults). Only flags the user explicitly passes
+    are forwarded to ``Config.from_env`` so that unset flags do not shadow
+    lower-priority sources.
+    """
     ctx.ensure_object(dict)
     ctx.obj["output"] = output
+    ctx.obj["config_overrides"] = {
+        "config_file": config_file,
+        "user_id": user_id,
+        "user_name": user_name,
+        "hours_from_gmt": hours_from_gmt,
+        "policy_hash": policy_hash,
+        "strong_name": strong_name,
+    }
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -96,10 +173,18 @@ def _jsonable(obj: Any) -> Any:
     raise TypeError(f"Unserializable type {type(obj).__name__}")
 
 
-def _open_client() -> Client:
-    """Build a Client from env vars; print a friendly error if config / token missing."""
+def _open_client(ctx: typer.Context | None = None) -> Client:
+    """Build a Client from the layered sources; print a friendly error if missing.
+
+    When called with a Typer context, any ``--user-id``/``--user-name``/…
+    CLI flags stashed in ``ctx.obj["config_overrides"]`` are forwarded as
+    the highest-priority config layer.
+    """
+    overrides: dict[str, object] = {}
+    if ctx is not None and ctx.obj:
+        overrides = ctx.obj.get("config_overrides") or {}
     try:
-        return Client.from_env()
+        return Client.from_env(**overrides)
     except FileNotFoundError as e:
         typer.secho(f"❌ {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from e
@@ -189,7 +274,7 @@ def search(
 ) -> None:
     """Search the LoseIt food database."""
     fmt = _output_format(ctx)
-    with _open_client() as client:
+    with _open_client(ctx) as client:
         results = foods.search(client.http, query)
         if fmt is OutputFormat.json:
             _emit_json(
@@ -243,7 +328,7 @@ def log(
         )
         raise typer.Exit(code=2)
     when = parse_date_arg(on_date)
-    with _open_client() as client:
+    with _open_client(ctx) as client:
         results = foods.search(client.http, query)
         if fmt is OutputFormat.text:
             _print_search_results(results)
@@ -301,7 +386,7 @@ def diary(
     """List the diary for a given date (default: today)."""
     fmt = _output_format(ctx)
     when = parse_date_arg(on_date)
-    with _open_client() as client:
+    with _open_client(ctx) as client:
         es = daily.get_daily_details(client.http, when)
         if fmt is OutputFormat.json:
             _emit_json(
@@ -349,7 +434,7 @@ def delete(
         raise typer.Exit(code=2)
     when = parse_date_arg(on_date)
     meal_ord = MEAL_TYPES[meal]
-    with _open_client() as client:
+    with _open_client(ctx) as client:
         es = daily.get_daily_details(client.http, when)
         if not es:
             msg = f"No diary entries for {when.isoformat()}"
@@ -426,10 +511,172 @@ def delete(
 
 
 @app.command()
+def login(
+    ctx: typer.Context,
+    browser: Annotated[
+        Browser,
+        typer.Option(
+            "--browser",
+            "-b",
+            help="Which browser to read the liauth cookie from.",
+        ),
+    ] = Browser.chrome,
+    token_file: Annotated[
+        Path,
+        typer.Option(
+            "--token-file",
+            help="Where to write the imported JWT.",
+            envvar="LOSEIT_TOKEN_FILE",
+        ),
+    ] = DEFAULT_TOKEN_FILE,
+    open_signin: Annotated[
+        bool,
+        typer.Option(
+            "--open/--no-open",
+            help="If the cookie is missing/expired, open the Lose It! signin page.",
+        ),
+    ] = True,
+) -> None:
+    """Import the liauth JWT from Chrome or Brave's cookie store.
+
+    Assuming you're already logged into loseit.com in the chosen browser,
+    this command extracts the ``liauth`` cookie, sanity-checks the JWT's
+    ``exp`` claim, and writes it to the token file (default
+    ``~/.config/loseit/token``). On first run macOS may prompt for Keychain
+    access so the browser's cookie-store master key can be unlocked.
+
+    If the cookie is missing or expired, the Lose It! signin page is opened
+    in that browser; re-run ``lose-it login`` after signing in.
+    """
+    fmt = _output_format(ctx)
+    name = browser.value
+    token = refresh_token_from_browser(name)
+
+    if token is None:
+        _login_failure(
+            fmt=fmt,
+            browser=name,
+            reason="missing",
+            token_file=token_file,
+            open_signin=open_signin,
+            message=f"No liauth cookie found in {name.title()} for loseit.com.",
+        )
+        return
+
+    exp = decode_jwt_exp(token)
+    if is_token_expired(token):
+        _login_failure(
+            fmt=fmt,
+            browser=name,
+            reason="expired",
+            token_file=token_file,
+            open_signin=open_signin,
+            message=f"liauth cookie in {name.title()} is expired.",
+            exp=exp,
+        )
+        return
+
+    save_token(token, token_file)
+
+    if fmt is OutputFormat.json:
+        _emit_json(
+            {
+                "action": "login",
+                "status": "ok",
+                "browser": name,
+                "token_file": str(token_file),
+                "exp": exp,
+                "exp_iso": _exp_iso(exp),
+            }
+        )
+    else:
+        typer.secho(
+            f"✅ Imported liauth from {name.title()} → {token_file}",
+            fg=typer.colors.GREEN,
+        )
+        if exp is not None:
+            typer.echo(f"   JWT exp: {_exp_iso(exp)}")
+
+
+def _login_failure(
+    *,
+    fmt: OutputFormat,
+    browser: str,
+    reason: str,
+    token_file: Path,
+    open_signin: bool,
+    message: str,
+    exp: int | None = None,
+) -> None:
+    """Common error path for the ``login`` command: print, open browser, exit 1."""
+    opened = False
+    if open_signin:
+        opened = _open_in_browser(SIGNIN_URL, browser)
+
+    if fmt is OutputFormat.json:
+        _emit_json(
+            {
+                "action": "login",
+                "status": reason,
+                "browser": browser,
+                "token_file": str(token_file),
+                "exp": exp,
+                "exp_iso": _exp_iso(exp),
+                "signin_url": SIGNIN_URL,
+                "opened_browser": opened,
+                "message": message,
+            }
+        )
+    else:
+        typer.secho(f"❌ {message}", fg=typer.colors.RED, err=True)
+        if exp is not None:
+            typer.echo(f"   JWT exp: {_exp_iso(exp)} (now: {_exp_iso(int(_now()))})", err=True)
+        if opened:
+            typer.echo(f"   Opened {SIGNIN_URL} in {browser.title()}.", err=True)
+        else:
+            typer.echo(f"   Sign in here: {SIGNIN_URL}", err=True)
+        typer.echo(f"   Then re-run: lose-it login --browser {browser}", err=True)
+    raise typer.Exit(code=1)
+
+
+def _open_in_browser(url: str, browser: str) -> bool:
+    """Open ``url`` in the named browser; fall back to the system default."""
+    import shutil
+    import subprocess
+    import sys
+
+    if sys.platform == "darwin":
+        app_name = {"chrome": "Google Chrome", "brave": "Brave Browser"}.get(browser)
+        if app_name:
+            try:
+                subprocess.run(["open", "-a", app_name, url], check=True)
+                return True
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                pass
+    elif shutil.which(browser):
+        try:
+            subprocess.Popen([browser, url])
+            return True
+        except OSError:
+            pass
+    return webbrowser.open(url)
+
+
+def _now() -> float:
+    return datetime.now(tz=UTC).timestamp()
+
+
+def _exp_iso(exp: int | None) -> str | None:
+    if exp is None:
+        return None
+    return datetime.fromtimestamp(exp, tz=UTC).isoformat()
+
+
+@app.command()
 def whoami(ctx: typer.Context) -> None:
     """Print the resolved client configuration."""
     fmt = _output_format(ctx)
-    with _open_client() as client:
+    with _open_client(ctx) as client:
         cfg = client.config
         if fmt is OutputFormat.json:
             _emit_json(

@@ -132,11 +132,16 @@ def test_log_dry_run_does_not_post_update(env, runner: CliRunner, httpx_mock) ->
     result = runner.invoke(
         app,
         [
-            "-o", "json",
-            "log", "tortilla",
-            "--meal", "lunch",
-            "--pick", "1",
-            "--servings", "1",
+            "-o",
+            "json",
+            "log",
+            "tortilla",
+            "--meal",
+            "lunch",
+            "--pick",
+            "1",
+            "--servings",
+            "1",
             "--dry-run",
         ],
     )
@@ -149,9 +154,7 @@ def test_log_dry_run_does_not_post_update(env, runner: CliRunner, httpx_mock) ->
     assert "food" in payload and "name" in payload["food"]
 
     # Critical: no updateFoodLogEntry RPC was made.
-    sent_bodies = [
-        req.content.decode() for req in httpx_mock.get_requests()
-    ]
+    sent_bodies = [req.content.decode() for req in httpx_mock.get_requests()]
     assert not any("updateFoodLogEntry" in b for b in sent_bodies), (
         "dry-run should NOT post updateFoodLogEntry"
     )
@@ -205,8 +208,14 @@ def test_delete_dry_run_does_not_post_delete(env, runner: CliRunner, httpx_mock)
     result = runner.invoke(
         app,
         [
-            "-o", "json",
-            "delete", "--meal", "snacks", "--pick", "1", "--dry-run",
+            "-o",
+            "json",
+            "delete",
+            "--meal",
+            "snacks",
+            "--pick",
+            "1",
+            "--dry-run",
         ],
     )
     assert result.exit_code == 0, result.output

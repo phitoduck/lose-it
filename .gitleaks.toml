@@ -1,22 +1,46 @@
 # gitleaks configuration for the lose-it repository.
 #
 # Inherits the default ruleset (`useDefault = true`) which catches AWS keys,
-# JWTs, generic high-entropy tokens, private keys, and dozens of provider
-# tokens. The allowlist below carves out the test fixtures only.
+# generic high-entropy tokens, private keys, and dozens of provider tokens.
+# The custom rules below specifically target the ``liauth`` / ``fn_auth``
+# JWTs that ``lose-it login`` imports from a browser cookie store; these
+# are the only secrets a contributor would realistically have on disk in a
+# location that touches this repo.
 #
-# IMPORTANT: do NOT broaden the allowlist beyond test fixtures. The whole
-# point of running gitleaks pre-commit is to make accidentally committing a
-# real liauth JWT (or any other secret) loud and blocking.
+# IMPORTANT: do NOT broaden the allowlist beyond the test fixtures. The
+# whole point of running gitleaks pre-commit *and* pre-push is to make
+# accidentally committing a real liauth JWT (or anything that looks like
+# one) loud and blocking.
 
 [extend]
 useDefault = true
 
+# ── Tight rule: the Lose It! ES384 JWT header ────────────────────────────────
+#
+# Every ``liauth`` / ``fn_auth`` cookie issued by loseit.com today is an
+# ES384 JWT. The base64-encoded header always begins with
+# ``{"alg":"ES384","typ":"JWT","kid":"…"}``. We pin the alg + typ portion
+# but deliberately leave the ``kid`` open: when Lose It rotates their
+# signing key the ``kid`` value changes, and we still want the new tokens
+# blocked.
 [[rules]]
 id = "loseit-jwt"
-description = "LoseIt 'liauth' / 'fn_auth' JWT (ES384, custom kid)"
-# Matches LoseIt's specific JWT header (alg=ES384, kid=MD2BMUN8VL). Tighter
-# than the generic JWT rule so the hook surfaces real LoseIt tokens by name.
-regex = '''eyJhbGciOiJFUzM4NCIsInR5cCI6IkpXVCIsImtpZCI6Ik1EMkJNVU44VkwifQ\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}'''
+description = "LoseIt 'liauth' / 'fn_auth' ES384 JWT (any kid)"
+regex = '''eyJhbGciOiJFUzM4NCIsInR5cCI6IkpXVCIsImtpZCI6[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}'''
+tags = ["jwt", "loseit"]
+
+# ── Fallback rule: cookie name beside any JWT-shaped string ──────────────────
+#
+# Defense-in-depth in case Lose It ever flips the signing algorithm. Catches
+# patterns like:
+#   liauth=eyJhbG…aaa.bbb.ccc
+#   "fn_auth": "eyJhbG…aaa.bbb.ccc"
+#   Cookie: liauth=eyJhbG…aaa.bbb.ccc
+# regardless of which alg/typ/kid the JWT header encodes.
+[[rules]]
+id = "loseit-cookie-jwt"
+description = "liauth or fn_auth cookie name adjacent to a JWT-shaped value"
+regex = '''(?i)\b(liauth|fn_auth)\b["'\s:=]{1,8}(eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,})'''
 tags = ["jwt", "loseit"]
 
 [allowlist]
