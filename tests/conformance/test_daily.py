@@ -105,6 +105,4 @@ def test_daily_details_filters_email_local_part_from_brand(fixture_text):
     )
     soup = by_name["Organic Tomatoe & Roasted Red Pepper Soup"]
     assert soup.food_brand == "", f"expected empty brand, got {soup.food_brand!r}"
-    assert soup.food_category == "Tomato", (
-        f"expected category='Tomato', got {soup.food_category!r}"
-    )
+    assert soup.food_category == "Tomato", f"expected category='Tomato', got {soup.food_category!r}"
