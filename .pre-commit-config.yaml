@@ -44,4 +44,8 @@ repos:
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
     hooks:
+      # Belt-and-suspenders: scan at both commit and push time so a
+      # `git commit --no-verify` still gets caught before the secret leaves
+      # the laptop.
       - id: gitleaks
+        stages: [pre-commit, pre-push]

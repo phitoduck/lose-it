@@ -46,10 +46,17 @@ class Client:
         transport: httpx.BaseTransport | None = None,
         **config_overrides,
     ) -> Client:
-        """Build a Client from ``LOSEIT_*`` env vars + the token file."""
+        """Build a Client from the layered config (CLI > env > YAML > defaults).
+
+        ``token`` and any ``LOSEIT_*`` settings are resolved from the same
+        layered sources via :meth:`Config.from_env`. If a ``token`` kwarg
+        is passed explicitly it wins; otherwise the resolved
+        ``config.token`` is used; otherwise the token file at
+        ``config.token_file`` is read.
+        """
         config = Config.from_env(**config_overrides)
         if token is None:
-            token = _auth.load_token()
+            token = config.token or _auth.load_token(config.token_file)
         return cls(config, token, transport=transport)
 
     def close(self) -> None:

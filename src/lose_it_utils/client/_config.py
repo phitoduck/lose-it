@@ -1,102 +1,72 @@
-"""Configuration constants for the Lose It! client.
+"""Client configuration — thin façade over :mod:`_settings`.
 
-Two classes of config end up in a :class:`Config`:
+Historically this file defined a plain ``@dataclass(frozen=True)`` Config plus
+a ``from_env`` classmethod. As part of the 12-factor refactor the underlying
+loader moved to :mod:`_settings` (pydantic-settings) which supports a layered
+priority — CLI > env > YAML > defaults — using the same field set as the
+public spec of the YAML file.
 
-1. **Per-account values** (``user_id``, ``user_name``, ``hours_from_gmt``).
-   These identify *you* and have **no default** — they must come from env
-   vars or explicit kwargs, otherwise ``Config.from_env`` raises. We do not
-   ship author-tied defaults because (a) they identify a specific human
-   and (b) silently falling back to someone else's account would make
-   debugging "I posted to whose diary?" surprises impossible.
+For continuity, ``Config`` is now an alias for :class:`Settings`. The
+``Config.from_env`` classmethod is preserved so existing call-sites and
+fixtures keep working. Direct construction is also still supported (the
+pydantic source layering means any unset field will be filled from
+env/YAML/defaults — pass ``Config.model_construct(...)`` in tests where
+you need to bypass env loading entirely).
 
-2. **Per-build values** (``policy_hash``, ``strong_name``). These are GWT
-   compile-time signatures of LoseIt's compiled web client; they change
-   every time LoseIt redeploys. The defaults below are *whatever was current
-   when this file was last touched*; refresh via the ``LOSEIT_POLICY_HASH``
-   and ``LOSEIT_STRONG_NAME`` env vars when requests start returning
-   ``IncompatibleRemoteServiceException``.
-
-> **Why aren't the ``Class/<digits>`` strings in this repo a leak?** Numbers
-> like ``UserId/4281239478`` or ``ServiceRequestToken/1076571655`` are GWT
-> type-serialization hashes derived from each Java class's fields. They are
-> identical for every user of the same client build and are inlined in the
-> public ``*.cache.js`` bundle anyone can ``curl`` from
-> ``d3hsih69yn4d89.cloudfront.net``. They are protocol type tags, not
-> credentials or session identifiers.
+The two classes of config (per-account vs per-build) are documented on
+the :class:`Settings` class itself.
 """
 
 from __future__ import annotations
 
-import os
-from dataclasses import dataclass
+from typing import Any
 
-SERVICE_URL = "https://www.loseit.com/web/service"
-BASE_URL = "https://d3hsih69yn4d89.cloudfront.net/web/"
+from ._settings import (
+    BASE_URL,
+    DEFAULT_CONFIG_FILE,
+    DEFAULT_TOKEN_FILE,
+    SERVICE_URL,
+    MissingConfigError,
+    Settings,
+    load_settings,
+)
+
+__all__ = [
+    "BASE_URL",
+    "DAY_NUM_ANCHOR_DATE",
+    "DAY_NUM_ANCHOR_VALUE",
+    "DEFAULT_CONFIG_FILE",
+    "DEFAULT_TOKEN_FILE",
+    "MEAL_NAMES",
+    "MEAL_TYPES",
+    "NUTRIENT_NAMES",
+    "SERVICE_URL",
+    "Config",
+    "MissingConfigError",
+]
 
 
-class MissingConfigError(EnvironmentError):
-    """Raised when a required ``LOSEIT_*`` env var is unset."""
+class Config(Settings):
+    """Per-account + per-build configuration.
 
-
-@dataclass(frozen=True)
-class Config:
-    """Per-account + per-build configuration. Build via :meth:`from_env`."""
-
-    user_id: str
-    user_name: str
-    hours_from_gmt: int
-    policy_hash: str
-    strong_name: str
-    base_url: str = BASE_URL
-    service_url: str = SERVICE_URL
+    Concrete subclass of :class:`Settings` kept for backwards compatibility
+    with existing call-sites that import ``Config`` directly.
+    """
 
     @classmethod
-    def from_env(cls, **overrides) -> Config:
-        """Build a Config from ``LOSEIT_*`` env vars; kwargs override env.
+    def from_env(cls, **overrides: Any) -> Config:
+        """Build a Config from the layered sources, with kwargs as CLI overrides.
 
-        Required (no default; raises :class:`MissingConfigError` if absent
-        and not provided as a kwarg):
+        Identical to ``load_settings(**overrides)`` but returns a ``Config``
+        instance for type-narrowing. Layered priority (highest first):
+        kwargs > env vars > YAML file > field defaults.
 
-        - ``LOSEIT_USER_ID`` — numeric ``sub`` claim of your ``liauth`` JWT
-        - ``LOSEIT_USER_NAME`` — your loseit.com username
-        - ``LOSEIT_HOURS_FROM_GMT`` — your local offset from UTC (e.g. ``-5``)
-
-        Optional (have safe defaults that may go stale on redeploy):
-
-        - ``LOSEIT_POLICY_HASH``
-        - ``LOSEIT_STRONG_NAME``
+        Raises :class:`MissingConfigError` if any of ``user_id`` /
+        ``user_name`` / ``hours_from_gmt`` is unset across all sources.
         """
-        env = os.environ
-        required = {
-            "user_id": ("LOSEIT_USER_ID", env.get("LOSEIT_USER_ID")),
-            "user_name": ("LOSEIT_USER_NAME", env.get("LOSEIT_USER_NAME")),
-            "hours_from_gmt": (
-                "LOSEIT_HOURS_FROM_GMT",
-                env.get("LOSEIT_HOURS_FROM_GMT"),
-            ),
-        }
-        resolved: dict[str, object] = {}
-        missing: list[str] = []
-        for field, (env_name, env_val) in required.items():
-            if field in overrides:
-                resolved[field] = overrides.pop(field)
-            elif env_val:
-                resolved[field] = env_val
-            else:
-                missing.append(env_name)
-        if missing:
-            raise MissingConfigError(
-                "Missing required env var(s): " + ", ".join(missing) + ". See README for setup."
-            )
-        # hours_from_gmt arrives as a str (env) or int (kwarg); coerce.
-        resolved["hours_from_gmt"] = int(resolved["hours_from_gmt"])  # type: ignore[arg-type]
-
-        defaults = {
-            "policy_hash": env.get("LOSEIT_POLICY_HASH", "8F87EC8969F17AE77B6283D3A83F6D4C"),
-            "strong_name": env.get("LOSEIT_STRONG_NAME", "351AE5DC0CA36AD3BA9C7CBA7B0E07B8"),
-        }
-        defaults.update(overrides)
-        return cls(**resolved, **defaults)
+        # load_settings already drops None overrides; just re-tag the type.
+        settings = load_settings(**overrides)
+        return cls.model_construct(**settings.model_dump())
 
 
 MEAL_NAMES = {0: "breakfast", 1: "lunch", 2: "dinner", 3: "snacks"}

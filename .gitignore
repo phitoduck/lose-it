@@ -27,3 +27,11 @@ dist/
 # OS
 .DS_Store
 Thumbs.db
+
+# Secrets — never commit a liauth/fn_auth JWT, even by accident
+token
+token.tmp
+*.jwt
+.env
+.env.*
+!.env.example

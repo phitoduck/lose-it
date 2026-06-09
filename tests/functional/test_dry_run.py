@@ -46,8 +46,14 @@ def test_log_dry_run_does_not_mutate_real_diary() -> None:
     result = runner.invoke(
         app,
         [
-            "log", "x-treme carb balance tortilla",
-            "--meal", "snacks", "--pick", "2", "--servings", "1",
+            "log",
+            "x-treme carb balance tortilla",
+            "--meal",
+            "snacks",
+            "--pick",
+            "2",
+            "--servings",
+            "1",
             "--dry-run",
         ],
     )
@@ -73,8 +79,14 @@ def test_delete_dry_run_does_not_mutate_real_diary() -> None:
     log_result = runner.invoke(
         app,
         [
-            "log", "x-treme carb balance tortilla",
-            "--meal", "snacks", "--pick", "2", "--servings", "1",
+            "log",
+            "x-treme carb balance tortilla",
+            "--meal",
+            "snacks",
+            "--pick",
+            "2",
+            "--servings",
+            "1",
         ],
     )
     assert log_result.exit_code == 0, log_result.output

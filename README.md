@@ -59,23 +59,72 @@ LOSEIT_RUN_FUNCTIONAL=1 uv run pytest  # incl. real-API CRUD
 
 ## Configure
 
-The SDK splits config into two clearly separated buckets so an end user never accidentally posts to someone else's diary:
+The SDK follows [12-factor](https://12factor.net/config) configuration: every
+setting can come from a YAML file, an environment variable, or a CLI flag, in
+that *lowest-to-highest* priority order. The pydantic-settings model in
+[`src/lose_it_utils/client/_settings.py`](src/lose_it_utils/client/_settings.py)
+is the single source of truth and the spec of the YAML file.
 
-### Required env vars (no defaults; `Config.from_env` raises if absent)
+### Priority (highest wins)
 
-These identify *you* and intentionally have no fallback — silently using a hardcoded user ID would be a footgun.
+1. **CLI flag** — e.g. `--user-id`, `--policy-hash` (passed to any subcommand)
+2. **`LOSEIT_*` env var** — e.g. `LOSEIT_USER_ID=…`
+3. **YAML file** — default path `~/.config/loseit/config.yaml`
+   (override with `--config-file` or `LOSEIT_CONFIG_FILE`)
+4. **Built-in default** — applied when no other layer sets the field
 
-```bash
-export LOSEIT_USER_ID=12345678          # "sub" claim of your liauth JWT (decode at jwt.io)
-export LOSEIT_USER_NAME=your.username   # loseit.com username
-export LOSEIT_HOURS_FROM_GMT=-6         # your local offset from UTC
+Required fields (`user_id`, `user_name`, `hours_from_gmt`) have **no defaults**;
+if no layer sets them, the SDK raises `MissingConfigError` rather than silently
+posting to the wrong account.
+
+### Config properties
+
+| YAML key / field  | CLI flag             | Env var                 | Type             | Default                                  | Description                                                                 |
+|-------------------|----------------------|-------------------------|------------------|------------------------------------------|-----------------------------------------------------------------------------|
+| `user_id`         | `--user-id`          | `LOSEIT_USER_ID`        | `str`            | *(required, no default)*                 | Numeric `sub` claim of your `liauth` JWT (decode at jwt.io).                |
+| `user_name`       | `--user-name`        | `LOSEIT_USER_NAME`      | `str`            | *(required, no default)*                 | Your loseit.com username.                                                   |
+| `hours_from_gmt`  | `--hours-from-gmt`   | `LOSEIT_HOURS_FROM_GMT` | `int`            | *(required, no default)*                 | Your local offset from UTC (e.g. `-6`).                                     |
+| `policy_hash`     | `--policy-hash`      | `LOSEIT_POLICY_HASH`    | `str`            | last-known-good                          | 5th `\|`-field of any `/web/service` POST body. Refresh on LoseIt redeploy. |
+| `strong_name`     | `--strong-name`      | `LOSEIT_STRONG_NAME`    | `str`            | last-known-good                          | `x-gwt-permutation` request header. Refresh on LoseIt redeploy.             |
+| `base_url`        | *(not exposed)*      | `LOSEIT_BASE_URL`       | `str`            | `https://d3hsih69yn4d89.cloudfront.net/web/` | GWT module base URL.                                                    |
+| `service_url`     | *(not exposed)*      | `LOSEIT_SERVICE_URL`    | `str`            | `https://www.loseit.com/web/service`     | GWT-RPC service endpoint.                                                   |
+| `token`           | *(not exposed)*      | `LOSEIT_TOKEN`          | `str`            | `None` → read from `token_file`          | `liauth` JWT. If unset, falls back to reading `token_file`.                 |
+| `token_file`      | *(not exposed)*      | `LOSEIT_TOKEN_FILE`     | `Path`           | `~/.config/loseit/token`                 | Where to read the JWT when `token` is unset.                                |
+| `config_file`     | `--config-file`      | `LOSEIT_CONFIG_FILE`    | `Path`           | `~/.config/loseit/config.yaml`           | YAML file consulted as the lowest-priority layer (after defaults).          |
+
+### YAML file (default `~/.config/loseit/config.yaml`)
+
+```yaml
+# Every key matches a field in the Settings model.
+user_id: "12345678"
+user_name: your.username
+hours_from_gmt: -6
+
+# Optional — defaults are last-known-good. Refresh from any /web/service POST
+# in DevTools when requests start failing with IncompatibleRemoteServiceException.
+# policy_hash: 8F87EC8969F17AE77B6283D3A83F6D4C
+# strong_name: 351AE5DC0CA36AD3BA9C7CBA7B0E07B8
 ```
 
-### Optional env vars (have defaults, but refresh when LoseIt redeploys)
+### Env vars (override YAML)
 
 ```bash
-export LOSEIT_POLICY_HASH=...    # 5th '|'-field of any /web/service POST body
-export LOSEIT_STRONG_NAME=...    # x-gwt-permutation request header
+export LOSEIT_USER_ID=12345678
+export LOSEIT_USER_NAME=your.username
+export LOSEIT_HOURS_FROM_GMT=-6
+export LOSEIT_POLICY_HASH=...   # optional
+export LOSEIT_STRONG_NAME=...   # optional
+```
+
+### CLI flags (override env)
+
+```bash
+lose-it \
+  --config-file ./project.yaml \
+  --user-id 12345678 \
+  --user-name your.username \
+  --hours-from-gmt -6 \
+  whoami
 ```
 
 ### Not user-specific (and not secrets)
