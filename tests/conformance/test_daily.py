@@ -66,3 +66,43 @@ def test_daily_details_entries_have_unique_entry_pks(fixture_text):
     entries = daily.parse_entries(text)
     entry_pks = [tuple(e.entry_pk_response) for e in entries]
     assert len(entry_pks) == len(set(entry_pks))
+
+
+def test_daily_details_filters_email_local_part_from_brand(fixture_text):
+    """User-saved foods without a real brand must not leak the user's email-local-part.
+
+    When a user logs a personal/customized food whose original brand isn't
+    preserved, the Lose It! server inserts the logging user's email-local-part
+    (e.g. ``test.user`` for ``test.user@example.com``) as a placeholder string
+    in the brand_ref slot. If ``parse_entries`` filters only against the full
+    configured ``user_name``, the placeholder leaks into ``food_brand`` and
+    bumps the actual food_name into the food_category field.
+    """
+    text = fixture_text("get_daily_details_with_user_saved_food.txt")
+    # Caller's user_name is the full email; the placeholder is the local-part.
+    entries = daily.parse_entries(
+        text,
+        default_hours_from_gmt=-6,
+        user_name="test.user@example.com",
+    )
+    assert entries, "no entries parsed"
+
+    # The placeholder string must never appear in either brand or name.
+    for e in entries:
+        assert e.food_brand != "test.user", (
+            f"email-local-part leaked into food_brand for {e.food_name!r}"
+        )
+        assert e.food_name != "test.user", (
+            f"email-local-part leaked into food_name for {e.food_brand!r}"
+        )
+
+    # The user-saved soup + Kodiak entries had no server-side brand, so after
+    # filtering the placeholder out, food_brand is empty and food_name + category
+    # reflect the real strings (not shifted by one).
+    by_name = {e.food_name: e for e in entries}
+    assert "Organic Tomatoe & Roasted Red Pepper Soup" in by_name, (
+        f"expected the user-saved soup entry; got names={list(by_name)}"
+    )
+    soup = by_name["Organic Tomatoe & Roasted Red Pepper Soup"]
+    assert soup.food_brand == "", f"expected empty brand, got {soup.food_brand!r}"
+    assert soup.food_category == "Tomato", f"expected category='Tomato', got {soup.food_category!r}"

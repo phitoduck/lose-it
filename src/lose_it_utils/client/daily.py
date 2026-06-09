@@ -239,27 +239,48 @@ def _extract_entry(
     # In the response stream the field order is brand_ref, name_ref, then
     # a null/locale, then category_ref. Collect string refs, skipping
     # framework / ProductType / username strings.
+    #
+    # Lose It! emits the logging user's email-local-part (e.g. "alice.smith"
+    # for "alice.smith@example.com") as a placeholder string in the
+    # brand_ref slot for foods the user has saved/customized in their
+    # personal DB without a real brand. We use the placeholder's presence
+    # as a positive signal that brand is empty and only collect two more
+    # strings (name + category); without that signal the scan window
+    # walks past the food's identifier into adjacent shared/dedup'd
+    # strings (e.g. nutrition-goal names) and ends up with the wrong
+    # three values in food_brand/food_name/food_category.
+    user_aliases = {user_name, user_name.split("@", 1)[0]} if user_name else set()
     food_category = food_name = food_brand = ""
     after = food_pk_block["marker_i"] + 4
     seen: list[str] = []
+    brand_is_placeholder = False
+    needed = 3
     for j in range(after, min(after + 15, len(tokens))):
         t = tokens[j]
-        if isinstance(t, int) and 1 <= t <= len(string_table):
-            s = string_table[t - 1]
-            if (
-                s
-                and not (s.startswith("com.") or s.startswith("java.") or s.startswith("["))
-                and s != user_name
-            ):
-                seen.append(s)
-                if len(seen) >= 3:
-                    break
-    if len(seen) >= 3:
-        food_brand, food_name, food_category = seen[:3]
-    elif len(seen) == 2:
-        food_name, food_category = seen
-    elif len(seen) == 1:
-        food_name = seen[0]
+        if not (isinstance(t, int) and 1 <= t <= len(string_table)):
+            continue
+        s = string_table[t - 1]
+        if not s or s.startswith("com.") or s.startswith("java.") or s.startswith("["):
+            continue
+        if s in user_aliases and not seen:
+            brand_is_placeholder = True
+            needed = 2
+            continue
+        seen.append(s)
+        if len(seen) >= needed:
+            break
+    if brand_is_placeholder:
+        if len(seen) >= 2:
+            food_name, food_category = seen[:2]
+        elif len(seen) == 1:
+            food_name = seen[0]
+    else:
+        if len(seen) >= 3:
+            food_brand, food_name, food_category = seen[:3]
+        elif len(seen) == 2:
+            food_name, food_category = seen
+        elif len(seen) == 1:
+            food_name = seen[0]
 
     # Servings — the first float in [mid_start+1, mid_start+5).
     servings = 1.0
