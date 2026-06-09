@@ -156,3 +156,41 @@ def test_get_unsaved_filters_long_username_from_name_and_brand(
     assert unsaved.name != long_name, "username leaked into unsaved.name"
     assert unsaved.brand != long_name, "username leaked into unsaved.brand"
     assert unsaved.category != long_name, "username leaked into unsaved.category"
+
+
+# ── Regression: email-local-part placeholder must not leak into brand ───────
+
+
+@pytest.fixture
+def email_username_client() -> Client:
+    """A Client whose ``user_name`` is a full email address.
+
+    Lose It! emits the email-local-part (``test.user``) as a brand-slot
+    placeholder for personally-saved foods. With a full-email ``user_name``,
+    the parser's equality check ``s != user_name`` misses the placeholder
+    unless we also drop the ``@``-prefix.
+    """
+    cfg = Config(
+        user_id="12345678",
+        user_name="test.user@example.com",
+        hours_from_gmt=-6,
+        policy_hash="8F87EC8969F17AE77B6283D3A83F6D4C",
+        strong_name="351AE5DC0CA36AD3BA9C7CBA7B0E07B8",
+    )
+    return Client(cfg, token="fake-jwt-token")
+
+
+def test_search_filters_email_local_part_from_brand(
+    email_username_client, httpx_mock, fixture_text
+):
+    """User-saved entries in search results must not carry ``test.user`` as their brand."""
+    httpx_mock.add_response(
+        url=SERVICE_URL,
+        text=fixture_text("search_foods_with_user_saved.txt"),
+    )
+    results = foods.search(email_username_client.http, "tomato roasted red pepper soup")
+    assert results, "no results parsed"
+    for r in results:
+        assert r.name != "test.user", f"email-local-part leaked into name: {r!r}"
+        assert r.brand != "test.user", f"email-local-part leaked into brand: {r!r}"
+        assert r.category != "test.user", f"email-local-part leaked into category: {r!r}"

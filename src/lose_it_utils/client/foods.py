@@ -85,7 +85,13 @@ def _extract_search_results(
     prev = start
     skip = {"All Foods", "BB", "BQ", "en-US", "I", "Z"}
     if user_name:
-        skip = skip | {user_name}
+        # Lose It! tags personally-saved foods with the logging user's
+        # email-local-part as a brand-slot placeholder (e.g. "alice.smith"
+        # for "alice.smith@example.com"). When the configured ``user_name``
+        # is the full email, equality against the placeholder fails and the
+        # placeholder leaks into the search result's brand field. Drop both
+        # the full user_name and its ``@``-prefix to keep that from happening.
+        skip = skip | {user_name, user_name.split("@", 1)[0]}
     for end in ends:
         chunk = tokens[prev : end + 1]
         pk_bytes: list[int] = []
@@ -201,7 +207,9 @@ def _parse_unsaved_response(
 
     skip = {"en-US", "I", "Z", "All Foods", "P__________"}
     if user_name:
-        skip = skip | {user_name}
+        # See ``_extract_search_results`` for why we strip the email-local-part
+        # in addition to the full ``user_name``.
+        skip = skip | {user_name, user_name.split("@", 1)[0]}
     candidates = [
         s
         for s in string_table
