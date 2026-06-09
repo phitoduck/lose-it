@@ -89,10 +89,10 @@ def test_daily_details_filters_email_local_part_from_brand(fixture_text):
 
     # The placeholder string must never appear in either brand or name.
     for e in entries:
-        assert "test.user" != e.food_brand, (
+        assert e.food_brand != "test.user", (
             f"email-local-part leaked into food_brand for {e.food_name!r}"
         )
-        assert "test.user" != e.food_name, (
+        assert e.food_name != "test.user", (
             f"email-local-part leaked into food_name for {e.food_brand!r}"
         )
 
