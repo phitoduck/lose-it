@@ -23,18 +23,15 @@ You need to already be signed into [loseit.com](https://www.loseit.com/) in Chro
 # 1. Install the CLI (system-wide via uv)
 uv tool install git+https://github.com/phitoduck/lose-it
 
-# 2. Import your auth token from the browser you're signed in on
+# 2. Import your auth token AND populate the config from the browser
 lose-it login                       # default: --browser chrome
 # or:  lose-it login --browser brave
 
-# 3. Tell the CLI who you are (one-time)
-export LOSEIT_USER_ID=12345678      # numeric `sub` claim of your liauth JWT (decode at jwt.io)
-export LOSEIT_USER_NAME=your.username
-export LOSEIT_HOURS_FROM_GMT=-6     # your local offset from UTC
-
-# 4. You're ready
+# 3. You're ready
 lose-it diary
 ```
+
+`lose-it login` does the one-time setup for you: it imports the `liauth` JWT from the browser, derives `user_id` from the JWT's `sub` claim, picks up `user_name` from the JWT payload or the browser's other `loseit.com` cookies (prompting once if neither has it), reads `hours_from_gmt` from your OS timezone, and writes them all to `~/.config/loseit/config.yaml`. No `LOSEIT_*` env vars to set by hand — see [Configuration](#configuration) for layered overrides.
 
 If `lose-it login` reports the cookie is missing or expired, it opens the Lose It! signin page in the chosen browser — sign in, then re-run `lose-it login`.
 
@@ -59,12 +56,16 @@ $ lose-it --help
 ╰─────────────────────────────────────────────────────────────────╯
 ```
 
-### `login` — import the auth token from a browser
+### `login` — import the auth token *and* populate the config
 
 ```text
 $ lose-it login --browser chrome
 ✅ Imported liauth from Chrome → /Users/you/.config/loseit/token
    JWT exp: 2026-06-22T20:41:44+00:00
+✅ Wrote config → /Users/you/.config/loseit/config.yaml
+   user_name     : you@example.com
+   hours_from_gmt: -6
+   user_id       : 12345678
 
 $ lose-it login --browser brave
 ❌ liauth cookie in Brave is expired.
@@ -73,7 +74,7 @@ $ lose-it login --browser brave
    Then re-run: lose-it login --browser brave
 ```
 
-The first run on macOS triggers a Keychain prompt so the OS can unlock the browser's cookie store. After that it's silent.
+The first run on macOS triggers a Keychain prompt so the OS can unlock the browser's cookie store. After that it's silent. If neither the JWT nor any `loseit.com` cookie carries your username, `lose-it login` prompts once and saves it to the YAML. Pass `--user-name alice@example.com` to skip the prompt (handy in CI), or `--no-write-config` to import only the token.
 
 ### `search`
 
@@ -169,7 +170,7 @@ The Quickstart used env vars because they're the fastest path. For anything more
    (override with `--config-file` or `LOSEIT_CONFIG_FILE`)
 4. **Built-in default** — applied when no other layer sets the field
 
-Required fields (`user_id`, `user_name`, `hours_from_gmt`) have **no defaults**. If no layer sets them, the SDK raises `MissingConfigError` rather than silently posting to the wrong account.
+`user_id`, `user_name`, and `hours_from_gmt` have **no defaults** — the SDK raises `MissingConfigError` rather than silently posting to the wrong account. `lose-it login` writes all three to the YAML on first run, so you only hit this error if you skipped the login flow (e.g. running in CI).
 
 ### YAML file (most ergonomic for long-term setup)
 
@@ -189,9 +190,9 @@ hours_from_gmt: -6
 
 | YAML key / field  | CLI flag             | Env var                 | Type   | Default                                  | Description                                                                 |
 |-------------------|----------------------|-------------------------|--------|------------------------------------------|-----------------------------------------------------------------------------|
-| `user_id`         | `--user-id`          | `LOSEIT_USER_ID`        | `str`  | *(required)*                             | Numeric `sub` claim of your `liauth` JWT (decode at jwt.io).                |
-| `user_name`       | `--user-name`        | `LOSEIT_USER_NAME`      | `str`  | *(required)*                             | Your loseit.com username.                                                   |
-| `hours_from_gmt`  | `--hours-from-gmt`   | `LOSEIT_HOURS_FROM_GMT` | `int`  | *(required)*                             | Your local offset from UTC (e.g. `-6`).                                     |
+| `user_id`         | `--user-id`          | `LOSEIT_USER_ID`        | `str`  | *(written by `lose-it login`)*           | Numeric `sub` claim of your `liauth` JWT — `lose-it login` extracts it for you.            |
+| `user_name`       | `--user-name`        | `LOSEIT_USER_NAME`      | `str`  | *(written by `lose-it login`)*           | Your loseit.com username — `lose-it login` sniffs it from the JWT/cookies or prompts once. |
+| `hours_from_gmt`  | `--hours-from-gmt`   | `LOSEIT_HOURS_FROM_GMT` | `int`  | *(written by `lose-it login`)*           | Local offset from UTC (e.g. `-6`) — `lose-it login` reads it from the OS timezone.         |
 | `policy_hash`     | `--policy-hash`      | `LOSEIT_POLICY_HASH`    | `str`  | last-known-good                          | 5th `\|`-field of any `/web/service` POST body. Refresh on LoseIt redeploy. |
 | `strong_name`     | `--strong-name`      | `LOSEIT_STRONG_NAME`    | `str`  | last-known-good                          | `x-gwt-permutation` request header. Refresh on LoseIt redeploy.             |
 | `base_url`        | *(not exposed)*      | `LOSEIT_BASE_URL`       | `str`  | `https://d3hsih69yn4d89.cloudfront.net/web/` | GWT module base URL.                                                    |

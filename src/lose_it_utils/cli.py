@@ -39,11 +39,15 @@ import typer
 from .client import Client, MissingConfigError, daily, entries, foods
 from .client._config import MEAL_NAMES, MEAL_TYPES
 from .client._dates import day_number_for, parse_date_arg
+from .client._settings import DEFAULT_CONFIG_FILE, write_yaml_config
 from .client.auth import (
     DEFAULT_TOKEN_FILE,
     SIGNIN_URL,
     decode_jwt_exp,
+    extract_user_info_from_jwt,
+    extract_user_name_from_cookies,
     is_token_expired,
+    load_cookies_from_browser,
     refresh_token_from_browser,
     save_token,
 )
@@ -529,6 +533,32 @@ def login(
             envvar="LOSEIT_TOKEN_FILE",
         ),
     ] = DEFAULT_TOKEN_FILE,
+    config_file: Annotated[
+        Path,
+        typer.Option(
+            "--write-config-to",
+            help="Where to write the resolved YAML config.",
+            envvar="LOSEIT_CONFIG_FILE",
+        ),
+    ] = DEFAULT_CONFIG_FILE,
+    user_name_override: Annotated[
+        str | None,
+        typer.Option(
+            "--user-name",
+            help="Override the loseit.com username instead of prompting / sniffing cookies.",
+        ),
+    ] = None,
+    write_config: Annotated[
+        bool,
+        typer.Option(
+            "--write-config/--no-write-config",
+            help=(
+                "After importing the JWT, populate the YAML config file with the "
+                "resolved user_id (JWT `sub`), user_name (from JWT/cookies/prompt), "
+                "and hours_from_gmt (from the OS timezone). Default: on."
+            ),
+        ),
+    ] = True,
     open_signin: Annotated[
         bool,
         typer.Option(
@@ -537,16 +567,23 @@ def login(
         ),
     ] = True,
 ) -> None:
-    """Import the liauth JWT from Chrome or Brave's cookie store.
+    """Import the liauth JWT *and* populate the YAML config so the CLI is ready to use.
 
     Assuming you're already logged into loseit.com in the chosen browser,
-    this command extracts the ``liauth`` cookie, sanity-checks the JWT's
-    ``exp`` claim, and writes it to the token file (default
-    ``~/.config/loseit/token``). On first run macOS may prompt for Keychain
-    access so the browser's cookie-store master key can be unlocked.
+    this command:
 
-    If the cookie is missing or expired, the Lose It! signin page is opened
-    in that browser; re-run ``lose-it login`` after signing in.
+    1. Extracts the ``liauth`` cookie and writes it to ``token_file``.
+    2. Sanity-checks the JWT's ``exp`` claim.
+    3. Derives ``user_id`` from the JWT ``sub`` claim, looks for a
+       ``user_name`` in either the JWT payload or the browser's other
+       loseit.com cookies, and computes ``hours_from_gmt`` from the
+       system timezone (DST-aware).
+    4. Writes those values to the YAML config file (default
+       ``~/.config/loseit/config.yaml``) so subsequent commands don't
+       need any ``LOSEIT_*`` env vars.
+
+    Pass ``--user-name`` to skip the username sniff/prompt. Pass
+    ``--no-write-config`` to import only the token.
     """
     fmt = _output_format(ctx)
     name = browser.value
@@ -578,6 +615,17 @@ def login(
 
     save_token(token, token_file)
 
+    written_config: Path | None = None
+    written_values: dict[str, Any] = {}
+    if write_config:
+        written_values, written_config = _populate_config_from_login(
+            token=token,
+            browser_name=name,
+            user_name_override=user_name_override,
+            config_file=config_file,
+            interactive=fmt is OutputFormat.text,
+        )
+
     if fmt is OutputFormat.json:
         _emit_json(
             {
@@ -587,6 +635,8 @@ def login(
                 "token_file": str(token_file),
                 "exp": exp,
                 "exp_iso": _exp_iso(exp),
+                "config_file": str(written_config) if written_config else None,
+                "config_values": written_values or None,
             }
         )
     else:
@@ -596,6 +646,72 @@ def login(
         )
         if exp is not None:
             typer.echo(f"   JWT exp: {_exp_iso(exp)}")
+        if written_config:
+            typer.secho(f"✅ Wrote config → {written_config}", fg=typer.colors.GREEN)
+            for k, v in written_values.items():
+                typer.echo(f"   {k:14}: {v}")
+        elif write_config:
+            # Got here because the values couldn't be resolved and the user
+            # is non-interactive (json mode or piped) — explain.
+            typer.secho(
+                "⚠️  Skipped writing config: could not resolve user_name "
+                "non-interactively. Pass --user-name or run in text mode.",
+                fg=typer.colors.YELLOW,
+                err=True,
+            )
+
+
+def _detect_hours_from_gmt() -> int:
+    """Return the current local UTC offset in whole hours (DST-aware)."""
+    offset = datetime.now().astimezone().utcoffset()
+    if offset is None:
+        return 0
+    # Floor-division by 3600 would skew negative offsets (-21600 // 3600 = -6,
+    # which is correct, but e.g. -19800 // 3600 = -6 too — India's :30 offsets
+    # round to the nearest hour). Use int(round(...)) so :30 zones land on
+    # whichever hour they're closer to.
+    return round(offset.total_seconds() / 3600)
+
+
+def _populate_config_from_login(
+    *,
+    token: str,
+    browser_name: str,
+    user_name_override: str | None,
+    config_file: Path,
+    interactive: bool,
+) -> tuple[dict[str, Any], Path | None]:
+    """Resolve user_id / user_name / hours_from_gmt and write the YAML file.
+
+    Returns ``(values_written, path)`` on success, ``({}, None)`` if a
+    required value couldn't be resolved (only happens when
+    ``user_name_override`` is unset, the JWT and cookies don't expose a
+    username, and ``interactive`` is False — i.e. JSON mode or non-TTY).
+    """
+    info = extract_user_info_from_jwt(token)
+
+    # user_name: explicit flag > JWT claim > browser-cookie sniff > prompt
+    user_name = user_name_override or info.get("user_name")
+    if not user_name:
+        cookies = load_cookies_from_browser(browser_name)
+        user_name = extract_user_name_from_cookies(cookies)
+    if not user_name and interactive:
+        try:
+            user_name = typer.prompt("Lose It! username (the email you sign in with)")
+        except (typer.Abort, EOFError):
+            user_name = None
+    if not user_name:
+        return {}, None
+
+    values: dict[str, Any] = {
+        "user_name": user_name.strip(),
+        "hours_from_gmt": _detect_hours_from_gmt(),
+    }
+    if "user_id" in info:
+        values["user_id"] = info["user_id"]
+
+    written = write_yaml_config(config_file, values)
+    return values, written
 
 
 def _login_failure(

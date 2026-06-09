@@ -121,6 +121,31 @@ class Settings(BaseSettings):
         return self
 
 
+def write_yaml_config(path: Path, values: dict[str, Any]) -> Path:
+    """Merge ``values`` into the YAML config file at ``path`` and write it back.
+
+    Any unrelated keys already in the file are preserved; values for keys we
+    pass in are overwritten. The parent directory is created if missing, and
+    the file is chmod 600 so a future ``token`` field can't leak via
+    world-readable perms. Returns the absolute file path written.
+    """
+    import yaml
+
+    existing: dict[str, Any] = {}
+    if path.exists():
+        try:
+            loaded = yaml.safe_load(path.read_text())
+            if isinstance(loaded, dict):
+                existing = loaded
+        except yaml.YAMLError:
+            existing = {}
+    existing.update(values)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(existing, sort_keys=False, default_flow_style=False))
+    os.chmod(path, 0o600)
+    return path
+
+
 def load_settings(**overrides: Any) -> Settings:
     """Construct :class:`Settings` from the layered sources.
 
