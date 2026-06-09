@@ -1,0 +1,73 @@
+# CI: lint, format-check, secret-scan, and unit tests (with coverage).
+#
+# Functional tests under tests/functional/ are NOT run in CI — they hit the
+# real Lose It! API and require a valid `liauth` JWT on disk. They are
+# self-skipping unless `LOSEIT_RUN_FUNCTIONAL=1` is set, which CI never does.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: Lint, scan, test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          # gitleaks needs the full history so it can scan the diff range.
+          fetch-depth: 0
+
+      - name: Set up uv (with built-in Python ${{ matrix.python-version }})
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+
+      - name: Install dependencies (uv sync)
+        run: uv sync --frozen
+
+      - name: ruff check
+        run: uv run ruff check .
+
+      - name: ruff format --check
+        run: uv run ruff format --check .
+
+      - name: gitleaks (scan diff + history)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+
+      - name: pytest (unit tests + coverage, no functional)
+        run: |
+          uv run pytest \
+            --cov=lose_it_utils \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --cov-fail-under=70
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml-py${{ matrix.python-version }}
+          path: coverage.xml
+          if-no-files-found: ignore
