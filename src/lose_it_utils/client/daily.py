@@ -106,6 +106,7 @@ def _extract_entry(
     food_pk_block: dict,
     refs: dict[str, int],
     default_hours_from_gmt: int,
+    user_name: str = "",
 ) -> FoodLogEntry | None:
     """Build a :class:`FoodLogEntry` from its two PK blocks.
 
@@ -226,7 +227,11 @@ def _extract_entry(
         t = tokens[j]
         if isinstance(t, int) and 1 <= t <= len(string_table):
             s = string_table[t - 1]
-            if s and not (s.startswith("com.") or s.startswith("java.") or s.startswith("[")):
+            if (
+                s
+                and not (s.startswith("com.") or s.startswith("java.") or s.startswith("["))
+                and s != user_name
+            ):
                 seen.append(s)
                 if len(seen) >= 3:
                     break
@@ -263,7 +268,11 @@ def _extract_entry(
     )
 
 
-def parse_entries(text: str, default_hours_from_gmt: int = -5) -> list[FoodLogEntry]:
+def parse_entries(
+    text: str,
+    default_hours_from_gmt: int = -5,
+    user_name: str = "",
+) -> list[FoodLogEntry]:
     """Extract every :class:`FoodLogEntry` from a daily-details response."""
     tokens, strings = parse_response(text)
     if not strings:
@@ -308,7 +317,9 @@ def parse_entries(text: str, default_hours_from_gmt: int = -5) -> list[FoodLogEn
             continue
         # a = first PK block in stream = ENTRY PK (entry UUID).
         # b = second PK block in stream = FOOD PK (food's stable PK).
-        entry = _extract_entry(tokens, strings, a, b, refs, default_hours_from_gmt)
+        entry = _extract_entry(
+            tokens, strings, a, b, refs, default_hours_from_gmt, user_name=user_name
+        )
         if entry is not None:
             entries.append(entry)
         i += 2
@@ -320,7 +331,11 @@ def get_daily_details(http: HttpClient, target_date: date) -> list[FoodLogEntry]
     day_num = day_number_for(target_date)
     day_key = get_daydate_key(http, day_num) or ""
     text = http.post_rpc(_build_payload(http.config, target_date, day_key))
-    return parse_entries(text, default_hours_from_gmt=http.config.hours_from_gmt)
+    return parse_entries(
+        text,
+        default_hours_from_gmt=http.config.hours_from_gmt,
+        user_name=http.config.user_name,
+    )
 
 
 def get_daily_details_raw(http: HttpClient, target_date: date) -> str:

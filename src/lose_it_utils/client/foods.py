@@ -39,12 +39,22 @@ def _build_search_payload(config: Config, query: str) -> str:
     return build_envelope(strings, data)
 
 
-def _extract_search_results(tokens: list, string_table: list[str]) -> list[FoodSearchResult]:
+def _extract_search_results(
+    tokens: list,
+    string_table: list[str],
+    user_name: str = "",
+) -> list[FoodSearchResult]:
     """Extract food results from a ``searchFoods`` response.
 
     Anchors on the per-row delimiter
     ``[16 (length), [B_ref, SimplePrimaryKey_ref, SearchResultFood_ref]``
     (in reverse-of-write order, since GWT responses are reversed).
+
+    ``user_name`` is excluded from the name/brand/category heuristic candidates:
+    the server echoes it back in every response (because we sent it in the
+    request), and for short food names like "Avocado" the username is the
+    longest string in scope, so without this filter ``max(by_len)`` would
+    pick the username as the food name. Pass ``http.config.user_name``.
     """
     food_type_ref = pk_type_ref = bytes_type_ref = None
     for i, s in enumerate(string_table):
@@ -74,6 +84,8 @@ def _extract_search_results(tokens: list, string_table: list[str]) -> list[FoodS
     foods: list[FoodSearchResult] = []
     prev = start
     skip = {"All Foods", "BB", "BQ", "en-US", "I", "Z"}
+    if user_name:
+        skip = skip | {user_name}
     for end in ends:
         chunk = tokens[prev : end + 1]
         pk_bytes: list[int] = []
@@ -121,7 +133,7 @@ def search(http: HttpClient, query: str) -> list[FoodSearchResult]:
     """Search the LoseIt food database. Returns up to ~15 results."""
     text = http.post_rpc(_build_search_payload(http.config, query))
     tokens, strings = parse_response(text)
-    return _extract_search_results(tokens, strings)
+    return _extract_search_results(tokens, strings, user_name=http.config.user_name)
 
 
 # ── getUnsavedFoodLogEntry ──────────────────────────────────────────────────
@@ -158,7 +170,11 @@ def _build_unsaved_payload(
     return build_envelope(strings, data)
 
 
-def _parse_unsaved_response(tokens: list, string_table: list[str]) -> UnsavedFoodLogEntry:
+def _parse_unsaved_response(
+    tokens: list,
+    string_table: list[str],
+    user_name: str = "",
+) -> UnsavedFoodLogEntry:
     fm_ref = dbl_ref = bytes_ref = pk_ref = serving_size_ref = food_measure_ref = None
     for i, s in enumerate(string_table):
         ref = i + 1
@@ -184,6 +200,8 @@ def _parse_unsaved_response(tokens: list, string_table: list[str]) -> UnsavedFoo
     )
 
     skip = {"en-US", "I", "Z", "All Foods", "P__________"}
+    if user_name:
+        skip = skip | {user_name}
     candidates = [
         s
         for s in string_table
@@ -252,4 +270,4 @@ def get_unsaved_food_log_entry(
     """Return the food's nutrient + serving template (no diary write)."""
     text = http.post_rpc(_build_unsaved_payload(http.config, food))
     tokens, strings = parse_response(text)
-    return _parse_unsaved_response(tokens, strings)
+    return _parse_unsaved_response(tokens, strings, user_name=http.config.user_name)
