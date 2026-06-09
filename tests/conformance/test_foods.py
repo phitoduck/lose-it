@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import pytest
+
+from lose_it_utils import Client
 from lose_it_utils.client import foods
+from lose_it_utils.client._config import Config
 from lose_it_utils.client._models import FoodSearchResult
 
 SERVICE_URL = "https://www.loseit.com/web/service"
@@ -88,3 +92,67 @@ def test_get_unsaved_parses_captured_response(test_client, httpx_mock, fixture_t
     # All nutrient ordinals must be in the documented 0..30 range.
     for ord_ in unsaved.nutrients:
         assert 0 <= ord_ <= 30
+
+
+# ── Regression: long usernames must NOT leak into food name / brand ─────────
+
+
+@pytest.fixture
+def long_username_client(fixture_text, httpx_mock) -> tuple[Client, str]:
+    """A Client whose ``user_name`` is longer than any food string in the
+    captured fixtures, and whose mocked response has that same long name
+    substituted in for the sanitized ``test.user`` placeholder.
+
+    Without the user_name filter in the parser, ``max(by_len)`` picks up the
+    username as the food name and the brand picker falls onto it too — the
+    exact bug that produced ``brand=eric.riddoch`` entries against the live
+    API. This fixture is the controlled reproduction.
+    """
+    long_name = "extremely-long-username-that-beats-every-brand-string-in-the-fixture"
+    cfg = Config(
+        user_id="12345678",
+        user_name=long_name,
+        hours_from_gmt=-6,
+        policy_hash="8F87EC8969F17AE77B6283D3A83F6D4C",
+        strong_name="351AE5DC0CA36AD3BA9C7CBA7B0E07B8",
+    )
+    client = Client(cfg, token="fake-jwt-token")
+    return client, long_name
+
+
+def test_search_filters_long_username_from_name_and_brand(
+    long_username_client, httpx_mock, fixture_text
+):
+    client, long_name = long_username_client
+    # Substitute the long username into the captured response where the
+    # sanitized "test.user" placeholder sits.
+    response_text = fixture_text("search_foods_tortilla.txt").replace("test.user", long_name)
+    httpx_mock.add_response(url=SERVICE_URL, text=response_text)
+
+    results = foods.search(client.http, "x-treme carb balance tortilla")
+
+    assert results, "no results parsed"
+    for r in results:
+        assert r.name != long_name, "username leaked into food name"
+        assert r.brand != long_name, "username leaked into food brand"
+        assert r.category != long_name, "username leaked into food category"
+
+
+def test_get_unsaved_filters_long_username_from_name_and_brand(
+    long_username_client, httpx_mock, fixture_text
+):
+    client, long_name = long_username_client
+    response_text = fixture_text("get_unsaved_tortilla.txt").replace("test.user", long_name)
+    httpx_mock.add_response(url=SERVICE_URL, text=response_text)
+
+    food = FoodSearchResult(
+        name="Tortilla Wraps, High Fiber, Low Carb, Xtreme Wellness",
+        brand="Mission Tortillas Carb Balance",
+        category="Tortilla",
+        pk_bytes=list(range(16)),
+    )
+    unsaved = foods.get_unsaved_food_log_entry(client.http, food)
+
+    assert unsaved.name != long_name, "username leaked into unsaved.name"
+    assert unsaved.brand != long_name, "username leaked into unsaved.brand"
+    assert unsaved.category != long_name, "username leaked into unsaved.category"
