@@ -31,7 +31,7 @@ lose-it login                       # default: --browser chrome
 lose-it diary
 ```
 
-> Log 1 Xtreme carb balance tortilla, 110g of avocado, and 120g of real good brand lightly breaded chicken strips
+> Prompt for, e.g. Claude Code: Log 1 Xtreme carb balance tortilla, 110g of avocado, and 120g of real good brand lightly breaded chicken strips
 
 <p align="center">
   <img src="docs/mobile-app-demo.jpeg" alt="Lose It! mobile app — Mon, Jun 8: Snacks (451 cal): Tortilla Wraps 1 Serving (70 cal), Real good Lightly Breaded Chicken 120 Grams (187 cal), Avocado (USDA Website Per 100g) 110 Grams (194 cal)" width="320"/>
