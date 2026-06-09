@@ -9,7 +9,11 @@ from __future__ import annotations
 
 import uuid
 
-from ._config import Config
+from ._config import (
+    DEFAULT_SERVING_SIZE_GRAMS,
+    GRAMS_MEASURE_ORDINAL,
+    Config,
+)
 from ._gwt import build_envelope, fmt_num
 from ._http import HttpClient
 from ._models import FoodLogEntry, UnsavedFoodLogEntry
@@ -79,7 +83,21 @@ def _build_log_payload(
     # Default measure ordinal: 45 is a generic container-ish fallback observed
     # in the original captured replay (used when unsaved didn't carry one).
     measure_ord = unsaved.food_measure_ordinal if unsaved.food_measure_ordinal is not None else 45
+
+    # FoodServingSize.quantity is the literal portion size the official Lose
+    # It! UI renders next to the measure-unit name. Convention:
+    #   • For grams (ord=8) the food's "default serving" is 100 g, so
+    #     ``servings=1.2`` (1.2 servings) serializes as quantity=120 grams.
+    #   • For every other measure unit the default serving is 1 unit, so
+    #     quantity = servings (1.0 each, 1.5 servings, …).
+    # We previously sent ``servings`` directly into the FoodServingSize slot,
+    # which made gram-measured entries show up as e.g. "1.2 grams" in the
+    # official mobile + web apps instead of "120 grams".
+    portion_size = (
+        servings * DEFAULT_SERVING_SIZE_GRAMS if measure_ord == GRAMS_MEASURE_ORDINAL else servings
+    )
     servings_str = fmt_num(servings)
+    portion_size_str = fmt_num(portion_size)
 
     parts: list[str] = ["1", "2", "3", "4", "2", "5", "6"]
     parts += ["5", "0", "7", config.user_id, "8", str(config.hours_from_gmt)]
@@ -132,16 +150,19 @@ def _build_log_payload(
     for ord_, val in sorted(nutrients.items()):
         parts += ["25", str(ord_), "26", fmt_num(val)]
     # FoodServingSize + FoodMeasure section, then the entry's own
-    # SimplePrimaryKey marker + a generated ENTRY PK.
+    # SimplePrimaryKey marker + a generated ENTRY PK. Both the FoodServingSize
+    # quantity slot and the trailing FoodMeasure quantity slot are the actual
+    # portion size in the food's measure unit (grams for ord=8, etc.) — not
+    # the FoodServing.quantity above (which is # of servings consumed).
     parts += [
         "27",
-        servings_str,
+        portion_size_str,
         "1",
         "28",
         str(int(measure_ord)),
         "1",
         "1",
-        servings_str,
+        portion_size_str,
         "0",
         "P__________",
         unsaved.day_key or day_key or "",

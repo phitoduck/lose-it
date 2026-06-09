@@ -97,7 +97,14 @@ $ lose-it log "x-treme carb balance tortilla" --meal lunch --pick 2 --servings 1
   1  Xtreme Wellness Tortilla Wrap High Fiber Low Carb  Carb balance
   2  Tortilla Wraps, High Fiber, Low Carb, Xtreme Welln Mission Tortillas Ca
 
-✅ Logged Tortilla Wraps, High Fiber, Low Carb, Xtreme Wellness → lunch × 1.0
+✅ Logged Tortilla Wraps, High Fiber, Low Carb, Xtreme Wellness → lunch 1 serving (70 cal)
+```
+
+For foods that should be logged by weight, use `--grams N` on a gram-measured entry. The CLI validates the picked food and errors if it isn't gram-measured, so you don't accidentally log "1.2 grams of chicken":
+
+```text
+$ lose-it log "avocado per 100g" --meal snacks --pick 8 --grams 110
+✅ Logged Avocado (USDA Website Per 100g) → snacks 110 grams (176 cal)
 ```
 
 ### `diary`
@@ -325,7 +332,7 @@ The gitleaks config has two custom rules: a tight ES384-JWT match (kid-agnostic,
 - **GWT writes byte arrays in reverse**: both PKs you see in responses are reversed copies of their wire-form bytes. `_gwt.reverse_bytes` handles round-trips.
 - **GWT writes object fields in declaration order, dedup'd across an array**: when several `FoodLogEntry` objects share the same enum value (e.g. all in *snacks*) or the same nutrient HashMap (e.g. multiple identical logs), the response writes the shared value *once* and references it from each entry. The parser falls back to a global search when an entry's local range comes up empty.
 - **Food codes can contain `$` and `_`**: e.g. `DoA3$q`. The food-identifier-code regex allows the full GWT short-string alphabet.
-- **The serving-unit is the food's default**: passing `--servings 1.1` to a per-100g entry logs 110 g, but to a "1 Each" entry it logs 1.1 each. There's no "log in grams" override yet — pick the right base food.
+- **The serving-unit is the food's default**: `--servings N` is a multiplier on the food's default serving — 1 wrap, 1 avocado, 100 g, etc. For **gram-measured** foods (FoodMeasurement ordinal 8) the default serving is 100 g, so `--servings 1.2` correctly logs 120 g (the official UI displays "120 grams"). For more natural gram logging, use `--grams N` on a gram-measured food entry: `lose-it log "avocado per 100g" --pick 8 -m snacks --grams 110` logs 110 g directly and errors if the picked entry isn't gram-measured. The CLI advertises the food's unit in the dry-run / log output (`× 110 grams`, `× 1.0 serving`, `× 1.1 each`).
 
 ## License
 

@@ -163,6 +163,46 @@ def test_log_dry_run_does_not_post_update(env, runner: CliRunner, httpx_mock) ->
     assert any("getUnsavedFoodLogEntry" in b for b in sent_bodies)
 
 
+def test_log_grams_rejected_on_non_gram_measured_food(env, runner: CliRunner, httpx_mock) -> None:
+    """--grams errors when the picked food's measure unit isn't grams.
+
+    The captured tortilla fixture has ``food_measure_ordinal=27`` (Serving),
+    so trying to use --grams on it should bail out with a helpful message
+    and exit code 2 (config-style failure).
+    """
+    httpx_mock.add_response(
+        url=SERVICE_URL,
+        text=(FIXTURES / "search_foods_tortilla.txt").read_text(),
+    )
+    httpx_mock.add_response(
+        url=SERVICE_URL,
+        text=(FIXTURES / "get_unsaved_tortilla.txt").read_text(),
+    )
+    result = runner.invoke(
+        app,
+        [
+            "-o",
+            "json",
+            "log",
+            "tortilla",
+            "--meal",
+            "snacks",
+            "--pick",
+            "1",
+            "--grams",
+            "100",
+        ],
+    )
+    assert result.exit_code == 2, result.output
+    payload = json.loads(result.output)
+    assert payload["error"] == "not_gram_measured"
+    assert payload["measure_unit"] == "serving"
+
+    # And critically: no updateFoodLogEntry call was made.
+    sent_bodies = [req.content.decode() for req in httpx_mock.get_requests()]
+    assert not any("updateFoodLogEntry" in b for b in sent_bodies)
+
+
 def test_log_real_run_does_post_update(env, runner: CliRunner, httpx_mock) -> None:
     """Without --dry-run, the mutating updateFoodLogEntry call IS made."""
     httpx_mock.add_response(

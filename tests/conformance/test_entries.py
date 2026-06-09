@@ -73,6 +73,77 @@ def test_delete_request_shape(test_client, httpx_mock, fixture_text):
     assert f"|{target.food_identifier_code}|" in body
 
 
+def test_log_food_grams_serializes_portion_in_grams(test_client, httpx_mock, fixture_text):
+    """For gram-measured foods (ord=8) the FoodServingSize quantity is the
+    literal gram count, not the servings multiplier.
+
+    Regression: previously ``servings=1.2`` on a gram-measured entry shipped
+    quantity=1.2 in the FoodServingSize slot, which the official Lose It! UI
+    rendered as "1.2 grams" instead of "120 grams". This asserts the wire
+    body now carries the literal portion size in grams (servings × 100).
+    """
+    httpx_mock.add_response(
+        url=SERVICE_URL,
+        text=fixture_text("update_food_log_entry_success.txt"),
+    )
+    unsaved = UnsavedFoodLogEntry(
+        name="Chicken Strips",
+        brand="Real Good Foods",
+        category="Chicken",
+        food_pk_bytes=[1] * 16,
+        day_key="Z6mB_lo",
+        nutrients={0: 130.0},
+        serving_qty=1.0,
+        food_measure_ordinal=8,  # grams
+    )
+    entries.log_food(
+        test_client.http,
+        unsaved,
+        meal_ordinal=3,
+        day_key="Z6mB_lo",
+        day_num=9290,
+        servings=1.2,
+    )
+    body = httpx_mock.get_request().content.decode()
+    # FoodMeasure ord=8 still appears: "|28|8|1|".
+    assert "|28|8|1|" in body
+    # The FoodServingSize quantity slot must contain 120 (= 1.2 × 100), not 1.2.
+    # The substring "|120|1|28|8|" is the expected
+    # "FoodServingSize.quantity|<sep>|FoodMeasure-ref|measure-ord|" sequence.
+    assert "|120|1|28|8|" in body, body[body.find("28|8") - 40 : body.find("28|8") + 40]
+    # And the bare "1.2" still appears as the FoodServing.quantity (# of servings).
+    assert "|1.2|" in body
+
+
+def test_log_food_non_gram_food_unchanged(test_client, httpx_mock, fixture_text):
+    """For non-gram-measured foods (e.g. ord=27 Serving) quantity = servings."""
+    httpx_mock.add_response(
+        url=SERVICE_URL,
+        text=fixture_text("update_food_log_entry_success.txt"),
+    )
+    unsaved = UnsavedFoodLogEntry(
+        name="Tortilla",
+        brand="Mission",
+        category="Tortilla",
+        food_pk_bytes=[1] * 16,
+        day_key="Z6mB_lo",
+        nutrients={0: 70.0},
+        serving_qty=1.0,
+        food_measure_ordinal=27,
+    )
+    entries.log_food(
+        test_client.http,
+        unsaved,
+        meal_ordinal=3,
+        day_key="Z6mB_lo",
+        day_num=9290,
+        servings=1.5,
+    )
+    body = httpx_mock.get_request().content.decode()
+    # For ord=27, servings (1.5) is sent as-is in the FoodServingSize slot.
+    assert "|1.5|1|28|27|" in body
+
+
 def test_delete_response_parses_as_ok(fixture_text):
     """The captured delete success response parses to a non-error //OK envelope."""
     text = fixture_text("delete_food_log_entry_success.txt")
