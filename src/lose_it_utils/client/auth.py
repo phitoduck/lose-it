@@ -21,7 +21,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 DEFAULT_TOKEN_FILE = Path("~/.config/loseit/token").expanduser()
 SIGNIN_URL = "https://www.loseit.com/"
@@ -85,10 +85,12 @@ def save_token(token: str, token_file: Path = DEFAULT_TOKEN_FILE) -> Path:
     return token_file
 
 
-def decode_jwt_exp(token: str) -> int | None:
-    """Return the JWT ``exp`` claim (unix seconds), or ``None`` if undecodable.
+def decode_jwt_payload(token: str) -> dict[str, Any] | None:
+    """Return the JWT payload claims, or ``None`` if undecodable.
 
-    Inspects the payload only — does NOT verify the signature.
+    Inspects the payload only — does NOT verify the signature. Callers use
+    this to read ``sub`` (user id), ``exp`` (expiry), and any provider-
+    specific username/email claim Lose It may include.
     """
     parts = token.split(".")
     if len(parts) < 2:
@@ -98,8 +100,65 @@ def decode_jwt_exp(token: str) -> int | None:
         payload = json.loads(base64.urlsafe_b64decode(payload_b64))
     except (ValueError, json.JSONDecodeError):
         return None
+    return payload if isinstance(payload, dict) else None
+
+
+def decode_jwt_exp(token: str) -> int | None:
+    """Return the JWT ``exp`` claim (unix seconds), or ``None`` if undecodable."""
+    payload = decode_jwt_payload(token)
+    if not payload:
+        return None
     exp = payload.get("exp")
     return int(exp) if isinstance(exp, int | float) else None
+
+
+# Common JWT claim names that hold an email address or display username, in
+# order of preference. Lose It may use any of these — we try them all rather
+# than hard-coding one and silently failing if the schema changes.
+_USERNAME_CLAIMS: tuple[str, ...] = (
+    "email",
+    "preferred_username",
+    "username",
+    "user_name",
+    "name",
+    "mail",
+    "upn",
+    "sub_email",
+)
+
+# Same idea for the user-id claim. ``sub`` is the JWT standard for "subject"
+# (account identifier), but some providers ship a parallel custom claim too.
+_USER_ID_CLAIMS: tuple[str, ...] = (
+    "sub",
+    "user_id",
+    "userId",
+    "uid",
+    "id",
+)
+
+
+def extract_user_info_from_jwt(token: str) -> dict[str, str]:
+    """Best-effort extraction of ``user_id`` / ``user_name`` from a JWT payload.
+
+    Returns whatever it can find; the caller is expected to fall back to
+    other sources (browser cookies, interactive prompt) for fields that
+    aren't present in the payload.
+    """
+    payload = decode_jwt_payload(token)
+    if not payload:
+        return {}
+    out: dict[str, str] = {}
+    for claim in _USER_ID_CLAIMS:
+        v = payload.get(claim)
+        if v not in (None, ""):
+            out["user_id"] = str(v)
+            break
+    for claim in _USERNAME_CLAIMS:
+        v = payload.get(claim)
+        if isinstance(v, str) and v:
+            out["user_name"] = v
+            break
+    return out
 
 
 def is_token_expired(token: str, *, leeway_seconds: int = 60) -> bool:
@@ -108,6 +167,38 @@ def is_token_expired(token: str, *, leeway_seconds: int = 60) -> bool:
     if exp is None:
         return False
     return exp - leeway_seconds <= time.time()
+
+
+def load_cookies_from_browser(
+    browser: BrowserName,
+    domain: str = "loseit.com",
+) -> dict[str, str]:
+    """Return every cookie ``browser`` has for ``domain`` as a name → value dict.
+
+    Walks every profile under the browser's user-data root and merges them
+    (last-write-wins on name collisions, but since each profile is
+    typically a different account the values rarely conflict). Returns
+    ``{}`` if browser-cookie3 isn't importable or no cookie is found.
+    """
+    try:
+        import browser_cookie3  # type: ignore
+    except ImportError:
+        return {}
+
+    loader = getattr(browser_cookie3, browser, None)
+    if loader is None:
+        raise ValueError(f"Unsupported browser {browser!r}; expected one of {SUPPORTED_BROWSERS}")
+
+    out: dict[str, str] = {}
+    for path in _cookie_store_paths(browser):
+        try:
+            cj = loader(cookie_file=path, domain_name=domain)
+        except Exception:
+            continue
+        for c in cj:
+            if c.value:
+                out[c.name] = c.value
+    return out
 
 
 def refresh_token_from_browser(
@@ -121,23 +212,45 @@ def refresh_token_from_browser(
     ``domain``. First call may trigger a macOS Keychain prompt so the OS
     can release the cookie-store master key.
     """
-    try:
-        import browser_cookie3  # type: ignore
-    except ImportError:
-        return None
+    return load_cookies_from_browser(browser, domain).get("liauth")
 
-    loader = getattr(browser_cookie3, browser, None)
-    if loader is None:
-        raise ValueError(f"Unsupported browser {browser!r}; expected one of {SUPPORTED_BROWSERS}")
 
-    for path in _cookie_store_paths(browser):
-        try:
-            cj = loader(cookie_file=path, domain_name=domain)
-        except Exception:
+# Cookie names that some Lose It cookies have historically used to ship
+# the signed-in account's email/username. Tried in order; first non-empty
+# value wins. The names err on the side of "noisy" — false positives
+# (e.g. a cookie literally called "email" but containing a tracker id)
+# are reviewed before being written to disk in :func:`extract_user_name_from_cookies`.
+_USERNAME_COOKIE_NAMES: tuple[str, ...] = (
+    "loseit_email",
+    "loseit_username",
+    "li_username",
+    "li_email",
+    "user_email",
+    "user_name",
+    "email",
+    "username",
+)
+
+
+def extract_user_name_from_cookies(cookies: dict[str, str]) -> str | None:
+    """Pick out a Lose It username (typically an email) from a cookie jar.
+
+    Conservative: only returns a value that looks like an email address or
+    a short username-ish identifier (no spaces, no JWT-ish dots-with-base64
+    structure). Returns ``None`` if nothing plausibly fits, so the caller
+    falls back to an interactive prompt rather than persisting garbage.
+    """
+    for name in _USERNAME_COOKIE_NAMES:
+        v = cookies.get(name)
+        if not v:
             continue
-        for c in cj:
-            if c.name == "liauth" and c.value:
-                return c.value
+        # JWT-shaped values (three dot-separated base64 chunks) are not
+        # usernames even when the cookie name suggests they are.
+        if v.count(".") >= 2 and all(len(p) >= 8 for p in v.split(".")[:3]):
+            continue
+        if " " in v or len(v) > 254:
+            continue
+        return v
     return None
 
 

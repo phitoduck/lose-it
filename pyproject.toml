@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Unofficial Lose It! Python SDK and CLI (reverse-engineered GWT-RPC)"
 readme = "README.md"
 authors = [
-    { name = "phitoduck", email = "eric.riddoch@gmail.com" }
+    { name = "phitoduck" }
 ]
 requires-python = ">=3.12"
 dependencies = [
