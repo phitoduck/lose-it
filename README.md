@@ -1,21 +1,17 @@
 <h1 align="center">lose-it</h1>
 
+<p align="center">Unofficial Python SDK + CLI for <a href="https://www.loseit.com/"><b>Lose It!</b></a> — log meals, query your diary, and delete entries from the command line.</p>
+
 <p align="center">
   <img src="docs/diagram.svg" alt="lose-it CLI → Lose It! web API" width="640"/>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.12+-3776ab?style=flat-square&logo=python&logoColor=white" alt="Python 3.12+"/>
-  <img src="https://img.shields.io/badge/uv-package%20manager-de5fe9?style=flat-square&logo=astral&logoColor=white" alt="uv"/>
-  <img src="https://img.shields.io/badge/typer-CLI-009485?style=flat-square&logo=typer&logoColor=white" alt="typer"/>
-  <img src="https://img.shields.io/badge/httpx-async%20client-1d2d44?style=flat-square&logo=python&logoColor=white" alt="httpx"/>
-  <img src="https://img.shields.io/badge/ruff-lint%20%2B%20format-d7ff64?style=flat-square&logo=ruff&logoColor=000000" alt="ruff"/>
-  <img src="https://img.shields.io/badge/gitleaks-secret%20scan-f24c4c?style=flat-square&logo=git&logoColor=white" alt="gitleaks"/>
-  <img src="https://img.shields.io/badge/tests-44%2F44-26a269?style=flat-square&logo=pytest&logoColor=white" alt="tests"/>
+  <img src="https://github.com/phitoduck/lose-it/actions/workflows/ci.yml/badge.svg" alt="CI"/>
+  <img src="https://img.shields.io/badge/coverage-75%25-yellowgreen?style=flat-square&logo=pytest&logoColor=white" alt="coverage 75%"/>
   <img src="https://img.shields.io/badge/license-MIT-2dba4e?style=flat-square" alt="License"/>
 </p>
-
-<p align="center">Unofficial Python SDK + CLI for <a href="https://www.loseit.com/"><b>Lose It!</b></a> — log meals, query your diary, and delete entries from the command line.</p>
 
 > ⚠️ **Reverse-engineered & unofficial.** Talks to Lose It!'s private GWT-RPC web endpoints. No official API exists; the protocol is brittle and may break without notice. Not affiliated with Lose It! / FitNow, Inc.
 
@@ -294,12 +290,14 @@ Module structure mirrors the underlying GWT-RPC resources: one module per backen
 ### Tests
 
 ```bash
-# Unit tests (mocked httpx, replay captured fixtures)
-uv run pytest tests/conformance
+# Unit tests (mocked httpx, replay captured fixtures) + coverage
+uv run pytest --cov=lose_it_utils --cov-report=term-missing
 
 # Real-API CRUD (requires LOSEIT_RUN_FUNCTIONAL=1 + valid token + config)
 LOSEIT_RUN_FUNCTIONAL=1 uv run pytest tests/functional
 ```
+
+GitHub Actions runs the unit suite + coverage on every push/PR to `main` (Python 3.12, ubuntu-latest); the functional suite is gated on `LOSEIT_RUN_FUNCTIONAL=1` and is **not** run in CI because it needs a real `liauth` JWT on disk.
 
 The functional suite is the *source of truth* for the mock fixtures: each CRUD step writes the raw response body to `tests/conformance/fixtures/` (after redacting user_id / username). The unit tests then replay those fixtures through `pytest-httpx` mocks, so the mocked request/response shapes are guaranteed to match what the real Lose It! servers actually emit.
 
