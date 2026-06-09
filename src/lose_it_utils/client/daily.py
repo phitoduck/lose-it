@@ -168,24 +168,43 @@ def _extract_entry(
     # references it. So when our entry's mid range doesn't contain a meal_ref,
     # we fall back to searching the WHOLE response (typically the dedup'd enum
     # sits just after the last entry's body).
-    def _find_ord_before_ref(ref_id: int, search_start: int, search_end: int) -> int | None:
+    #
+    # **Disambiguation by valid range**: small GWT string-table refs (e.g.
+    # meal_ref=53) collide with literal integer values that show up all over
+    # the response — PK bytes, nutrient counts, day offsets, byte-array
+    # entries. Without a value filter the parser's first-hit logic lands on
+    # those coincidences and produces nonsense ordinals like "meal=47" /
+    # "meal=75", which then break ``entries.delete`` because the resulting
+    # payload doesn't match anything stored on the server. We constrain the
+    # meal ordinal to {0..3} (breakfast/lunch/dinner/snacks) and the extra
+    # ordinal to the small range the server actually emits (≤15 observed).
+    def _find_ord_before_ref(
+        ref_id: int,
+        search_start: int,
+        search_end: int,
+        valid_range: range | None = None,
+    ) -> int | None:
         for j in range(search_start, search_end):
             if tokens[j] == ref_id and j > 0 and isinstance(tokens[j - 1], int):
-                return int(tokens[j - 1])
+                val = int(tokens[j - 1])
+                if valid_range is None or val in valid_range:
+                    return val
         return None
 
+    meal_range = range(0, 4)
     meal_ord = 0
     if refs.get("meal"):
         meal_ord = (
-            _find_ord_before_ref(refs["meal"], mid_start, mid_end)
-            or _find_ord_before_ref(refs["meal"], 0, len(tokens))
+            _find_ord_before_ref(refs["meal"], mid_start, mid_end, meal_range)
+            or _find_ord_before_ref(refs["meal"], 0, len(tokens), meal_range)
             or 0
         )
+    extra_range = range(0, 16)
     extra_ord = 3
     if refs.get("extra"):
         extra_ord = (
-            _find_ord_before_ref(refs["extra"], mid_start, mid_end)
-            or _find_ord_before_ref(refs["extra"], 0, len(tokens))
+            _find_ord_before_ref(refs["extra"], mid_start, mid_end, extra_range)
+            or _find_ord_before_ref(refs["extra"], 0, len(tokens), extra_range)
             or 3
         )
 
