@@ -68,18 +68,28 @@ LOSEIT_RUN_FUNCTIONAL=1 uv run pytest  # incl. real-API CRUD
 
 ## Configure
 
-The SDK reads everything from env vars + a token file. All keys are optional but the defaults point to the original reverse-engineer's account, so you'll want to set the user-specific ones:
+The SDK splits config into two clearly separated buckets so an end user never accidentally posts to someone else's diary:
+
+### Required env vars (no defaults; `Config.from_env` raises if absent)
+
+These identify *you* and intentionally have no fallback — silently using a hardcoded user ID would be a footgun.
 
 ```bash
-# Per-account (stable)
 export LOSEIT_USER_ID=12345678          # "sub" claim of your liauth JWT (decode at jwt.io)
 export LOSEIT_USER_NAME=your.username   # loseit.com username
 export LOSEIT_HOURS_FROM_GMT=-6         # your local offset from UTC
-
-# Per-build (refresh whenever LoseIt redeploys their web app)
-export LOSEIT_POLICY_HASH=...
-export LOSEIT_STRONG_NAME=...
 ```
+
+### Optional env vars (have defaults, but refresh when LoseIt redeploys)
+
+```bash
+export LOSEIT_POLICY_HASH=...    # 5th '|'-field of any /web/service POST body
+export LOSEIT_STRONG_NAME=...    # x-gwt-permutation request header
+```
+
+### Not user-specific (and not secrets)
+
+The `Class/<digits>` strings you'll see in the SDK source — `UserId/4281239478`, `ServiceRequestToken/1076571655`, `FoodIdentifier/2763145970`, … — are **GWT type-serialization hashes** computed by GWT at compile time from each Java class's structure. They're the same for every user of the same LoseIt build and are inlined in the public `*.cache.js` bundle on `d3hsih69yn4d89.cloudfront.net`. They're protocol type tags, not user/session/account identifiers.
 
 Plus the `liauth` JWT in `~/.config/loseit/token` (or `$LOSEIT_TOKEN`):
 

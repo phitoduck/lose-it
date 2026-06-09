@@ -1,9 +1,28 @@
 """Configuration constants for the Lose It! client.
 
-The GWT signatures (``POLICY_HASH`` / ``STRONG_NAME``) change whenever LoseIt
-redeploys their web app — these are the latest values observed during
-development and are expected to be overridden by env vars in production use.
-Defaults are kept here so tests can run without the env being set up.
+Two classes of config end up in a :class:`Config`:
+
+1. **Per-account values** (``user_id``, ``user_name``, ``hours_from_gmt``).
+   These identify *you* and have **no default** — they must come from env
+   vars or explicit kwargs, otherwise ``Config.from_env`` raises. We do not
+   ship author-tied defaults because (a) they identify a specific human
+   and (b) silently falling back to someone else's account would make
+   debugging "I posted to whose diary?" surprises impossible.
+
+2. **Per-build values** (``policy_hash``, ``strong_name``). These are GWT
+   compile-time signatures of LoseIt's compiled web client; they change
+   every time LoseIt redeploys. The defaults below are *whatever was current
+   when this file was last touched*; refresh via the ``LOSEIT_POLICY_HASH``
+   and ``LOSEIT_STRONG_NAME`` env vars when requests start returning
+   ``IncompatibleRemoteServiceException``.
+
+> **Why aren't the ``Class/<digits>`` strings in this repo a leak?** Numbers
+> like ``UserId/4281239478`` or ``ServiceRequestToken/1076571655`` are GWT
+> type-serialization hashes derived from each Java class's fields. They are
+> identical for every user of the same client build and are inlined in the
+> public ``*.cache.js`` bundle anyone can ``curl`` from
+> ``d3hsih69yn4d89.cloudfront.net``. They are protocol type tags, not
+> credentials or session identifiers.
 """
 
 from __future__ import annotations
@@ -15,9 +34,13 @@ SERVICE_URL = "https://www.loseit.com/web/service"
 BASE_URL = "https://d3hsih69yn4d89.cloudfront.net/web/"
 
 
+class MissingConfigError(EnvironmentError):
+    """Raised when a required ``LOSEIT_*`` env var is unset."""
+
+
 @dataclass(frozen=True)
 class Config:
-    """Per-account + per-build configuration. Override fields via env vars."""
+    """Per-account + per-build configuration. Build via :meth:`from_env`."""
 
     user_id: str
     user_name: str
@@ -29,17 +52,51 @@ class Config:
 
     @classmethod
     def from_env(cls, **overrides) -> Config:
-        """Build a Config from LOSEIT_* env vars, with kwargs as final overrides."""
+        """Build a Config from ``LOSEIT_*`` env vars; kwargs override env.
+
+        Required (no default; raises :class:`MissingConfigError` if absent
+        and not provided as a kwarg):
+
+        - ``LOSEIT_USER_ID`` — numeric ``sub`` claim of your ``liauth`` JWT
+        - ``LOSEIT_USER_NAME`` — your loseit.com username
+        - ``LOSEIT_HOURS_FROM_GMT`` — your local offset from UTC (e.g. ``-5``)
+
+        Optional (have safe defaults that may go stale on redeploy):
+
+        - ``LOSEIT_POLICY_HASH``
+        - ``LOSEIT_STRONG_NAME``
+        """
         env = os.environ
+        required = {
+            "user_id": ("LOSEIT_USER_ID", env.get("LOSEIT_USER_ID")),
+            "user_name": ("LOSEIT_USER_NAME", env.get("LOSEIT_USER_NAME")),
+            "hours_from_gmt": (
+                "LOSEIT_HOURS_FROM_GMT",
+                env.get("LOSEIT_HOURS_FROM_GMT"),
+            ),
+        }
+        resolved: dict[str, object] = {}
+        missing: list[str] = []
+        for field, (env_name, env_val) in required.items():
+            if field in overrides:
+                resolved[field] = overrides.pop(field)
+            elif env_val:
+                resolved[field] = env_val
+            else:
+                missing.append(env_name)
+        if missing:
+            raise MissingConfigError(
+                "Missing required env var(s): " + ", ".join(missing) + ". See README for setup."
+            )
+        # hours_from_gmt arrives as a str (env) or int (kwarg); coerce.
+        resolved["hours_from_gmt"] = int(resolved["hours_from_gmt"])  # type: ignore[arg-type]
+
         defaults = {
-            "user_id": env.get("LOSEIT_USER_ID", "47596378"),
-            "user_name": env.get("LOSEIT_USER_NAME", "Rich"),
-            "hours_from_gmt": int(env.get("LOSEIT_HOURS_FROM_GMT", "-5")),
-            "policy_hash": env.get("LOSEIT_POLICY_HASH", "5ED2771F63B26294E45551B2D697E7B0"),
-            "strong_name": env.get("LOSEIT_STRONG_NAME", "24BBC590737D4E7508A96609A56E11F3"),
+            "policy_hash": env.get("LOSEIT_POLICY_HASH", "8F87EC8969F17AE77B6283D3A83F6D4C"),
+            "strong_name": env.get("LOSEIT_STRONG_NAME", "351AE5DC0CA36AD3BA9C7CBA7B0E07B8"),
         }
         defaults.update(overrides)
-        return cls(**defaults)
+        return cls(**resolved, **defaults)
 
 
 MEAL_NAMES = {0: "breakfast", 1: "lunch", 2: "dinner", 3: "snacks"}

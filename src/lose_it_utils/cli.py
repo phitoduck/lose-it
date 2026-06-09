@@ -24,7 +24,7 @@ from typing import Annotated
 
 import typer
 
-from .client import Client, daily, entries, foods
+from .client import Client, MissingConfigError, daily, entries, foods
 from .client._config import MEAL_NAMES, MEAL_TYPES
 from .client._dates import day_number_for, parse_date_arg
 from .client.init import get_daydate_key
@@ -41,10 +41,13 @@ app = typer.Typer(
 
 
 def _open_client() -> Client:
-    """Build a Client from env vars; print a friendly error if token is missing."""
+    """Build a Client from env vars; print a friendly error if config / token missing."""
     try:
         return Client.from_env()
     except FileNotFoundError as e:
+        typer.secho(f"❌ {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2) from e
+    except MissingConfigError as e:
         typer.secho(f"❌ {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from e
 

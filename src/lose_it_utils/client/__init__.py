@@ -21,7 +21,7 @@ from __future__ import annotations
 import httpx
 
 from . import auth as _auth
-from ._config import Config
+from ._config import Config, MissingConfigError
 from ._http import HttpClient, LoseItAuthError, LoseItError
 
 
@@ -68,4 +68,5 @@ __all__ = [
     "HttpClient",
     "LoseItAuthError",
     "LoseItError",
+    "MissingConfigError",
 ]
