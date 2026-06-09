@@ -19,15 +19,6 @@
 
 > ⚠️ **Reverse-engineered & unofficial.** Talks to Lose It!'s private GWT-RPC web endpoints. No official API exists; the protocol is brittle and may break without notice. Not affiliated with Lose It! / FitNow, Inc.
 
-## Highlights
-
-- **SDK first**: `lose_it_utils.Client` + per-resource modules (`client.foods`, `client.entries`, `client.daily`, `client.init`). Each RPC is a single function — no implicit state.
-- **CLI**: `lose-it` (typer) with subcommands `search`, `log`, `diary`, `delete`, `whoami`.
-- **httpx** under the hood. No `requests` dependency.
-- **Real-API + mocked-unit test coverage**: a single functional CRUD test exercises the live API and saves the raw GWT-RPC responses as fixtures; unit tests then mock httpx and replay those fixtures, so the mocks are guaranteed to match production wire shapes.
-- **Sanitized fixtures**: account-identifying values are scrubbed before being committed, so the captured request/response bodies are safe to publish.
-- **Secret scanning**: a `prek` pre-commit pipeline runs `ruff` (lint + format) and `gitleaks` (with a custom rule for LoseIt's exact `liauth` JWT shape) on every commit so credentials can't be checked in by accident.
-
 ## Try it without installing (`uvx`)
 
 ```bash
@@ -182,6 +173,50 @@ user_name      : your.username
 hours_from_gmt : -6
 policy_hash    : 8F87EC8969F17AE77B6283D3A83F6D4C
 strong_name    : 351AE5DC0CA36AD3BA9C7CBA7B0E07B8
+```
+
+### Script-friendly output: `--output json` / `-o json`
+
+Every subcommand accepts a global `--output` (alias `-o`) flag. The default is `text`; pass `json` to get a JSON document on stdout suitable for piping into `jq` or a script.
+
+```text
+$ lose-it -o json whoami
+{
+  "user_id": "12345678",
+  "user_name": "your.username",
+  "hours_from_gmt": -6,
+  "policy_hash": "8F87EC8969F17AE77B6283D3A83F6D4C",
+  "strong_name": "351AE5DC0CA36AD3BA9C7CBA7B0E07B8"
+}
+
+$ lose-it -o json diary --date 2026-06-08 | jq '.entries[] | .food_name'
+"Tortilla Wraps, High Fiber, Low Carb, Xtreme Wellness"
+"Avocado, whole"
+"Real Good Lightly Breaded Chicken Strips"
+```
+
+### Preview without mutating: `--dry-run`
+
+`log` and `delete` both accept `--dry-run`. Read-only lookups still run (so you see what *would* be logged or deleted), but the mutating GWT-RPC call is skipped.
+
+```text
+$ lose-it log "x-treme carb balance tortilla" -m lunch --pick 2 --dry-run
+
+🟡 DRY RUN — would log Tortilla Wraps, High Fiber, Low Carb, Xtreme Wellness → lunch × 1.0 (70 cal)
+
+$ lose-it -o json delete --meal snacks --pick 1 --dry-run
+{
+  "action": "delete",
+  "dry_run": true,
+  "date": "2026-06-08",
+  "meal": "snacks",
+  "target": {
+    "food_name": "Tortilla Wraps, High Fiber, Low Carb, Xtreme Wellness",
+    "food_brand": "...",
+    "servings": 1.0,
+    ...
+  }
+}
 ```
 
 ## SDK
