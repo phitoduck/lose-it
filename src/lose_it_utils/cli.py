@@ -37,7 +37,13 @@ from typing import Annotated, Any
 import typer
 
 from .client import Client, MissingConfigError, daily, entries, foods
-from .client._config import MEAL_NAMES, MEAL_TYPES
+from .client._config import (
+    DEFAULT_SERVING_SIZE_GRAMS,
+    GRAMS_MEASURE_ORDINAL,
+    MEAL_NAMES,
+    MEAL_TYPES,
+    measure_name,
+)
 from .client._dates import day_number_for, parse_date_arg
 from .client._settings import DEFAULT_CONFIG_FILE, write_yaml_config
 from .client.auth import (
@@ -307,7 +313,27 @@ def log(
     meal: Annotated[
         str, typer.Option("--meal", "-m", help="Meal (breakfast/lunch/dinner/snacks)")
     ] = "snacks",
-    servings: Annotated[float, typer.Option(help="Number of servings")] = 1.0,
+    servings: Annotated[
+        float,
+        typer.Option(
+            help=(
+                "Number of servings (multiplier on the food's default serving "
+                "size). For gram-measured foods (ord=8) 1 serving = 100 g — "
+                "use --grams instead for a more natural interface."
+            ),
+        ),
+    ] = 1.0,
+    grams: Annotated[
+        float | None,
+        typer.Option(
+            "--grams",
+            "-g",
+            help=(
+                "Quantity in grams. Only valid when the picked food's measure "
+                "unit is grams; equivalent to --servings (grams / 100)."
+            ),
+        ),
+    ] = None,
     pick: Annotated[
         int | None, typer.Option(help="Auto-pick the Nth search result (1-indexed)")
     ] = None,
@@ -343,10 +369,47 @@ def log(
         idx = _resolve_pick(pick, "Select food #", len(results))
         selected = results[idx]
         unsaved = foods.get_unsaved_food_log_entry(client.http, selected)
+
+        # Resolve servings vs grams. --grams requires the food to be
+        # gram-measured; otherwise log to a different food entry.
+        measure_ord = unsaved.food_measure_ordinal
+        if grams is not None:
+            if measure_ord != GRAMS_MEASURE_ORDINAL:
+                msg = (
+                    f"--grams was passed but {selected.name!r} is measured in "
+                    f"'{measure_name(measure_ord)}', not grams. Pick a "
+                    f"gram-measured entry (use --pick after `lose-it search` "
+                    f"to inspect candidates) or drop --grams."
+                )
+                if fmt is OutputFormat.json:
+                    _emit_json(
+                        {
+                            "error": "not_gram_measured",
+                            "food": selected.name,
+                            "measure_unit": measure_name(measure_ord),
+                            "message": msg,
+                        }
+                    )
+                else:
+                    typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
+                raise typer.Exit(code=2)
+            servings = grams / DEFAULT_SERVING_SIZE_GRAMS
+
         day_num = day_number_for(when)
         meal_ord = MEAL_TYPES[meal]
         per_serving_cal = (unsaved.nutrients or {}).get(0)
         scaled_cal = (per_serving_cal * servings) if per_serving_cal is not None else None
+
+        # The portion size the official Lose It! UI will display next to the
+        # measure-unit name — for grams this is the literal gram count, for
+        # everything else it's the # of servings (= 1 each, 1 serving, …).
+        unit = measure_name(measure_ord)
+        if measure_ord == GRAMS_MEASURE_ORDINAL:
+            portion_size = servings * DEFAULT_SERVING_SIZE_GRAMS
+            portion_str = f"{portion_size:g} {unit}"
+        else:
+            portion_size = servings
+            portion_str = f"{servings:g} {unit}"
 
         if not dry_run:
             # The day_key lookup is only needed to construct an actual log payload;
@@ -363,6 +426,8 @@ def log(
                     "meal": MEAL_NAMES[meal_ord],
                     "meal_ordinal": meal_ord,
                     "servings": servings,
+                    "portion_size": portion_size,
+                    "measure_unit": unit,
                     "food": {
                         "name": selected.name,
                         "brand": selected.brand,
@@ -375,7 +440,7 @@ def log(
             prefix = "🟡 DRY RUN — would log" if dry_run else "✅ Logged"
             cal_str = f" ({scaled_cal:.0f} cal)" if scaled_cal is not None else ""
             typer.secho(
-                f"{prefix} {selected.name} → {MEAL_NAMES[meal_ord]} × {servings}{cal_str}",
+                f"{prefix} {selected.name} → {MEAL_NAMES[meal_ord]} {portion_str}{cal_str}",
                 fg=typer.colors.YELLOW if dry_run else typer.colors.GREEN,
             )
 

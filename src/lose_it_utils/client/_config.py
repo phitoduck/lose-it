@@ -36,13 +36,17 @@ __all__ = [
     "DAY_NUM_ANCHOR_DATE",
     "DAY_NUM_ANCHOR_VALUE",
     "DEFAULT_CONFIG_FILE",
+    "DEFAULT_SERVING_SIZE_GRAMS",
     "DEFAULT_TOKEN_FILE",
+    "GRAMS_MEASURE_ORDINAL",
     "MEAL_NAMES",
     "MEAL_TYPES",
+    "MEASURE_NAMES",
     "NUTRIENT_NAMES",
     "SERVICE_URL",
     "Config",
     "MissingConfigError",
+    "measure_name",
 ]
 
 
@@ -71,6 +75,31 @@ class Config(Settings):
 
 MEAL_NAMES = {0: "breakfast", 1: "lunch", 2: "dinner", 3: "snacks"}
 MEAL_TYPES = {v: k for k, v in MEAL_NAMES.items()} | {"snack": 3}
+
+# FoodMeasurement ordinal → human-readable unit. Empirically verified by
+# logging entries and inspecting the official Lose It! web/mobile UI:
+# - 8  is rendered as "grams" — the LoseIt food-data convention for ord=8
+#   entries is that the per-serving nutrient values are PER 100 g (matches
+#   the per-100g convention printed on nutrition labels), and the FoodServing-
+#   Size.quantity field is the literal gram count of the consumed portion.
+# - 5  is rendered as "each" — used for whole-item entries (one avocado, …).
+# - 27 is rendered as "serving" — generic Lose-It-defined "1 serving" of the
+#   food (one tortilla wrap, one slice of bread, etc.).
+#
+# Many other ordinals exist (cup/tbsp/oz/…) but aren't load-bearing for the
+# CLI behavior today; we surface them as "(measure {ord})" in user-facing
+# output so they're at least disambiguated.
+GRAMS_MEASURE_ORDINAL = 8
+DEFAULT_SERVING_SIZE_GRAMS = 100.0
+MEASURE_NAMES = {5: "each", 8: "grams", 27: "serving"}
+
+
+def measure_name(ordinal: int | None) -> str:
+    """Return a human-readable unit name for a ``FoodMeasurement`` ordinal."""
+    if ordinal is None:
+        return "serving"
+    return MEASURE_NAMES.get(ordinal, f"(measure {ordinal})")
+
 
 # Nutrient ordinals → human label. The server only accepts these 9 ordinals
 # in the FoodNutrients HashMap when constructing FoodLogEntry payloads.
