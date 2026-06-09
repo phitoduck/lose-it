@@ -1,7 +1,5 @@
 <h1 align="center">lose-it</h1>
 
-<p align="center"><em>⚠️ <b>Reverse-engineered & unofficial.</b> Talks to Lose It!'s private GWT-RPC web endpoints. No official API exists; the protocol is brittle and may break without notice. Not affiliated with Lose It! / FitNow, Inc.</em></p>
-
 <p align="center">
   <img src="docs/diagram.svg" alt="lose-it CLI → Lose It! web API" width="640"/>
 </p>
@@ -18,6 +16,8 @@
 </p>
 
 <p align="center">Unofficial Python SDK + CLI for <a href="https://www.loseit.com/"><b>Lose It!</b></a> — log meals, query your diary, and delete entries from the command line.</p>
+
+> ⚠️ **Reverse-engineered & unofficial.** Talks to Lose It!'s private GWT-RPC web endpoints. No official API exists; the protocol is brittle and may break without notice. Not affiliated with Lose It! / FitNow, Inc.
 
 ## Quickstart
 
