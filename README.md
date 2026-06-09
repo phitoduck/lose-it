@@ -31,6 +31,12 @@ lose-it login                       # default: --browser chrome
 lose-it diary
 ```
 
+> `lose-it log "real good lightly breaded chicken strips" -m snacks --pick 5 --grams 120`
+
+<p align="center">
+  <img src="docs/mobile-app-demo.jpeg" alt="Lose It! mobile app — Mon, Jun 8: Snacks (451 cal): Tortilla Wraps 1 Serving (70 cal), Real good Lightly Breaded Chicken 120 Grams (187 cal), Avocado (USDA Website Per 100g) 110 Grams (194 cal)" width="320"/>
+</p>
+
 `lose-it login` does the one-time setup for you: it imports the `liauth` JWT from the browser, derives `user_id` from the JWT's `sub` claim, picks up `user_name` from the JWT payload or the browser's other `loseit.com` cookies (prompting once if neither has it), reads `hours_from_gmt` from your OS timezone, and writes them all to `~/.config/loseit/config.yaml`. No `LOSEIT_*` env vars to set by hand — see [Configuration](#configuration) for layered overrides.
 
 If `lose-it login` reports the cookie is missing or expired, it opens the Lose It! signin page in the chosen browser — sign in, then re-run `lose-it login`.
