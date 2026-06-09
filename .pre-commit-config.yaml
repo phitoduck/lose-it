@@ -29,7 +29,10 @@ repos:
         exclude: ^tests/conformance/fixtures/
       - id: check-merge-conflict
       - id: check-added-large-files
-        args: [--maxkb=200]
+        # 700 KB so full-resolution screenshots in docs/ (e.g. mobile-app-demo.jpeg
+        # at ~530 KB) can land without manual downsampling, while still blocking
+        # an accidentally-committed video or training dataset.
+        args: [--maxkb=700]
       - id: check-yaml
       - id: check-toml
       - id: detect-private-key
