@@ -27,14 +27,10 @@
     <circle cx="16" cy="8" r="2.5" fill="#f9e2af"/>
     <circle cx="24" cy="8" r="2.5" fill="#a6e3a1"/>
     <!-- prompt $ -->
-    <text x="8" y="30" font-family="'SF Mono', Menlo, monospace" font-size="10" fill="#a6e3a1">$</text>
-    <text x="18" y="30" font-family="'SF Mono', Menlo, monospace" font-size="10" fill="#cdd6f4">lose-it</text>
-    <text x="8" y="44" font-family="'SF Mono', Menlo, monospace" font-size="9" fill="#7f849c">diary --date</text>
-    <!-- blinking cursor -->
-    <rect x="62" y="36" width="6" height="10" fill="#cdd6f4"/>
+    <text x="8" y="36" font-family="'SF Mono', Menlo, monospace" font-size="10" fill="#a6e3a1">$</text>
+    <text x="18" y="36" font-family="'SF Mono', Menlo, monospace" font-size="10" fill="#cdd6f4">lose-it</text>
   </g>
   <text class="label" x="180" y="148">lose-it CLI</text>
-  <text class="sublabel" x="180" y="166">Python · typer · httpx</text>
 
   <!-- ── Arrow with annotations ─────────────────────────────────────────── -->
   <line class="arrow" x1="290" y1="110" x2="430" y2="110"/>
@@ -43,16 +39,5 @@
 
   <!-- ── LoseIt tile ────────────────────────────────────────────────────── -->
   <rect class="tile" x="440" y="40" width="200" height="140"/>
-  <!-- Inspired-by-LoseIt mark: rounded white tile with a stylized scale/arrow.
-       (Not the official logo — a custom glyph hand-drawn for this diagram.) -->
-  <g transform="translate(518,68)">
-    <!-- rounded brand square -->
-    <rect x="0" y="0" width="64" height="64" rx="14" ry="14" fill="#7cc362"/>
-    <!-- big "L" -->
-    <path d="M 17 12 L 17 50 L 42 50" stroke="#ffffff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-    <!-- downward arrow (weight loss) -->
-    <path d="M 47 22 L 47 38 M 41 32 L 47 39 L 53 32" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-  </g>
-  <text class="label" x="540" y="148">Lose It!</text>
-  <text class="sublabel" x="540" y="166">loseit.com web app</text>
+  <image href="loseit-logo.png" x="480" y="91" width="120" height="37" preserveAspectRatio="xMidYMid meet"/>
 </svg>
