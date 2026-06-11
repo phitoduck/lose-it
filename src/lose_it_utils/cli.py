@@ -48,6 +48,11 @@ from .client._config import (
 )
 from .client._dates import day_number_for, parse_date_arg
 from .client._settings import DEFAULT_CONFIG_FILE, write_yaml_config
+from .client._units import (
+    CANONICAL_UNIT_NAMES,
+    conversion_factor as _conversion_factor,
+    resolve_unit,
+)
 from .client.auth import (
     DEFAULT_TOKEN_FILE,
     SIGNIN_URL,
@@ -402,7 +407,29 @@ def log(
             "-g",
             help=(
                 "Quantity in grams. Only valid when the picked food's measure "
-                "unit is grams; equivalent to --servings (grams / 100)."
+                "unit is grams; equivalent to --serving-amount <N> "
+                "--serving-unit g."
+            ),
+        ),
+    ] = None,
+    serving_amount: Annotated[
+        float | None,
+        typer.Option(
+            "--serving-amount",
+            help=(
+                "Quantity in the unit specified by --serving-unit (e.g. "
+                "490 paired with --serving-unit mL). Mutually exclusive with "
+                "--servings / --grams; must be passed together with --serving-unit."
+            ),
+        ),
+    ] = None,
+    serving_unit: Annotated[
+        str | None,
+        typer.Option(
+            "--serving-unit",
+            help=(
+                "Display unit for --serving-amount. One of: cup, mL, fl_oz, "
+                "tbsp, g (plus common aliases — see _units.UNIT_ALIASES)."
             ),
         ),
     ] = None,
