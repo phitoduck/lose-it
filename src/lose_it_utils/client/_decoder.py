@@ -309,6 +309,18 @@ def _read_typed(reader: _Reader, fqcn: str) -> Any:
             bytes_list.append(int(reader.pop_raw()))
         return bytes_list
 
+    # Object arrays (``[Lcom.foo.Bar;/<hash>``) — length-prefixed list of
+    # polymorphic Objects, same wire shape as ``java.util.ArrayList`` but
+    # represented as a Java native array. The instantiate function pops
+    # the length; the deserialize loops ``pGd`` over each slot.
+    if fqcn.startswith("[L"):
+        items_holder: dict[str, Any] = {"__type__": fqcn, "items": []}
+        reader.backrefs.append(items_holder)
+        length = int(reader.pop_raw())
+        for _ in range(length):
+            items_holder["items"].append(read_object(reader))
+        return items_holder
+
     # Object reference types — register a placeholder *before* reading
     # children so any backrefs *inside* the body can resolve to the
     # outer object. GWT does this too.
