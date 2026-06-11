@@ -47,6 +47,7 @@ from .client._config import (
     measure_name,
 )
 from .client._dates import day_number_for, parse_date_arg
+from .client._ids import hex_to_pk, pk_to_hex
 from .client._settings import DEFAULT_CONFIG_FILE, write_yaml_config
 from .client._units import (
     CANONICAL_UNIT_NAMES,
@@ -285,12 +286,14 @@ def _print_search_results(results) -> None:
     if not results:
         typer.echo("  No results.")
         return
-    typer.echo(f"\n{'#':>3}  {'Food':50} {'Brand'}")
-    typer.echo(f"{'─' * 3}  {'─' * 50} {'─' * 20}")
+    typer.echo(f"\n{'#':>3}  {'Food':50} {'Brand':20} {'Food ID'}")
+    typer.echo(f"{'─' * 3}  {'─' * 50} {'─' * 20} {'─' * 11}")
     for i, f in enumerate(results[:15]):
         name = (f.name or "")[:50]
         brand = (f.brand or "")[:20]
-        typer.echo(f"{i + 1:>3}  {name:50} {brand}")
+        food_id = pk_to_hex(f.pk_bytes) if len(f.pk_bytes) == 16 else ""
+        food_id_short = f"{food_id[:10]}…" if food_id else ""
+        typer.echo(f"{i + 1:>3}  {name:50} {brand:20} {food_id_short}")
 
 
 def _print_diary(entries_, when: date) -> None:
@@ -375,6 +378,7 @@ def search(
                             "name": r.name,
                             "brand": r.brand,
                             "category": r.category,
+                            "food_id": pk_to_hex(r.pk_bytes),
                             "pk_bytes": list(r.pk_bytes),
                         }
                         for r in results
@@ -388,7 +392,15 @@ def search(
 @app.command()
 def log(
     ctx: typer.Context,
-    query: Annotated[str, typer.Argument(help="Food to search for")],
+    query: Annotated[
+        str | None,
+        typer.Argument(
+            help=(
+                "Free-text search query. Mutually exclusive with --food-id. "
+                "Required unless --food-id is given."
+            ),
+        ),
+    ] = None,
     meal: Annotated[
         str, typer.Option("--meal", "-m", help="Meal (breakfast/lunch/dinner/snacks)")
     ] = "snacks",
@@ -438,6 +450,18 @@ def log(
     pick: Annotated[
         int | None, typer.Option(help="Auto-pick the Nth search result (1-indexed)")
     ] = None,
+    food_id: Annotated[
+        str | None,
+        typer.Option(
+            "--food-id",
+            help=(
+                "Stable 32-char hex food ID (from `lose-it search`'s Food ID "
+                "column or JSON `food_id` field). Bypasses the search step and "
+                "goes straight to the unsaved-entry RPC. Mutually exclusive "
+                "with the positional query and --pick."
+            ),
+        ),
+    ] = None,
     on_date: Annotated[
         str | None, typer.Option("--date", help="Target date YYYY-MM-DD (default: today)")
     ] = None,
@@ -452,9 +476,10 @@ def log(
     """Search for a food and log it to a meal."""
     fmt = _output_format(ctx)
     logger.info(
-        "cli.log: query={q!r} meal={m} servings={s} grams={g} "
+        "cli.log: query={q!r} food_id={fi!r} meal={m} servings={s} grams={g} "
         "serving_amount={sa} serving_unit={su!r} pick={p} date={d!r} dry_run={dr}",
         q=query,
+        fi=food_id,
         m=meal,
         s=servings,
         g=grams,
@@ -472,14 +497,28 @@ def log(
         )
         raise typer.Exit(code=2)
 
-    # ── Upfront flag-validation (cheap; fail before any RPC) ────────────
+    # ── Food-selection validation: --food-id vs query/--pick ────────────
+    if food_id is not None and (query is not None or pick is not None):
+        msg = "--food-id and <query>/--pick are mutually exclusive"
+        if fmt is OutputFormat.json:
+            _emit_json({"error": "mutually_exclusive", "message": msg})
+        else:
+            typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    if food_id is None and query is None:
+        msg = "must pass either --food-id or a search query"
+        if fmt is OutputFormat.json:
+            _emit_json({"error": "missing_food", "message": msg})
+        else:
+            typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+
+    # ── Portion-size validation ──────────────────────────────────────────
     #
     # The portion-size knobs come in three mutually-exclusive flavors:
     #   • --servings N             (legacy, default)
     #   • --grams N                (legacy alias; rewritten to the new pair)
     #   • --serving-amount + --serving-unit  (new general unit override)
-    # Validate up front so the user gets a clean exit-code-2 before we
-    # spend a search RPC + a getUnsavedFoodLogEntry RPC.
     sa_set = serving_amount is not None
     su_set = serving_unit is not None
     if sa_set != su_set:
@@ -499,11 +538,6 @@ def log(
         else:
             typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2)
-    # ``--servings`` defaults to 1.0; treat any non-default value as
-    # explicit. (We can't perfectly distinguish ``--servings 1.0`` from
-    # the default in Typer without a sentinel — fine in practice because
-    # ``--serving-amount=N --serving-unit=u --servings=1.0`` is redundant
-    # anyway.)
     if sa_set and servings != 1.0:
         msg = "--serving-amount / --serving-unit are mutually exclusive with --servings."
         if fmt is OutputFormat.json:
@@ -518,8 +552,6 @@ def log(
         else:
             typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2)
-    # Resolve --serving-unit to its ordinal up front (fails before any RPC
-    # for unknown / ambiguous units).
     chosen_ord: int | None = None
     if sa_set and serving_unit is not None:
         try:
@@ -531,8 +563,6 @@ def log(
             else:
                 typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
             raise typer.Exit(code=2) from exc
-    # Normalise --grams N into the new pair so the rest of the function
-    # has one code path. (--grams N == --serving-amount N --serving-unit g.)
     if grams is not None:
         if grams <= 0:
             msg = f"--grams must be positive (got {grams})."
@@ -547,15 +577,35 @@ def log(
 
     when = parse_date_arg(on_date)
     with _open_client(ctx) as client:
-        results = foods.search(client.http, query)
-        if fmt is OutputFormat.text:
-            _print_search_results(results)
-        if not results:
-            if fmt is OutputFormat.json:
-                _emit_json({"error": "no_results", "query": query})
-            raise typer.Exit(code=1)
-        idx = _resolve_pick(pick, "Select food #", len(results))
-        selected = results[idx]
+        if food_id is not None:
+            try:
+                pk_bytes = hex_to_pk(food_id)
+            except ValueError as exc:
+                if fmt is OutputFormat.json:
+                    _emit_json({"error": "invalid_food_id", "message": str(exc)})
+                else:
+                    typer.secho(f"❌ {exc}", fg=typer.colors.RED, err=True)
+                raise typer.Exit(code=2) from exc
+            try:
+                selected = foods.get_food(client.http, pk_bytes)
+            except Exception as exc:
+                if fmt is OutputFormat.json:
+                    _emit_json({"error": "food_not_found", "message": str(exc)})
+                else:
+                    typer.secho(f"❌ {exc}", fg=typer.colors.RED, err=True)
+                raise typer.Exit(code=1) from exc
+        else:
+            # query is guaranteed non-None here by the validation above.
+            assert query is not None
+            results = foods.search(client.http, query)
+            if fmt is OutputFormat.text:
+                _print_search_results(results)
+            if not results:
+                if fmt is OutputFormat.json:
+                    _emit_json({"error": "no_results", "query": query})
+                raise typer.Exit(code=1)
+            idx = _resolve_pick(pick, "Select food #", len(results))
+            selected = results[idx]
         unsaved = foods.get_unsaved_food_log_entry(client.http, selected)
 
         # ── Resolve the portion-size knob into wire-payload parameters ──
@@ -642,6 +692,7 @@ def log(
                 conversion_factor=conv_factor,
             )
 
+        selected_food_id = pk_to_hex(selected.pk_bytes) if len(selected.pk_bytes) == 16 else ""
         if fmt is OutputFormat.json:
             _emit_json(
                 {
@@ -657,6 +708,7 @@ def log(
                         "name": selected.name,
                         "brand": selected.brand,
                         "category": selected.category,
+                        "food_id": selected_food_id,
                     },
                     "calories": scaled_cal,
                 }
@@ -664,8 +716,9 @@ def log(
         else:
             prefix = "🟡 DRY RUN — would log" if dry_run else "✅ Logged"
             cal_str = f" ({scaled_cal:.0f} cal)" if scaled_cal is not None else ""
+            id_str = f" (id {selected_food_id[:4]}…)" if selected_food_id else ""
             typer.secho(
-                f"{prefix} {selected.name} → {MEAL_NAMES[meal_ord]} {portion_str}{cal_str}",
+                f"{prefix} {selected.name}{id_str} → {MEAL_NAMES[meal_ord]} {portion_str}{cal_str}",
                 fg=typer.colors.YELLOW if dry_run else typer.colors.GREEN,
             )
 

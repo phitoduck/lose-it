@@ -23,7 +23,8 @@ from .._logging import logger
 from ._config import Config
 from ._decoder import decode_response
 from ._gwt import build_envelope
-from ._http import HttpClient
+from ._http import HttpClient, LoseItError
+from ._ids import pk_to_hex
 from ._models import FoodSearchResult, UnsavedFoodLogEntry
 
 # ── Schema field positions ───────────────────────────────────────────────────
@@ -341,6 +342,74 @@ def _extract_unsaved_from_decoded(
             out.brand = ""
 
     return out
+
+
+# ── getFood ─────────────────────────────────────────────────────────────────
+
+
+def _build_get_food_payload(config: Config, pk_bytes: list[int]) -> str:
+    """Build the ``getFood`` GWT-RPC payload for a 16-byte food PK.
+
+    Wire shape (observed 2026-06-11): UserId envelope + a SimplePrimaryKey
+    wrapping the 16-byte food PK. No name, no locale. The PK bytes are
+    reversed on the wire (same convention as ``_build_unsaved_payload``).
+    """
+    if len(pk_bytes) != 16:
+        raise ValueError("food.pk_bytes must be 16 bytes")
+    strings = [
+        config.base_url,
+        config.policy_hash,
+        "com.loseit.core.client.service.LoseItRemoteService",
+        "getFood",
+        "com.loseit.core.client.service.ServiceRequestToken/1076571655",
+        "com.loseit.core.client.model.interfaces.IPrimaryKey",
+        "java.lang.String/2004016611",
+        "com.loseit.core.client.model.UserId/4281239478",
+        config.user_name,
+        "com.loseit.core.client.model.SimplePrimaryKey/3621315060",
+        "[B/3308590456",
+    ]
+    data: list[str] = ["1", "2", "3", "4", "3", "5", "6", "7"]
+    data += ["5", "0", "8", config.user_id, "9", str(config.hours_from_gmt)]
+    data += ["10", "11", "16"]
+    data += [str(int(b)) for b in reversed(pk_bytes)]
+    data += ["0"]
+    return build_envelope(strings, data)
+
+
+def get_food(http: HttpClient, pk_bytes: list[int]) -> FoodSearchResult:
+    """Look up a food by its PK.
+
+    Returns a :class:`FoodSearchResult` whose ``name``/``brand``/``category``
+    come from the response's ``FoodIdentifier`` and whose ``pk_bytes`` is
+    the caller-supplied PK (the server echoes the same PK back; we use the
+    input to avoid an extra ``_extract_pk_bytes`` round-trip).
+
+    The result can be handed straight to :func:`get_unsaved_food_log_entry`.
+    """
+    logger.info("foods.get_food: pk={h}", h=pk_to_hex(pk_bytes))
+    text = http.post_rpc(_build_get_food_payload(http.config, pk_bytes))
+    decoded = decode_response(text)
+    identifier = next(_walk(decoded, fqcn=_FOOD_IDENTIFIER), None)
+    if identifier is None:
+        raise LoseItError(f"Food with id {pk_to_hex(pk_bytes)} not found")
+    name = identifier.get("f3") or ""
+    brand = identifier.get("f4") or ""
+    category = identifier.get("f1") or ""
+    if not name:
+        raise LoseItError(f"Food with id {pk_to_hex(pk_bytes)} not found")
+    # Drop the email-local-part placeholder Lose It! stamps on personal-DB
+    # entries (mirrors the same scrub in _extract_search_results_from_decoded).
+    if http.config.user_name:
+        local_part = http.config.user_name.split("@", 1)[0]
+        if brand in (http.config.user_name, local_part):
+            brand = ""
+    return FoodSearchResult(
+        name=name,
+        brand=brand,
+        category=category,
+        pk_bytes=list(pk_bytes),
+    )
 
 
 def get_unsaved_food_log_entry(
