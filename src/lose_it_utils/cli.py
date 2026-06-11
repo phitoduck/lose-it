@@ -50,8 +50,10 @@ from .client._dates import day_number_for, parse_date_arg
 from .client._settings import DEFAULT_CONFIG_FILE, write_yaml_config
 from .client._units import (
     CANONICAL_UNIT_NAMES,
-    conversion_factor as _conversion_factor,
     resolve_unit,
+)
+from .client._units import (
+    conversion_factor as _conversion_factor,
 )
 from .client.auth import (
     DEFAULT_TOKEN_FILE,

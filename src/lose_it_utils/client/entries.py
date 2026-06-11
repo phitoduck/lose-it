@@ -66,9 +66,7 @@ def _build_log_payload(
         or conversion_factor is not None
     )
     if override_set and (
-        measure_ord_override is None
-        or quantity_in_chosen_unit is None
-        or conversion_factor is None
+        measure_ord_override is None or quantity_in_chosen_unit is None or conversion_factor is None
     ):
         raise ValueError(
             "measure_ord_override, quantity_in_chosen_unit, and "

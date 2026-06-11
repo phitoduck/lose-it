@@ -50,11 +50,23 @@ CONVERSIONS: dict[tuple[int, int], float] = {
 # value to its FoodMeasurement ordinal. Keep the keys lowercase; the
 # resolver normalises the input before lookup.
 UNIT_ALIASES: dict[str, int] = {
-    "cup": 3, "cups": 3, "c": 3,
-    "ml": 11, "milliliter": 11, "milliliters": 11,
-    "fl_oz": 10, "floz": 10, "fl-oz": 10, "fluid_oz": 10,
-    "tbsp": 2, "tablespoon": 2, "tablespoons": 2, "t": 2,
-    "g": 8, "gram": 8, "grams": 8,
+    "cup": 3,
+    "cups": 3,
+    "c": 3,
+    "ml": 11,
+    "milliliter": 11,
+    "milliliters": 11,
+    "fl_oz": 10,
+    "floz": 10,
+    "fl-oz": 10,
+    "fluid_oz": 10,
+    "tbsp": 2,
+    "tablespoon": 2,
+    "tablespoons": 2,
+    "t": 2,
+    "g": 8,
+    "gram": 8,
+    "grams": 8,
     # Deliberately omitted: bare "oz". In cooking it can mean weight ounce
     # (~28.35 g) or fluid ounce (~29.57 mL). The CLI requires the user to
     # spell out "fl_oz" for volume or "g" for weight.
@@ -82,8 +94,7 @@ def resolve_unit(raw: str) -> int:
     key = raw.strip().lower().replace(" ", "_")
     if key == "oz":
         raise ValueError(
-            "Bare 'oz' is ambiguous (weight vs fluid). "
-            "Use 'fl_oz' for volume or 'g' for weight."
+            "Bare 'oz' is ambiguous (weight vs fluid). Use 'fl_oz' for volume or 'g' for weight."
         )
     if key not in UNIT_ALIASES:
         raise ValueError(

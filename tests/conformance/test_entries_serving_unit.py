@@ -37,15 +37,15 @@ def _soup_unsaved() -> UnsavedFoodLogEntry:
         food_pk_bytes=[1] * 16,
         day_key="Z6mB_lo",
         nutrients={
-            0: 100.0,   # calories
-            2: 2.0,     # fat
-            3: 3.5,     # saturated fat
-            8: 10.0,    # cholesterol
-            9: 140.0,   # sodium
-            10: 15.0,   # carbs
-            11: 2.0,    # fiber
-            12: 5.0,    # sugar
-            13: 2.0,    # protein
+            0: 100.0,  # calories
+            2: 2.0,  # fat
+            3: 3.5,  # saturated fat
+            8: 10.0,  # cholesterol
+            9: 140.0,  # sodium
+            10: 15.0,  # carbs
+            11: 2.0,  # fiber
+            12: 5.0,  # sugar
+            13: 2.0,  # protein
         },
         serving_qty=1.0,
         food_measure_ordinal=3,  # cup
@@ -201,7 +201,7 @@ def test_override_uses_chosen_unit_ord_not_native() -> None:
     assert "|28|11|" in body
     # And the native ord (3) should NOT appear anywhere in the
     # FoodServingSize block — guards against a partial-override bug.
-    after = body[body.find("|27|"):]
+    after = body[body.find("|27|") :]
     assert "|28|3|" not in after, "FoodMeasure ref should be the chosen ord"
 
 
