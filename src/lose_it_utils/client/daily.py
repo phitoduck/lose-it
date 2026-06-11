@@ -63,13 +63,21 @@ def _build_payload(config: Config, target_date: date, day_key: str) -> str:
 
 
 def _pk_bytes_from(pk_obj: Any) -> list[int]:
-    """SimplePrimaryKey wraps a raw byte[] in its sole field."""
+    """SimplePrimaryKey wraps a raw byte[] in its sole field.
+
+    Returns bytes in **response form** to match the SDK's existing
+    pk_bytes contract — i.e. the form the outbound payload builders
+    (``_build_delete_payload`` etc.) re-reverse before serializing.
+    The schema decoder pops bytes LIFO, so its raw output is the
+    opposite of the on-stream slice the old parser produced; we flip
+    once here. See ``foods._extract_pk_bytes`` for the full story.
+    """
     if isinstance(pk_obj, dict):
         inner = pk_obj.get("f0")
         if isinstance(inner, list):
-            return [int(b) for b in inner]
+            return list(reversed([int(b) for b in inner]))
     if isinstance(pk_obj, list):
-        return [int(b) for b in pk_obj]
+        return list(reversed([int(b) for b in pk_obj]))
     return []
 
 
