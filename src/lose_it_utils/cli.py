@@ -36,6 +36,7 @@ from typing import Annotated, Any
 
 import typer
 
+from ._debug_cli import debug_app
 from ._logging import configure as _configure_logging
 from ._logging import logger
 from .client import Client, MissingConfigError, daily, entries, foods
@@ -99,6 +100,10 @@ app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
 )
+
+# `lose-it debug parse-response …` — replay captured GWT-RPC bodies
+# through the parser without re-firing the RPC. See ``_debug_cli.py``.
+app.add_typer(debug_app)
 
 
 # ── Top-level callback: global config + output options ──────────────────────
