@@ -28,7 +28,5 @@ def hex_to_pk(food_id: str) -> list[int]:
     except ValueError as exc:
         raise ValueError(f"Food ID is not valid hex: {food_id!r}") from exc
     if len(raw) != 16:
-        raise ValueError(
-            f"Food ID must be 32 hex chars (16 bytes); got {len(raw)} bytes."
-        )
+        raise ValueError(f"Food ID must be 32 hex chars (16 bytes); got {len(raw)} bytes.")
     return [b - 256 if b >= 128 else b for b in raw]

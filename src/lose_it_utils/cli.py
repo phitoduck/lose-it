@@ -563,9 +563,7 @@ def log(
             day_key = get_daydate_key(client.http, day_num) or ""
             entries.log_food(client.http, unsaved, meal_ord, day_key, day_num, servings)
 
-        selected_food_id = (
-            pk_to_hex(selected.pk_bytes) if len(selected.pk_bytes) == 16 else ""
-        )
+        selected_food_id = pk_to_hex(selected.pk_bytes) if len(selected.pk_bytes) == 16 else ""
         if fmt is OutputFormat.json:
             _emit_json(
                 {
@@ -591,8 +589,7 @@ def log(
             cal_str = f" ({scaled_cal:.0f} cal)" if scaled_cal is not None else ""
             id_str = f" (id {selected_food_id[:4]}…)" if selected_food_id else ""
             typer.secho(
-                f"{prefix} {selected.name}{id_str} → "
-                f"{MEAL_NAMES[meal_ord]} {portion_str}{cal_str}",
+                f"{prefix} {selected.name}{id_str} → {MEAL_NAMES[meal_ord]} {portion_str}{cal_str}",
                 fg=typer.colors.YELLOW if dry_run else typer.colors.GREEN,
             )
 
