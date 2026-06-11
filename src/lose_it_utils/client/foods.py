@@ -229,11 +229,20 @@ def _extract_unsaved_from_decoded(
 ) -> UnsavedFoodLogEntry:
     """Pull the FoodLogEntry template + identifier + nutrients out of a decoded response.
 
-    The unsaved-entry response wraps a ``FoodLogEntry`` whose first
-    field (``f0``) is a ``FoodIdentifier`` carrying the food's
-    name/brand/category and PK. The serving size + measure ordinal live
-    in nested ``FoodServing`` → ``FoodServingSize`` / ``FoodMeasure``
-    objects; nutrients are in a ``HashMap<FoodMeasurement, Double>``.
+    The unsaved-entry response wraps a ``FoodLogEntry`` whose fields
+    (verified against live fixtures) are:
+
+        f0 → FoodIdentifier   (name/brand/category/food PK)
+        f1 → FoodLogEntryContext
+        f2 → FoodServing      (nutrients + serving size + measure)
+        f3 → bool
+        f4 → long
+        f5 → long
+        f6 → SimplePrimaryKey (entry-PK placeholder)
+
+    The ``getUnsavedFoodLogEntry`` response is wrapped in a
+    ``LoseItRemoteServiceResponse`` like every other RPC; we walk into
+    it to find the inner FoodLogEntry by FQCN.
     """
     out = UnsavedFoodLogEntry(
         name="",
@@ -247,21 +256,19 @@ def _extract_unsaved_from_decoded(
     if fle is None:
         return out
 
-    identifier = next(_walk(fle, fqcn=_FOOD_IDENTIFIER), None)
+    # FoodIdentifier — name / brand / category / food PK.
+    identifier = fle.get("f0") if isinstance(fle.get("f0"), dict) else None
     if identifier is not None:
-        # FoodIdentifier schema: [RAW, STRING, STRING, STRING, STRING,
-        #                        OBJECT, RAW, OBJECT, LONG, OBJECT]
-        # In source order from the deserializer (verified against live
-        # response fixtures):
-        #   f0 → raw int (typically -1)
-        #   f1 → category   (e.g. "Tortilla", "Pancakes")
-        #   f2 → locale     ("en-US"; ignored)
-        #   f3 → name       (canonical display name)
+        # FoodIdentifier schema (verified against live fixtures):
+        #   f0 → raw int (-1)
+        #   f1 → category
+        #   f2 → locale (ignored)
+        #   f3 → name
         #   f4 → brand
         #   f5 → ProductType enum
         #   f6 → raw int
-        #   f7 → Verification
-        #   f8 → long (epoch ms; last-modified?)
+        #   f7 → Verification enum
+        #   f8 → long (last-modified epoch ms)
         #   f9 → PrimaryKey
         out.category = identifier.get("f1") or ""
         out.name = identifier.get("f3") or ""
@@ -270,9 +277,45 @@ def _extract_unsaved_from_decoded(
         if isinstance(pk_obj, dict) and pk_obj.get("__type__") == _SIMPLE_PK:
             out.food_pk_bytes = _extract_pk_bytes(pk_obj)
 
-    # day_key: scan all strings in the decoded tree for one shaped like a
-    # GWT short-key starting with "Zw". The schema doesn't tell us which
-    # slot carries it because day_key is a polymorphic Object field.
+    # FoodServing.f0 = FoodNutrients (HashMap inside); f1 = FoodServingSize.
+    food_serving = fle.get("f2") if isinstance(fle.get("f2"), dict) else None
+    if food_serving is not None:
+        # Nutrients live in the HashMap under FoodNutrients.f0 (the
+        # generated schema flattens it into a `java.util.HashMap` entry).
+        for hm in _walk(food_serving, fqcn_prefix="java.util.HashMap"):
+            entries_list = hm.get("entries")
+            if not isinstance(entries_list, list):
+                continue
+            for key, val in entries_list:
+                if (
+                    isinstance(key, dict)
+                    and isinstance(val, (int, float))
+                    and "ordinal" in key
+                    and isinstance(key["ordinal"], (int, float))
+                    and 0 <= int(key["ordinal"]) <= 30
+                ):
+                    out.nutrients[int(key["ordinal"])] = float(val)
+
+        # FoodServingSize sits at f1 of FoodServing.
+        serving_size = food_serving.get("f1")
+        if isinstance(serving_size, dict):
+            # FoodServingSize schema [DOUBLE, BOOLEAN, OBJECT, DOUBLE, DOUBLE, DOUBLE].
+            # f0 → serving_qty in the food's native units (1 cup = 1, etc.)
+            # f1 → isPrimary flag (bool)
+            # f2 → FoodMeasure enum (unit ord)
+            # f3, f4, f5 → quantity / multiplier slots (interpretation TBD)
+            qty = serving_size.get("f0")
+            if isinstance(qty, (int, float)):
+                out.serving_qty = float(qty)
+            measure = serving_size.get("f2")
+            if isinstance(measure, dict):
+                ord_ = measure.get("ordinal")
+                if isinstance(ord_, (int, float)):
+                    out.food_measure_ordinal = int(ord_)
+
+    # day_key: scan all strings in the FLE subtree for a GWT short-key.
+    # FoodLogEntryContext carries it as a polymorphic field whose exact
+    # position varies, so a tree-walk is the most robust path.
     def _scan_for_daykey(o: Any) -> str | None:
         if isinstance(o, str) and len(o) >= 5 and o.startswith("Zw") and o != "P__________":
             return o
@@ -291,43 +334,6 @@ def _extract_unsaved_from_decoded(
     daykey = _scan_for_daykey(fle)
     if daykey:
         out.day_key = daykey
-
-    # Nutrients: any HashMap whose key is an enum with ordinal 0..30 and
-    # value is a Double.
-    for hm in _walk(decoded, fqcn_prefix="java.util.HashMap"):
-        entries = hm.get("entries")
-        if not isinstance(entries, list):
-            continue
-        for key, val in entries:
-            if (
-                isinstance(key, dict)
-                and isinstance(val, (int, float))
-                and "ordinal" in key
-                and isinstance(key["ordinal"], (int, float))
-                and 0 <= int(key["ordinal"]) <= 30
-            ):
-                out.nutrients[int(key["ordinal"])] = float(val)
-
-    # Serving qty + measure ordinal: under FoodServing → FoodServingSize / FoodMeasure.
-    serving_size = next(
-        _walk(decoded, fqcn_prefix="com.loseit.core.client.model.FoodServingSize"),
-        None,
-    )
-    if serving_size is not None:
-        # FoodServingSize schema: [DOUBLE, BOOLEAN, OBJECT, DOUBLE, DOUBLE, DOUBLE]
-        # f0 is the quantity (per the deserializer source).
-        qty = serving_size.get("f0")
-        if isinstance(qty, (int, float)):
-            out.serving_qty = float(qty)
-    measure = next(
-        _walk(decoded, fqcn_prefix="com.loseit.core.client.model.FoodMeasure"),
-        None,
-    )
-    if isinstance(measure, dict):
-        # FoodMeasure is an enum; ordinal is in the "ordinal" slot.
-        ord_ = measure.get("ordinal")
-        if isinstance(ord_, (int, float)):
-            out.food_measure_ordinal = int(ord_)
 
     if user_name:
         local_part = user_name.split("@", 1)[0]
