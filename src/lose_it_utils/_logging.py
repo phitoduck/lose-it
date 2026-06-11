@@ -35,10 +35,29 @@ from loguru import logger
 __all__ = [
     "TRACE_LEVEL",
     "configure",
+    "headers_enabled",
     "logger",
 ]
 
 TRACE_LEVEL: Final[str] = "TRACE"
+
+# Toggles whether TRACE-level HTTP dumps include the request/response
+# header + cookie sections. Default off: the cookie section alone is
+# ~600 bytes of base64 JWT and the static request headers add another
+# ~300 bytes, none of which carry information the user typically wants
+# in a debugging session. The CLI wires this on with ``--log-headers``.
+_HEADERS_ENABLED: bool = False
+
+
+def headers_enabled() -> bool:
+    """Read the current TRACE header/cookie inclusion flag."""
+    return _HEADERS_ENABLED
+
+
+def _set_headers_enabled(flag: bool) -> None:
+    global _HEADERS_ENABLED
+    _HEADERS_ENABLED = bool(flag)
+
 
 # ── Formats ────────────────────────────────────────────────────────────────
 
@@ -71,6 +90,7 @@ def configure(
     level: str | None = None,
     log_file: Path | str | None = None,
     file_level: str = TRACE_LEVEL,
+    log_headers: bool = False,
 ) -> None:
     """Configure the global loguru logger.
 
@@ -89,10 +109,18 @@ def configure(
         so ``--log-file`` captures the full HTTP wire transcript — the
         whole point of having a file sink is to keep the noisy stuff
         for offline analysis even when the console is set higher.
+    log_headers:
+        Include the ``── headers ──`` and ``── cookies ──`` sections in
+        the TRACE-level HTTP request/response dumps. **Off by default:**
+        every TRACE call previously cost ~900 bytes of fixed-shape
+        framing (the JWT cookie alone is ~600 bytes), most of which
+        carries no debugging signal. Set to ``True`` when investigating
+        a header/cookie issue specifically.
     """
     level = _normalize(level)
     file_level = _normalize(file_level) or TRACE_LEVEL
 
+    _set_headers_enabled(log_headers)
     logger.remove()
 
     if level is not None:

@@ -19,7 +19,7 @@ import time
 
 import httpx
 
-from .._logging import logger
+from .._logging import headers_enabled, logger
 from ._config import Config
 
 # A GWT-RPC envelope's first ``|``-delimited field is its method name as
@@ -118,19 +118,31 @@ class HttpClient:
         method_name = _extract_rpc_method(payload)
         request_size = len(payload)
 
-        logger.opt(lazy=True).trace(
-            "HTTP REQUEST → {method_name}\n"
-            "POST {url}\n"
-            "── headers ──\n{headers}\n"
-            "── cookies ──\n{cookies}\n"
-            "── body ({size} bytes) ──\n{body}",
-            method_name=lambda: method_name,
-            url=lambda: url,
-            headers=lambda: _format_headers(self._client.headers),
-            cookies=lambda: _format_cookies(self._client.cookies),
-            size=lambda: request_size,
-            body=lambda: payload,
-        )
+        if headers_enabled():
+            logger.opt(lazy=True).trace(
+                "HTTP REQUEST → {method_name}\n"
+                "POST {url}\n"
+                "── headers ──\n{headers}\n"
+                "── cookies ──\n{cookies}\n"
+                "── body ({size} bytes) ──\n{body}",
+                method_name=lambda: method_name,
+                url=lambda: url,
+                headers=lambda: _format_headers(self._client.headers),
+                cookies=lambda: _format_cookies(self._client.cookies),
+                size=lambda: request_size,
+                body=lambda: payload,
+            )
+        else:
+            logger.opt(lazy=True).trace(
+                "HTTP REQUEST → {method_name}\n"
+                "POST {url}\n"
+                "── body ({size} bytes) ──\n{body}\n"
+                "(headers + cookies suppressed — re-run with --log-headers to include)",
+                method_name=lambda: method_name,
+                url=lambda: url,
+                size=lambda: request_size,
+                body=lambda: payload,
+            )
 
         start = time.perf_counter()
         try:
@@ -147,19 +159,32 @@ class HttpClient:
         text = resp.text
         response_size = len(text)
 
-        logger.opt(lazy=True).trace(
-            "HTTP RESPONSE ← {method_name}\n"
-            "{http_version} {status} ({elapsed:.1f} ms)\n"
-            "── headers ──\n{headers}\n"
-            "── body ({size} bytes) ──\n{body}",
-            method_name=lambda: method_name,
-            http_version=lambda: resp.http_version,
-            status=lambda: resp.status_code,
-            elapsed=lambda: elapsed_ms,
-            headers=lambda: _format_headers(resp.headers),
-            size=lambda: response_size,
-            body=lambda: text,
-        )
+        if headers_enabled():
+            logger.opt(lazy=True).trace(
+                "HTTP RESPONSE ← {method_name}\n"
+                "{http_version} {status} ({elapsed:.1f} ms)\n"
+                "── headers ──\n{headers}\n"
+                "── body ({size} bytes) ──\n{body}",
+                method_name=lambda: method_name,
+                http_version=lambda: resp.http_version,
+                status=lambda: resp.status_code,
+                elapsed=lambda: elapsed_ms,
+                headers=lambda: _format_headers(resp.headers),
+                size=lambda: response_size,
+                body=lambda: text,
+            )
+        else:
+            logger.opt(lazy=True).trace(
+                "HTTP RESPONSE ← {method_name}\n"
+                "{http_version} {status} ({elapsed:.1f} ms)\n"
+                "── body ({size} bytes) ──\n{body}",
+                method_name=lambda: method_name,
+                http_version=lambda: resp.http_version,
+                status=lambda: resp.status_code,
+                elapsed=lambda: elapsed_ms,
+                size=lambda: response_size,
+                body=lambda: text,
+            )
         logger.debug(
             "rpc {method_name}: POST {url} → {status} in {elapsed:.1f} ms "
             "(req {req}B, resp {resp_size}B)",

@@ -189,6 +189,19 @@ def _root(
             envvar="LOSEIT_LOG_FILE",
         ),
     ] = None,
+    log_headers: Annotated[
+        bool,
+        typer.Option(
+            "--log-headers/--no-log-headers",
+            help=(
+                "Include the request/response header + cookie sections in "
+                "TRACE-level HTTP dumps. Off by default to save space — the "
+                "JWT cookie alone is ~600 bytes per call. Turn on when "
+                "investigating a header-/cookie-specific issue."
+            ),
+            envvar="LOSEIT_LOG_HEADERS",
+        ),
+    ] = False,
 ) -> None:
     """Set up the per-invocation context.
 
@@ -200,6 +213,7 @@ def _root(
     _configure_logging(
         level=log_level.value if log_level is not None else None,
         log_file=log_file,
+        log_headers=log_headers,
     )
     if log_level is not None or log_file is not None:
         logger.debug(
