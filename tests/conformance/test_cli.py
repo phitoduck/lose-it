@@ -169,6 +169,11 @@ def test_log_grams_rejected_on_non_gram_measured_food(env, runner: CliRunner, ht
     The captured tortilla fixture has ``food_measure_ordinal=27`` (Serving),
     so trying to use --grams on it should bail out with a helpful message
     and exit code 2 (config-style failure).
+
+    After the serving-unit refactor, ``--grams N`` is rewritten internally
+    to ``--serving-amount N --serving-unit g``, so the rejection error
+    now flows through the generic ``unit_not_supported`` code path rather
+    than the legacy ``not_gram_measured`` one.
     """
     httpx_mock.add_response(
         url=SERVICE_URL,
@@ -195,8 +200,9 @@ def test_log_grams_rejected_on_non_gram_measured_food(env, runner: CliRunner, ht
     )
     assert result.exit_code == 2, result.output
     payload = json.loads(result.output)
-    assert payload["error"] == "not_gram_measured"
-    assert payload["measure_unit"] == "serving"
+    assert payload["error"] == "unit_not_supported"
+    assert payload["native_unit"] == "serving"
+    assert payload["requested_unit"] == "g"
 
     # And critically: no updateFoodLogEntry call was made.
     sent_bodies = [req.content.decode() for req in httpx_mock.get_requests()]
