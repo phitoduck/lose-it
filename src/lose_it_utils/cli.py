@@ -36,6 +36,8 @@ from typing import Annotated, Any
 
 import typer
 
+from ._logging import configure as _configure_logging
+from ._logging import logger
 from .client import Client, MissingConfigError, daily, entries, foods
 from .client._config import (
     DEFAULT_SERVING_SIZE_GRAMS,
@@ -72,6 +74,23 @@ class Browser(enum.StrEnum):
 
     chrome = "chrome"
     brave = "brave"
+
+
+class LogLevel(enum.StrEnum):
+    """Verbosity levels accepted by ``--log-level``.
+
+    ``trace`` is the loudest: every GWT-RPC request and response — full
+    headers, cookies, and bodies — is dumped to the sink. Use it to
+    reverse-engineer the API or to capture a session for offline replay.
+    """
+
+    trace = "trace"
+    debug = "debug"
+    info = "info"
+    success = "success"
+    warning = "warning"
+    error = "error"
+    critical = "critical"
 
 
 app = typer.Typer(
@@ -143,6 +162,33 @@ def _root(
             help='Override LOSEIT_STRONG_NAME / YAML "strong_name".',
         ),
     ] = None,
+    log_level: Annotated[
+        LogLevel | None,
+        typer.Option(
+            "--log-level",
+            help=(
+                "Verbosity for logs emitted on stderr. Default: muted. "
+                "`trace` dumps every GWT-RPC request + response, including "
+                "headers, cookies, and full payloads — useful for mapping "
+                "the API surface. `debug` keeps one-liners per call; `info` "
+                "logs high-level CLI events only."
+            ),
+            envvar="LOSEIT_LOG_LEVEL",
+        ),
+    ] = None,
+    log_file: Annotated[
+        Path | None,
+        typer.Option(
+            "--log-file",
+            help=(
+                "Write a full TRACE-level log of the session to this file. "
+                "Captures every request and response payload regardless of "
+                "the console --log-level — designed for offline analysis "
+                "and reverse-engineering."
+            ),
+            envvar="LOSEIT_LOG_FILE",
+        ),
+    ] = None,
 ) -> None:
     """Set up the per-invocation context.
 
@@ -151,6 +197,17 @@ def _root(
     are forwarded to ``Config.from_env`` so that unset flags do not shadow
     lower-priority sources.
     """
+    _configure_logging(
+        level=log_level.value if log_level is not None else None,
+        log_file=log_file,
+    )
+    if log_level is not None or log_file is not None:
+        logger.debug(
+            "cli invoked: command={cmd!r} log_level={lvl} log_file={lf}",
+            cmd=ctx.invoked_subcommand,
+            lvl=log_level.value if log_level else None,
+            lf=str(log_file) if log_file else None,
+        )
     ctx.ensure_object(dict)
     ctx.obj["output"] = output
     ctx.obj["config_overrides"] = {
@@ -284,6 +341,7 @@ def search(
 ) -> None:
     """Search the LoseIt food database."""
     fmt = _output_format(ctx)
+    logger.info("cli.search: query={q!r} output={o}", q=query, o=fmt.value)
     with _open_client(ctx) as client:
         results = foods.search(client.http, query)
         if fmt is OutputFormat.json:
@@ -350,6 +408,16 @@ def log(
 ) -> None:
     """Search for a food and log it to a meal."""
     fmt = _output_format(ctx)
+    logger.info(
+        "cli.log: query={q!r} meal={m} servings={s} grams={g} pick={p} date={d!r} dry_run={dr}",
+        q=query,
+        m=meal,
+        s=servings,
+        g=grams,
+        p=pick,
+        d=on_date,
+        dr=dry_run,
+    )
     if meal not in MEAL_TYPES:
         typer.secho(
             f"meal must be one of {sorted(MEAL_TYPES)}",
@@ -455,6 +523,7 @@ def diary(
     """List the diary for a given date (default: today)."""
     fmt = _output_format(ctx)
     when = parse_date_arg(on_date)
+    logger.info("cli.diary: date={d}", d=when.isoformat())
     with _open_client(ctx) as client:
         es = daily.get_daily_details(client.http, when)
         if fmt is OutputFormat.json:
@@ -494,6 +563,14 @@ def delete(
 ) -> None:
     """Delete a diary entry by meal + index."""
     fmt = _output_format(ctx)
+    logger.info(
+        "cli.delete: meal={m} pick={p} date={d!r} yes={y} dry_run={dr}",
+        m=meal,
+        p=pick,
+        d=on_date,
+        y=yes,
+        dr=dry_run,
+    )
     if meal not in MEAL_TYPES:
         typer.secho(
             f"meal must be one of {sorted(MEAL_TYPES)}",
@@ -651,6 +728,13 @@ def login(
     ``--no-write-config`` to import only the token.
     """
     fmt = _output_format(ctx)
+    logger.info(
+        "cli.login: browser={b} token_file={tf} config_file={cf} write_config={wc}",
+        b=browser.value,
+        tf=str(token_file),
+        cf=str(config_file),
+        wc=write_config,
+    )
     name = browser.value
     token = refresh_token_from_browser(name)
 
@@ -857,6 +941,7 @@ def _exp_iso(exp: int | None) -> str | None:
 def whoami(ctx: typer.Context) -> None:
     """Print the resolved client configuration."""
     fmt = _output_format(ctx)
+    logger.info("cli.whoami: output={o}", o=fmt.value)
     with _open_client(ctx) as client:
         cfg = client.config
         if fmt is OutputFormat.json:

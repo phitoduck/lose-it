@@ -10,6 +10,7 @@ by the desired number of servings when posting to ``updateFoodLogEntry``.
 
 from __future__ import annotations
 
+from .._logging import logger
 from ._config import Config
 from ._gwt import build_envelope, parse_response, resolve_string
 from ._http import HttpClient
@@ -137,9 +138,19 @@ def _extract_search_results(
 
 def search(http: HttpClient, query: str) -> list[FoodSearchResult]:
     """Search the LoseIt food database. Returns up to ~15 results."""
+    logger.info("foods.search: query={q!r}", q=query)
     text = http.post_rpc(_build_search_payload(http.config, query))
     tokens, strings = parse_response(text)
-    return _extract_search_results(tokens, strings, user_name=http.config.user_name)
+    results = _extract_search_results(tokens, strings, user_name=http.config.user_name)
+    logger.debug(
+        "foods.search: parsed {tokens} tokens, {strings} strings, {n} results",
+        tokens=len(tokens),
+        strings=len(strings),
+        n=len(results),
+    )
+    if not results:
+        logger.warning("foods.search: 0 results for query={q!r}", q=query)
+    return results
 
 
 # ── getUnsavedFoodLogEntry ──────────────────────────────────────────────────
@@ -276,6 +287,21 @@ def get_unsaved_food_log_entry(
     food: FoodSearchResult,
 ) -> UnsavedFoodLogEntry:
     """Return the food's nutrient + serving template (no diary write)."""
+    logger.info(
+        "foods.get_unsaved_food_log_entry: name={n!r} brand={b!r} category={c!r}",
+        n=food.name,
+        b=food.brand,
+        c=food.category,
+    )
     text = http.post_rpc(_build_unsaved_payload(http.config, food))
     tokens, strings = parse_response(text)
-    return _parse_unsaved_response(tokens, strings, user_name=http.config.user_name)
+    unsaved = _parse_unsaved_response(tokens, strings, user_name=http.config.user_name)
+    logger.debug(
+        "foods.get_unsaved_food_log_entry: measure_ord={mo} serving_qty={sq} "
+        "n_nutrients={nn} day_key={dk!r}",
+        mo=unsaved.food_measure_ordinal,
+        sq=unsaved.serving_qty,
+        nn=len(unsaved.nutrients or {}),
+        dk=unsaved.day_key,
+    )
+    return unsaved

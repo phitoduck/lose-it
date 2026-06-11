@@ -6,6 +6,7 @@ so other RPCs can reference today's day_key without guessing.
 
 from __future__ import annotations
 
+from .._logging import logger
 from ._config import Config
 from ._gwt import build_envelope, parse_response
 from ._http import HttpClient
@@ -46,15 +47,27 @@ def get_daydate_key(http: HttpClient, target_day_num: int) -> str | None:
     day numbers paired with their short string keys (e.g. ``Z6mB_lo`` for
     today). We scan the token stream for ``(day_num, "<key>")`` adjacency.
     """
+    logger.info("get_daydate_key: target_day_num={n}", n=target_day_num)
     text = http.post_rpc(build_payload(http.config))
     tokens, _ = parse_response(text)
     for i in range(len(tokens) - 2):
         if tokens[i] == target_day_num and isinstance(tokens[i + 1], str):
-            return tokens[i + 1]
+            key = tokens[i + 1]
+            logger.debug("get_daydate_key: matched day_num→key {n}→{k!r}", n=target_day_num, k=key)
+            return key
         if (
             tokens[i] == http.config.hours_from_gmt
             and tokens[i + 1] == target_day_num
             and isinstance(tokens[i + 2], str)
         ):
-            return tokens[i + 2]
+            key = tokens[i + 2]
+            logger.debug(
+                "get_daydate_key: matched (hrs, day_num)→key {n}→{k!r}", n=target_day_num, k=key
+            )
+            return key
+    logger.warning(
+        "get_daydate_key: no key found for day_num={n} (parsed {t} tokens)",
+        n=target_day_num,
+        t=len(tokens),
+    )
     return None

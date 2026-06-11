@@ -23,6 +23,8 @@ import time
 from pathlib import Path
 from typing import Any, Literal
 
+from .._logging import logger
+
 DEFAULT_TOKEN_FILE = Path("~/.config/loseit/token").expanduser()
 SIGNIN_URL = "https://www.loseit.com/"
 
@@ -69,9 +71,15 @@ def load_token(token_file: Path = DEFAULT_TOKEN_FILE) -> str:
     """Return the ``liauth`` JWT. Raises ``FileNotFoundError`` if missing."""
     env_token = os.environ.get("LOSEIT_TOKEN")
     if env_token:
+        logger.debug("auth.load_token: using LOSEIT_TOKEN env var ({n} chars)", n=len(env_token))
         return env_token.strip()
     if token_file.exists():
-        return token_file.read_text().strip()
+        token = token_file.read_text().strip()
+        logger.debug("auth.load_token: read token from {p} ({n} chars)", p=token_file, n=len(token))
+        return token
+    logger.error(
+        "auth.load_token: no token (env LOSEIT_TOKEN unset, file {p} missing)", p=token_file
+    )
     raise FileNotFoundError(f"No token: set LOSEIT_TOKEN env var or write JWT to {token_file}")
 
 
@@ -212,7 +220,15 @@ def refresh_token_from_browser(
     ``domain``. First call may trigger a macOS Keychain prompt so the OS
     can release the cookie-store master key.
     """
-    return load_cookies_from_browser(browser, domain).get("liauth")
+    logger.info("auth.refresh_token_from_browser: browser={b} domain={d}", b=browser, d=domain)
+    cookies = load_cookies_from_browser(browser, domain)
+    token = cookies.get("liauth")
+    logger.debug(
+        "auth.refresh_token_from_browser: {n} total cookies, liauth={found}",
+        n=len(cookies),
+        found="present" if token else "missing",
+    )
+    return token
 
 
 # Cookie names that some Lose It cookies have historically used to ship

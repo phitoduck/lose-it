@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import uuid
 
+from .._logging import logger
 from ._config import (
     DEFAULT_SERVING_SIZE_GRAMS,
     GRAMS_MEASURE_ORDINAL,
@@ -183,6 +184,23 @@ def log_food(
     servings: float = 1.0,
 ) -> None:
     """Log ``unsaved`` to the given meal/day with ``servings`` portions."""
+    logger.info(
+        "entries.log_food: name={n!r} meal_ord={m} day_num={d} day_key={k!r} servings={s}",
+        n=unsaved.name,
+        m=meal_ordinal,
+        d=day_num,
+        k=day_key,
+        s=servings,
+    )
+    logger.debug(
+        "entries.log_food: brand={b!r} category={c!r} measure_ord={mo} "
+        "unsaved.day_key={udk!r} nutrients_in={ni}",
+        b=unsaved.brand,
+        c=unsaved.category,
+        mo=unsaved.food_measure_ordinal,
+        udk=unsaved.day_key,
+        ni=len(unsaved.nutrients or {}),
+    )
     http.post_rpc(
         _build_log_payload(
             http.config,
@@ -302,4 +320,21 @@ def _build_delete_payload(config: Config, entry: FoodLogEntry) -> str:
 
 def delete(http: HttpClient, entry: FoodLogEntry) -> None:
     """Delete a diary entry. The whole entry payload is required by the server."""
+    logger.info(
+        "entries.delete: name={n!r} meal_ord={m} day_num={d} servings={s}",
+        n=entry.food_name,
+        m=entry.meal_ordinal,
+        d=entry.day_num,
+        s=entry.servings,
+    )
+    logger.debug(
+        "entries.delete: brand={b!r} category={c!r} measure_ord={mo} "
+        "food_id_code={fic!r} entry_day_key={edk!r} context_day_key={cdk!r}",
+        b=entry.food_brand,
+        c=entry.food_category,
+        mo=entry.food_measure_ordinal,
+        fic=entry.food_identifier_code,
+        edk=entry.entry_day_key,
+        cdk=entry.context_day_key,
+    )
     http.post_rpc(_build_delete_payload(http.config, entry))
