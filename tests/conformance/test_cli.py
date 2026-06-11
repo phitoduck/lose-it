@@ -300,3 +300,202 @@ def test_delete_real_run_does_post_delete(env, runner: CliRunner, httpx_mock) ->
     assert payload["dry_run"] is False
     sent_bodies = [req.content.decode() for req in httpx_mock.get_requests()]
     assert any("deleteFoodLogEntry" in b for b in sent_bodies)
+
+
+# ── log --food-id ────────────────────────────────────────────────────────────
+
+
+# Any valid 32-char hex string works for the unit-test invocations; the wire
+# bytes that come back depend on the mocked response, not the request PK.
+_VALID_FOOD_ID = "9eba9129b8494967c8cb3385acf0f614"
+
+
+def test_log_with_food_id_dry_run(env, runner: CliRunner, httpx_mock) -> None:
+    """``log --food-id <hex>`` skips searchFoods, calls getFood + unsaved-entry."""
+    # First RPC: getFood — reuse the tortilla unsaved fixture (same FoodIdentifier shape).
+    httpx_mock.add_response(
+        url=SERVICE_URL,
+        text=(FIXTURES / "get_unsaved_tortilla.txt").read_text(),
+    )
+    # Second RPC: getUnsavedFoodLogEntry.
+    httpx_mock.add_response(
+        url=SERVICE_URL,
+        text=(FIXTURES / "get_unsaved_tortilla.txt").read_text(),
+    )
+    result = runner.invoke(
+        app,
+        [
+            "-o",
+            "json",
+            "log",
+            "--food-id",
+            _VALID_FOOD_ID,
+            "--meal",
+            "snacks",
+            "--servings",
+            "1",
+            "--dry-run",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["action"] == "log"
+    assert payload["dry_run"] is True
+    assert payload["meal"] == "snacks"
+    # The food_id round-trips into the response (selected.pk_bytes was the
+    # caller-supplied PK; pk_to_hex is its lowercase-hex view).
+    assert payload["food"]["food_id"] == _VALID_FOOD_ID
+
+    sent_bodies = [req.content.decode() for req in httpx_mock.get_requests()]
+    # No searchFoods call — went straight via getFood.
+    assert not any("searchFoods" in b for b in sent_bodies)
+    assert any("getFood" in b and "getUnsavedFoodLogEntry" not in b for b in sent_bodies)
+    assert any("getUnsavedFoodLogEntry" in b for b in sent_bodies)
+    # And no mutating write in dry-run.
+    assert not any("updateFoodLogEntry" in b for b in sent_bodies)
+
+
+def test_log_food_id_text_output_includes_id_prefix(env, runner: CliRunner, httpx_mock) -> None:
+    """The text success line includes a ``(id <prefix>...)`` tag."""
+    httpx_mock.add_response(
+        url=SERVICE_URL,
+        text=(FIXTURES / "get_unsaved_tortilla.txt").read_text(),
+    )
+    httpx_mock.add_response(
+        url=SERVICE_URL,
+        text=(FIXTURES / "get_unsaved_tortilla.txt").read_text(),
+    )
+    result = runner.invoke(
+        app,
+        [
+            "log",
+            "--food-id",
+            _VALID_FOOD_ID,
+            "--meal",
+            "snacks",
+            "--servings",
+            "1",
+            "--dry-run",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    # Text output includes the first 4 hex chars of the ID.
+    assert "(id 9eba" in result.output
+
+
+def test_log_food_id_invalid_hex_exits_2(env, runner: CliRunner) -> None:
+    """Non-hex --food-id values are rejected with exit code 2."""
+    result = runner.invoke(
+        app,
+        [
+            "-o",
+            "json",
+            "log",
+            "--food-id",
+            "NOTHEXNOTHEXNOTHEXNOTHEXNOTHEX!!",
+            "--meal",
+            "snacks",
+        ],
+    )
+    assert result.exit_code == 2, result.output
+    payload = json.loads(result.output)
+    assert payload["error"] == "invalid_food_id"
+
+
+def test_log_food_id_wrong_length_exits_2(env, runner: CliRunner) -> None:
+    """Hex strings of the wrong length are rejected with exit code 2."""
+    result = runner.invoke(
+        app,
+        ["-o", "json", "log", "--food-id", "9eba", "--meal", "snacks"],
+    )
+    assert result.exit_code == 2, result.output
+    payload = json.loads(result.output)
+    assert payload["error"] == "invalid_food_id"
+
+
+def test_log_food_id_mutually_exclusive_with_query(env, runner: CliRunner) -> None:
+    """Passing both --food-id and a positional query exits 2."""
+    result = runner.invoke(
+        app,
+        ["-o", "json", "log", "tortilla", "--food-id", _VALID_FOOD_ID, "--meal", "snacks"],
+    )
+    assert result.exit_code == 2, result.output
+    payload = json.loads(result.output)
+    assert payload["error"] == "mutually_exclusive"
+
+
+def test_log_food_id_mutually_exclusive_with_pick(env, runner: CliRunner) -> None:
+    """Passing both --food-id and --pick exits 2."""
+    result = runner.invoke(
+        app,
+        [
+            "-o",
+            "json",
+            "log",
+            "--food-id",
+            _VALID_FOOD_ID,
+            "--pick",
+            "1",
+            "--meal",
+            "snacks",
+        ],
+    )
+    assert result.exit_code == 2, result.output
+    payload = json.loads(result.output)
+    assert payload["error"] == "mutually_exclusive"
+
+
+def test_log_missing_food_id_and_query_exits_2(env, runner: CliRunner) -> None:
+    """Passing neither --food-id nor a positional query exits 2."""
+    result = runner.invoke(
+        app,
+        ["-o", "json", "log", "--meal", "snacks", "--servings", "1"],
+    )
+    assert result.exit_code == 2, result.output
+    payload = json.loads(result.output)
+    assert payload["error"] == "missing_food"
+
+
+def test_log_food_id_real_run_posts_update(env, runner: CliRunner, httpx_mock) -> None:
+    """Without --dry-run, ``--food-id`` still drives the mutating updateFoodLogEntry."""
+    # getFood
+    httpx_mock.add_response(
+        url=SERVICE_URL,
+        text=(FIXTURES / "get_unsaved_tortilla.txt").read_text(),
+    )
+    # getUnsavedFoodLogEntry
+    httpx_mock.add_response(
+        url=SERVICE_URL,
+        text=(FIXTURES / "get_unsaved_tortilla.txt").read_text(),
+    )
+    # getInitializationData (day_key lookup)
+    httpx_mock.add_response(
+        url=SERVICE_URL,
+        text=(FIXTURES / "get_initialization_data.txt").read_text(),
+    )
+    # updateFoodLogEntry
+    httpx_mock.add_response(
+        url=SERVICE_URL,
+        text=(FIXTURES / "update_food_log_entry_success.txt").read_text(),
+    )
+    result = runner.invoke(
+        app,
+        ["-o", "json", "log", "--food-id", _VALID_FOOD_ID, "--meal", "snacks"],
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["dry_run"] is False
+    sent_bodies = [req.content.decode() for req in httpx_mock.get_requests()]
+    assert any("updateFoodLogEntry" in b for b in sent_bodies)
+    assert not any("searchFoods" in b for b in sent_bodies)
+
+
+def test_search_text_output_has_food_id_column(env, runner: CliRunner, httpx_mock) -> None:
+    """The default text search table includes a Food ID column."""
+    httpx_mock.add_response(
+        url=SERVICE_URL,
+        text=(FIXTURES / "search_foods_tortilla.txt").read_text(),
+    )
+    result = runner.invoke(app, ["search", "tortilla"])
+    assert result.exit_code == 0, result.output
+    assert "Food ID" in result.output
