@@ -64,7 +64,7 @@ PRIMITIVES = {
 
 
 def fetch(url: str) -> str:
-    with urllib.request.urlopen(url, timeout=30) as resp:  # noqa: S310
+    with urllib.request.urlopen(url, timeout=30) as resp:
         return resp.read().decode("utf-8")
 
 

@@ -280,7 +280,7 @@ def _read_typed(reader: _Reader, fqcn: str) -> Any:
         v = _decode_long(str(reader.pop_raw()))
         reader.backrefs.append(v)
         return v
-    if fqcn == _DOUBLE or fqcn == _FLOAT:
+    if fqcn in (_DOUBLE, _FLOAT):
         v = float(reader.pop_raw())
         reader.backrefs.append(v)
         return v
