@@ -54,7 +54,13 @@ from dataclasses import dataclass, field
 from importlib import resources
 from typing import Any
 
+from ._enums import label_for_ordinal
 from ._gwt import parse_response
+
+# FQCNs whose decoded objects get a plain-English label attached next to
+# their raw ``ordinal``. Surfaces in ``lose-it -o json`` output and in
+# any downstream parser that walks the decoded tree.
+_FOOD_MEASURE_FQCN = "com.loseit.core.client.model.FoodMeasure/1457474932"
 
 
 @dataclass
@@ -355,6 +361,8 @@ def _read_typed(reader: _Reader, fqcn: str) -> Any:
         obj["ordinal"] = reader.pop_raw()
     for i, kind in enumerate(schema.fields):
         obj[f"f{i}"] = _read_field(reader, kind)
+    if fqcn == _FOOD_MEASURE_FQCN:
+        obj["unit"] = label_for_ordinal(obj.get("ordinal"))
     return obj
 
 

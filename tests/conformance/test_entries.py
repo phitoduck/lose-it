@@ -73,14 +73,20 @@ def test_delete_request_shape(test_client, httpx_mock, fixture_text):
     assert f"|{target.food_identifier_code}|" in body
 
 
-def test_log_food_grams_serializes_portion_in_grams(test_client, httpx_mock, fixture_text):
-    """For gram-measured foods (ord=8) the FoodServingSize quantity is the
-    literal gram count, not the servings multiplier.
+def test_log_food_grams_portion_uses_food_native_qty_per_serving(
+    test_client, httpx_mock, fixture_text
+):
+    """FoodServingSize portion_size is ``servings × native_qty_per_serving``.
 
-    Regression: previously ``servings=1.2`` on a gram-measured entry shipped
-    quantity=1.2 in the FoodServingSize slot, which the official Lose It! UI
-    rendered as "1.2 grams" instead of "120 grams". This asserts the wire
-    body now carries the literal portion size in grams (servings × 100).
+    Previously the CLI hardcoded "1 serving = 100 g" for any gram-measured
+    food. That overcounted for foods like Built Bar (40 g/serving) and
+    undercounted for foods like protein powders (28-47 g/serving). The
+    fix reads f4/f3 from the unsaved-entry response and uses the food's
+    actual per-serving qty.
+
+    Here a food where ``native_qty_per_serving=100`` at ``--servings 1.2``
+    correctly serializes portion_size = 120 g — same answer as the legacy
+    hardcoded path for the lucky case where f4 happens to equal 100.
     """
     httpx_mock.add_response(
         url=SERVICE_URL,
@@ -95,6 +101,8 @@ def test_log_food_grams_serializes_portion_in_grams(test_client, httpx_mock, fix
         nutrients={0: 130.0},
         serving_qty=1.0,
         food_measure_ordinal=8,  # grams
+        canonical_per_serving=1.0,
+        native_qty_per_serving=100.0,  # this food: 1 serving = 100 g
     )
     entries.log_food(
         test_client.http,
@@ -105,14 +113,47 @@ def test_log_food_grams_serializes_portion_in_grams(test_client, httpx_mock, fix
         servings=1.2,
     )
     body = httpx_mock.get_request().content.decode()
-    # FoodMeasure ord=8 still appears: "|28|8|1|".
     assert "|28|8|1|" in body
-    # The FoodServingSize quantity slot must contain 120 (= 1.2 × 100), not 1.2.
-    # The substring "|120|1|28|8|" is the expected
-    # "FoodServingSize.quantity|<sep>|FoodMeasure-ref|measure-ord|" sequence.
+    # 1.2 servings × 100 g/serving = 120 g.
     assert "|120|1|28|8|" in body, body[body.find("28|8") - 40 : body.find("28|8") + 40]
-    # And the bare "1.2" still appears as the FoodServing.quantity (# of servings).
     assert "|1.2|" in body
+
+
+def test_log_food_grams_uses_food_specific_per_serving_qty(test_client, httpx_mock, fixture_text):
+    """A Built-Bar-shaped food (40 g/serving) at --servings 2 emits 80 g.
+
+    Smoking-gun regression: the legacy --grams 100g convention applied
+    blindly here would have logged ``200 g`` for a food that's actually
+    40 g/serving. The fix honors the food's own f4/f3.
+    """
+    httpx_mock.add_response(
+        url=SERVICE_URL,
+        text=fixture_text("update_food_log_entry_success.txt"),
+    )
+    unsaved = UnsavedFoodLogEntry(
+        name="Puff Protein Bar",
+        brand="Built",
+        category="Bars",
+        food_pk_bytes=[2] * 16,
+        day_key="Z6mB_lo",
+        nutrients={0: 175.0},
+        serving_qty=1.0,
+        food_measure_ordinal=8,  # grams
+        canonical_per_serving=1.0,
+        native_qty_per_serving=40.0,  # this food: 1 serving = 40 g
+    )
+    entries.log_food(
+        test_client.http,
+        unsaved,
+        meal_ordinal=3,
+        day_key="Z6mB_lo",
+        day_num=9290,
+        servings=2.0,
+    )
+    body = httpx_mock.get_request().content.decode()
+    # 2.0 servings × 40 g/serving = 80 g.
+    assert "|80|1|28|8|" in body, body[body.find("28|8") - 40 : body.find("28|8") + 40]
+    assert "|2|" in body
 
 
 def test_log_food_non_gram_food_unchanged(test_client, httpx_mock, fixture_text):

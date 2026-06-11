@@ -21,7 +21,21 @@ class FoodSearchResult:
 
 @dataclass
 class UnsavedFoodLogEntry:
-    """Output of ``getUnsavedFoodLogEntry`` — a template before logging."""
+    """Output of ``getUnsavedFoodLogEntry`` — a template before logging.
+
+    The serving-size fields come from the food's stored ``FoodServingSize``
+    record. Cross-verified against >30 distinct foods:
+
+    - ``serving_qty`` (= ``f0``) and ``raw_qty_default`` (= ``f5``) carry
+      the *default suggested log size*, not the food's per-serving
+      definition.
+    - ``canonical_per_serving`` (= ``f3``) and ``native_qty_per_serving``
+      (= ``f4``) describe how the food is shaped: e.g. for the Trader
+      Joe's "8 fl oz" tomato soup, ``f4 = 8.0 fl_oz``; for a Built Bar
+      puff, ``f4 = 40.0 g``; for Core Power milkshake, ``f4 = 414 mL``.
+      The ratio ``f4/f3`` is the food's per-serving quantity in its
+      native unit, which is what unit-conversion math needs.
+    """
 
     name: str
     brand: str
@@ -31,6 +45,9 @@ class UnsavedFoodLogEntry:
     nutrients: dict[int, float] = field(default_factory=dict)
     serving_qty: float | None = None
     food_measure_ordinal: int | None = None
+    food_measure_unit: str | None = None
+    canonical_per_serving: float | None = None
+    native_qty_per_serving: float | None = None
 
 
 @dataclass

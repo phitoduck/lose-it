@@ -10,11 +10,7 @@ from __future__ import annotations
 import uuid
 
 from .._logging import logger
-from ._config import (
-    DEFAULT_SERVING_SIZE_GRAMS,
-    GRAMS_MEASURE_ORDINAL,
-    Config,
-)
+from ._config import Config
 from ._gwt import build_envelope, fmt_num
 from ._http import HttpClient
 from ._models import FoodLogEntry, UnsavedFoodLogEntry
@@ -39,9 +35,39 @@ def _build_log_payload(
     day_key: str,
     day_num: int,
     servings: float,
+    measure_ord_override: int | None = None,
+    quantity_in_chosen_unit: float | None = None,
+    conversion_factor: float | None = None,
 ) -> str:
+    """Build the ``updateFoodLogEntry`` envelope.
+
+    The trailing three parameters together implement the unit-override
+    flow (see ``docs/serving-unit-spec.md``). They must be passed as a
+    triple — when any of them is set the other two must also be set.
+    When ``measure_ord_override`` is ``None`` the function emits the
+    legacy FoodServingSize block (FoodMeasure ord = food's native ord,
+    ``f4=1`` and ``f5=portion_size``); when it's set the block matches
+    the official UI's unit-override wire shape::
+
+        27|<canonical_servings>|1|28|<chosen_ord>|1|<conv_factor>|<qty_in_chosen>|
+
+    where ``canonical_servings = quantity_in_chosen_unit / conversion_factor``
+    is what ``servings`` is set to by the caller.
+    """
     if not unsaved.food_pk_bytes or len(unsaved.food_pk_bytes) != 16:
         raise ValueError("unsaved entry missing food primary key")
+    override_set = (
+        measure_ord_override is not None
+        or quantity_in_chosen_unit is not None
+        or conversion_factor is not None
+    )
+    if override_set and (
+        measure_ord_override is None or quantity_in_chosen_unit is None or conversion_factor is None
+    ):
+        raise ValueError(
+            "measure_ord_override, quantity_in_chosen_unit, and "
+            "conversion_factor must all be set together (or all left as None)."
+        )
 
     # Send PER-SERVING nutrient values, not pre-scaled by ``servings``.
     #
@@ -90,20 +116,33 @@ def _build_log_payload(
     ]
     # Default measure ordinal: 45 is a generic container-ish fallback observed
     # in the original captured replay (used when unsaved didn't carry one).
-    measure_ord = unsaved.food_measure_ordinal if unsaved.food_measure_ordinal is not None else 45
-
-    # FoodServingSize.quantity is the literal portion size the official Lose
-    # It! UI renders next to the measure-unit name. Convention:
-    #   • For grams (ord=8) the food's "default serving" is 100 g, so
-    #     ``servings=1.2`` (1.2 servings) serializes as quantity=120 grams.
-    #   • For every other measure unit the default serving is 1 unit, so
-    #     quantity = servings (1.0 each, 1.5 servings, …).
-    # We previously sent ``servings`` directly into the FoodServingSize slot,
-    # which made gram-measured entries show up as e.g. "1.2 grams" in the
-    # official mobile + web apps instead of "120 grams".
-    portion_size = (
-        servings * DEFAULT_SERVING_SIZE_GRAMS if measure_ord == GRAMS_MEASURE_ORDINAL else servings
+    native_measure_ord = (
+        unsaved.food_measure_ordinal if unsaved.food_measure_ordinal is not None else 45
     )
+    # The FoodMeasure ord that ends up on the wire. With a unit override
+    # this is the user's chosen ord (e.g. 11=mL); otherwise the food's
+    # native ord.
+    measure_ord = measure_ord_override if override_set else native_measure_ord
+
+    # FoodServingSize.f0/f5 carry the *display* portion size; the
+    # server-side calorie math uses FoodServing.f1 (= ``servings``).
+    #
+    #   • Override mode: caller already computed canonical_servings; f5
+    #     gets the user's raw input in the chosen unit and f4 gets the
+    #     chosen-unit qty per serving (see docstring wire shape).
+    #   • Default mode: render in the food's native unit, scaled by the
+    #     food's stored per-serving qty (``f4/f3`` from the unsaved
+    #     response). E.g. for a Built Bar (40 g/serving) at servings=2,
+    #     portion_size = 80 g; for a cup-stored soup at servings=2,
+    #     portion_size = 2 cups. Falls back to ``servings × 1`` if the
+    #     food didn't carry f4 (unusual; matches old behavior).
+    if override_set:
+        portion_size = servings
+    else:
+        f3 = unsaved.canonical_per_serving or 1.0
+        f4 = unsaved.native_qty_per_serving or 1.0
+        per_serving_native = f4 / f3 if f3 else 1.0
+        portion_size = servings * per_serving_native
     servings_str = fmt_num(servings)
     portion_size_str = fmt_num(portion_size)
 
@@ -158,10 +197,19 @@ def _build_log_payload(
     for ord_, val in sorted(nutrients.items()):
         parts += ["25", str(ord_), "26", fmt_num(val)]
     # FoodServingSize + FoodMeasure section, then the entry's own
-    # SimplePrimaryKey marker + a generated ENTRY PK. Both the FoodServingSize
-    # quantity slot and the trailing FoodMeasure quantity slot are the actual
-    # portion size in the food's measure unit (grams for ord=8, etc.) — not
-    # the FoodServing.quantity above (which is # of servings consumed).
+    # SimplePrimaryKey marker + a generated ENTRY PK.
+    #
+    # Slot layout (decoded against the GWT schema):
+    #   f0 = FoodServingSize.quantity     — canonical (or grams-special) portion
+    #   1  = FoodServingSize.isPrimary    — literal 1
+    #   28 = FoodMeasure ref              — string-table index
+    #   f2 = FoodMeasure.ord              — chosen-unit ord (override) or native
+    #   f3 = constant 1.0                 — observed in every UI payload
+    #   f4 = conversion factor            — legacy=1, override=factor
+    #   f5 = quantity in chosen unit      — legacy=portion_size (= f0),
+    #                                       override=user's raw input
+    f4_str = fmt_num(conversion_factor) if override_set else "1"
+    f5_str = fmt_num(quantity_in_chosen_unit) if override_set else portion_size_str
     parts += [
         "27",
         portion_size_str,
@@ -169,8 +217,8 @@ def _build_log_payload(
         "28",
         str(int(measure_ord)),
         "1",
-        "1",
-        portion_size_str,
+        f4_str,
+        f5_str,
         "0",
         "P__________",
         unsaved.day_key or day_key or "",
@@ -189,15 +237,30 @@ def log_food(
     day_key: str,
     day_num: int,
     servings: float = 1.0,
+    measure_ord_override: int | None = None,
+    quantity_in_chosen_unit: float | None = None,
+    conversion_factor: float | None = None,
 ) -> None:
-    """Log ``unsaved`` to the given meal/day with ``servings`` portions."""
+    """Log ``unsaved`` to the given meal/day with ``servings`` portions.
+
+    The trailing three parameters implement the unit-override flow (see
+    ``docs/serving-unit-spec.md``). When set, ``servings`` is interpreted
+    as the canonical serving count
+    (``= quantity_in_chosen_unit / conversion_factor``) and the
+    FoodServingSize block on the wire reflects the chosen-unit ord +
+    conversion factor + raw user input. Pass all three together or none.
+    """
     logger.info(
-        "entries.log_food: name={n!r} meal_ord={m} day_num={d} day_key={k!r} servings={s}",
+        "entries.log_food: name={n!r} meal_ord={m} day_num={d} day_key={k!r} "
+        "servings={s} override_ord={oo} qty_chosen={qc} factor={cf}",
         n=unsaved.name,
         m=meal_ordinal,
         d=day_num,
         k=day_key,
         s=servings,
+        oo=measure_ord_override,
+        qc=quantity_in_chosen_unit,
+        cf=conversion_factor,
     )
     logger.debug(
         "entries.log_food: brand={b!r} category={c!r} measure_ord={mo} "
@@ -216,6 +279,9 @@ def log_food(
             day_key,
             day_num,
             servings,
+            measure_ord_override=measure_ord_override,
+            quantity_in_chosen_unit=quantity_in_chosen_unit,
+            conversion_factor=conversion_factor,
         )
     )
 

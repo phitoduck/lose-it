@@ -40,14 +40,20 @@ from ._logging import configure as _configure_logging
 from ._logging import logger
 from .client import Client, MissingConfigError, daily, entries, foods
 from .client._config import (
-    DEFAULT_SERVING_SIZE_GRAMS,
-    GRAMS_MEASURE_ORDINAL,
     MEAL_NAMES,
     MEAL_TYPES,
     measure_name,
 )
 from .client._dates import day_number_for, parse_date_arg
+from .client._ids import hex_to_pk, pk_to_hex
 from .client._settings import DEFAULT_CONFIG_FILE, write_yaml_config
+from .client._units import (
+    CANONICAL_UNIT_NAMES,
+    resolve_unit,
+)
+from .client._units import (
+    conversion_factor as _conversion_factor,
+)
 from .client.auth import (
     DEFAULT_TOKEN_FILE,
     SIGNIN_URL,
@@ -278,12 +284,14 @@ def _print_search_results(results) -> None:
     if not results:
         typer.echo("  No results.")
         return
-    typer.echo(f"\n{'#':>3}  {'Food':50} {'Brand'}")
-    typer.echo(f"{'─' * 3}  {'─' * 50} {'─' * 20}")
+    typer.echo(f"\n{'#':>3}  {'Food':50} {'Brand':20} {'Food ID'}")
+    typer.echo(f"{'─' * 3}  {'─' * 50} {'─' * 20} {'─' * 11}")
     for i, f in enumerate(results[:15]):
         name = (f.name or "")[:50]
         brand = (f.brand or "")[:20]
-        typer.echo(f"{i + 1:>3}  {name:50} {brand}")
+        food_id = pk_to_hex(f.pk_bytes) if len(f.pk_bytes) == 16 else ""
+        food_id_short = f"{food_id[:10]}…" if food_id else ""
+        typer.echo(f"{i + 1:>3}  {name:50} {brand:20} {food_id_short}")
 
 
 def _print_diary(entries_, when: date) -> None:
@@ -368,6 +376,7 @@ def search(
                             "name": r.name,
                             "brand": r.brand,
                             "category": r.category,
+                            "food_id": pk_to_hex(r.pk_bytes),
                             "pk_bytes": list(r.pk_bytes),
                         }
                         for r in results
@@ -381,7 +390,15 @@ def search(
 @app.command()
 def log(
     ctx: typer.Context,
-    query: Annotated[str, typer.Argument(help="Food to search for")],
+    query: Annotated[
+        str | None,
+        typer.Argument(
+            help=(
+                "Free-text search query. Mutually exclusive with --food-id. "
+                "Required unless --food-id is given."
+            ),
+        ),
+    ] = None,
     meal: Annotated[
         str, typer.Option("--meal", "-m", help="Meal (breakfast/lunch/dinner/snacks)")
     ] = "snacks",
@@ -389,25 +406,49 @@ def log(
         float,
         typer.Option(
             help=(
-                "Number of servings (multiplier on the food's default serving "
-                "size). For gram-measured foods (ord=8) 1 serving = 100 g — "
-                "use --grams instead for a more natural interface."
+                "Number of canonical servings (server-side multiplier on the "
+                "food's per-serving nutrients). Use --serving-amount + "
+                "--serving-unit for unit-based logging (e.g. 61 g, 490 mL)."
             ),
         ),
     ] = 1.0,
-    grams: Annotated[
+    serving_amount: Annotated[
         float | None,
         typer.Option(
-            "--grams",
-            "-g",
+            "--serving-amount",
             help=(
-                "Quantity in grams. Only valid when the picked food's measure "
-                "unit is grams; equivalent to --servings (grams / 100)."
+                "Quantity in the unit specified by --serving-unit (e.g. 490 "
+                "paired with --serving-unit mL, or 61 with --serving-unit g). "
+                "Mutually exclusive with --servings; must be passed together "
+                "with --serving-unit."
+            ),
+        ),
+    ] = None,
+    serving_unit: Annotated[
+        str | None,
+        typer.Option(
+            "--serving-unit",
+            help=(
+                "Display unit for --serving-amount. One of: cup, mL, fl_oz, "
+                "tbsp, g, scoop, slice, each, serving (plus common aliases — "
+                "see _units.UNIT_ALIASES)."
             ),
         ),
     ] = None,
     pick: Annotated[
         int | None, typer.Option(help="Auto-pick the Nth search result (1-indexed)")
+    ] = None,
+    food_id: Annotated[
+        str | None,
+        typer.Option(
+            "--food-id",
+            help=(
+                "Stable 32-char hex food ID (from `lose-it search`'s Food ID "
+                "column or JSON `food_id` field). Bypasses the search step and "
+                "goes straight to the unsaved-entry RPC. Mutually exclusive "
+                "with the positional query and --pick."
+            ),
+        ),
     ] = None,
     on_date: Annotated[
         str | None, typer.Option("--date", help="Target date YYYY-MM-DD (default: today)")
@@ -423,11 +464,14 @@ def log(
     """Search for a food and log it to a meal."""
     fmt = _output_format(ctx)
     logger.info(
-        "cli.log: query={q!r} meal={m} servings={s} grams={g} pick={p} date={d!r} dry_run={dr}",
+        "cli.log: query={q!r} food_id={fi!r} meal={m} servings={s} "
+        "serving_amount={sa} serving_unit={su!r} pick={p} date={d!r} dry_run={dr}",
         q=query,
+        fi=food_id,
         m=meal,
         s=servings,
-        g=grams,
+        sa=serving_amount,
+        su=serving_unit,
         p=pick,
         d=on_date,
         dr=dry_run,
@@ -439,57 +483,176 @@ def log(
             err=True,
         )
         raise typer.Exit(code=2)
+
+    # ── Food-selection validation: --food-id vs query/--pick ────────────
+    if food_id is not None and (query is not None or pick is not None):
+        msg = "--food-id and <query>/--pick are mutually exclusive"
+        if fmt is OutputFormat.json:
+            _emit_json({"error": "mutually_exclusive", "message": msg})
+        else:
+            typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    if food_id is None and query is None:
+        msg = "must pass either --food-id or a search query"
+        if fmt is OutputFormat.json:
+            _emit_json({"error": "missing_food", "message": msg})
+        else:
+            typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+
+    # ── Portion-size validation ──────────────────────────────────────────
+    #
+    # Two mutually-exclusive ways to express portion size:
+    #   • --servings N                       (raw canonical multiplier)
+    #   • --serving-amount + --serving-unit  (unit-based; computes servings
+    #                                        from the food's stored per-serving qty)
+    sa_set = serving_amount is not None
+    su_set = serving_unit is not None
+    if sa_set != su_set:
+        msg = (
+            "--serving-amount and --serving-unit must be passed together "
+            "(neither is meaningful alone)."
+        )
+        if fmt is OutputFormat.json:
+            _emit_json({"error": "serving_pair_incomplete", "message": msg})
+        else:
+            typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    if sa_set and servings != 1.0:
+        msg = "--serving-amount / --serving-unit are mutually exclusive with --servings."
+        if fmt is OutputFormat.json:
+            _emit_json({"error": "mutually_exclusive_flags", "message": msg})
+        else:
+            typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    if sa_set and serving_amount is not None and serving_amount <= 0:
+        msg = f"--serving-amount must be positive (got {serving_amount})."
+        if fmt is OutputFormat.json:
+            _emit_json({"error": "non_positive_serving_amount", "message": msg})
+        else:
+            typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    chosen_ord: int | None = None
+    if sa_set and serving_unit is not None:
+        try:
+            chosen_ord = resolve_unit(serving_unit)
+        except ValueError as exc:
+            msg = str(exc)
+            if fmt is OutputFormat.json:
+                _emit_json({"error": "unknown_serving_unit", "message": msg})
+            else:
+                typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=2) from exc
+
     when = parse_date_arg(on_date)
     with _open_client(ctx) as client:
-        results = foods.search(client.http, query)
-        if fmt is OutputFormat.text:
-            _print_search_results(results)
-        if not results:
-            if fmt is OutputFormat.json:
-                _emit_json({"error": "no_results", "query": query})
-            raise typer.Exit(code=1)
-        idx = _resolve_pick(pick, "Select food #", len(results))
-        selected = results[idx]
+        if food_id is not None:
+            try:
+                pk_bytes = hex_to_pk(food_id)
+            except ValueError as exc:
+                if fmt is OutputFormat.json:
+                    _emit_json({"error": "invalid_food_id", "message": str(exc)})
+                else:
+                    typer.secho(f"❌ {exc}", fg=typer.colors.RED, err=True)
+                raise typer.Exit(code=2) from exc
+            try:
+                selected = foods.get_food(client.http, pk_bytes)
+            except Exception as exc:
+                if fmt is OutputFormat.json:
+                    _emit_json({"error": "food_not_found", "message": str(exc)})
+                else:
+                    typer.secho(f"❌ {exc}", fg=typer.colors.RED, err=True)
+                raise typer.Exit(code=1) from exc
+        else:
+            # query is guaranteed non-None here by the validation above.
+            assert query is not None
+            results = foods.search(client.http, query)
+            if fmt is OutputFormat.text:
+                _print_search_results(results)
+            if not results:
+                if fmt is OutputFormat.json:
+                    _emit_json({"error": "no_results", "query": query})
+                raise typer.Exit(code=1)
+            idx = _resolve_pick(pick, "Select food #", len(results))
+            selected = results[idx]
         unsaved = foods.get_unsaved_food_log_entry(client.http, selected)
 
-        # Resolve servings vs grams. --grams requires the food to be
-        # gram-measured; otherwise log to a different food entry.
+        # ── Resolve the portion-size knob into wire-payload parameters ──
+        #
+        # The food's getUnsavedFoodLogEntry response carries the per-serving
+        # quantity in its native unit at FoodServingSize.f4 / f3 (verified
+        # across >30 foods). Examples:
+        #   • TJ "8 fl oz" tomato soup: native=fl_oz, f4/f3 = 8.0
+        #   • Built Bar puff:           native=g,     f4/f3 = 40.0
+        #   • Orgain protein scoop:     native=g,     f4/f3 = ~28.0
+        #   • Generic 1-cup soup:       native=cup,   f4/f3 = 1.0
+        #
+        # canonical_servings (sent as f0, what the server multiplies
+        # nutrients by) =
+        #     user_amount_in_chosen_unit
+        #   / ( native_qty_per_serving × cf(native → chosen) )
+        #
+        # The wire's f4 is the chosen-unit qty per canonical serving
+        # (e.g. 236.588 mL per serving when chosen=mL and the food's
+        # per-serving qty in cups is 1 cup). f5 is the user's raw input.
         measure_ord = unsaved.food_measure_ordinal
-        if grams is not None:
-            if measure_ord != GRAMS_MEASURE_ORDINAL:
+        measure_ord_override: int | None = None
+        quantity_in_chosen_unit: float | None = None
+        conv_factor: float | None = None
+
+        if sa_set and chosen_ord is not None and serving_amount is not None:
+            native_ord = measure_ord if measure_ord is not None else 0
+            cf_native_to_chosen = _conversion_factor(native_ord, chosen_ord)
+            if cf_native_to_chosen is None:
+                chosen_name = CANONICAL_UNIT_NAMES.get(chosen_ord, serving_unit or "?")
+                native_name = unsaved.food_measure_unit or measure_name(measure_ord)
                 msg = (
-                    f"--grams was passed but {selected.name!r} is measured in "
-                    f"'{measure_name(measure_ord)}', not grams. Pick a "
-                    f"gram-measured entry (use --pick after `lose-it search` "
-                    f"to inspect candidates) or drop --grams."
+                    f"{selected.name!r} is measured in {native_name!r}; "
+                    f"the CLI doesn't have a {native_name}→{chosen_name} "
+                    f"conversion factor. Pick a different food entry whose "
+                    f"native unit is {chosen_name}, or use --servings to "
+                    f"log in the food's native unit."
                 )
                 if fmt is OutputFormat.json:
                     _emit_json(
                         {
-                            "error": "not_gram_measured",
+                            "error": "unit_not_supported",
                             "food": selected.name,
-                            "measure_unit": measure_name(measure_ord),
+                            "native_unit": native_name,
+                            "requested_unit": chosen_name,
                             "message": msg,
                         }
                     )
                 else:
                     typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
                 raise typer.Exit(code=2)
-            servings = grams / DEFAULT_SERVING_SIZE_GRAMS
+            # The food's per-serving qty in its native unit (f4/f3).
+            # Default to 1.0 if the food's record didn't carry these —
+            # matches the legacy assumption for foods where f4 was absent.
+            f3 = unsaved.canonical_per_serving or 1.0
+            f4 = unsaved.native_qty_per_serving or 1.0
+            native_qty_per_serving = f4 / f3 if f3 else 1.0
+            chosen_qty_per_serving = native_qty_per_serving * cf_native_to_chosen
+            servings = serving_amount / chosen_qty_per_serving
+            conv_factor = chosen_qty_per_serving
+            measure_ord_override = chosen_ord
+            quantity_in_chosen_unit = serving_amount
 
         day_num = day_number_for(when)
         meal_ord = MEAL_TYPES[meal]
         per_serving_cal = (unsaved.nutrients or {}).get(0)
         scaled_cal = (per_serving_cal * servings) if per_serving_cal is not None else None
 
-        # The portion size the official Lose It! UI will display next to the
-        # measure-unit name — for grams this is the literal gram count, for
-        # everything else it's the # of servings (= 1 each, 1 serving, …).
-        unit = measure_name(measure_ord)
-        if measure_ord == GRAMS_MEASURE_ORDINAL:
-            portion_size = servings * DEFAULT_SERVING_SIZE_GRAMS
-            portion_str = f"{portion_size:g} {unit}"
+        # ── Display: what we'll tell the user we're logging ─────────────
+        if measure_ord_override is not None and quantity_in_chosen_unit is not None:
+            unit = CANONICAL_UNIT_NAMES.get(
+                measure_ord_override, serving_unit or measure_name(measure_ord_override)
+            )
+            portion_size = quantity_in_chosen_unit
+            portion_str = f"{quantity_in_chosen_unit:g} {unit}"
         else:
+            # --servings mode: render in the food's native unit (with label).
+            unit = unsaved.food_measure_unit or measure_name(measure_ord)
             portion_size = servings
             portion_str = f"{servings:g} {unit}"
 
@@ -497,8 +660,19 @@ def log(
             # The day_key lookup is only needed to construct an actual log payload;
             # skip it in dry-run mode so we don't make an unnecessary network call.
             day_key = get_daydate_key(client.http, day_num) or ""
-            entries.log_food(client.http, unsaved, meal_ord, day_key, day_num, servings)
+            entries.log_food(
+                client.http,
+                unsaved,
+                meal_ord,
+                day_key,
+                day_num,
+                servings,
+                measure_ord_override=measure_ord_override,
+                quantity_in_chosen_unit=quantity_in_chosen_unit,
+                conversion_factor=conv_factor,
+            )
 
+        selected_food_id = pk_to_hex(selected.pk_bytes) if len(selected.pk_bytes) == 16 else ""
         if fmt is OutputFormat.json:
             _emit_json(
                 {
@@ -514,6 +688,7 @@ def log(
                         "name": selected.name,
                         "brand": selected.brand,
                         "category": selected.category,
+                        "food_id": selected_food_id,
                     },
                     "calories": scaled_cal,
                 }
@@ -521,8 +696,9 @@ def log(
         else:
             prefix = "🟡 DRY RUN — would log" if dry_run else "✅ Logged"
             cal_str = f" ({scaled_cal:.0f} cal)" if scaled_cal is not None else ""
+            id_str = f" (id {selected_food_id[:4]}…)" if selected_food_id else ""
             typer.secho(
-                f"{prefix} {selected.name} → {MEAL_NAMES[meal_ord]} {portion_str}{cal_str}",
+                f"{prefix} {selected.name}{id_str} → {MEAL_NAMES[meal_ord]} {portion_str}{cal_str}",
                 fg=typer.colors.YELLOW if dry_run else typer.colors.GREEN,
             )
 
