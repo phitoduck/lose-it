@@ -96,16 +96,26 @@ def _walk(root: Any, fqcn_prefix: str | None = None, fqcn: str | None = None):
 def _extract_pk_bytes(pk_field: Any) -> list[int]:
     """SimplePrimaryKey wraps a raw byte[] in its sole field.
 
-    Returns the bytes as a list of ints in *response order* (which the
-    SDK reverses again when round-tripping to a request payload).
+    Returns the bytes in **response form** — i.e. the order the OLD
+    heuristic parser produced, which is the order the SDK's outbound
+    payload builders (``_build_unsaved_payload`` etc.) expect before
+    they apply their own ``reversed(...)`` for the wire.
+
+    The schema-driven decoder pops bytes LIFO from the token stack, so
+    its internal byte order is the *opposite* of the on-stream slice the
+    old parser captured. We flip it once here to match the existing
+    pk_bytes contract — without this flip, every request that references
+    the food's PK (``getUnsavedFoodLogEntry``, ``updateFoodLogEntry``,
+    ``deleteFoodLogEntry``) ships the bytes in reverse order on the wire,
+    the server fails the lookup, and the responses come back empty.
     """
     if isinstance(pk_field, list):
-        return [int(b) for b in pk_field]
+        return list(reversed([int(b) for b in pk_field]))
     if isinstance(pk_field, dict):
         # SimplePrimaryKey has f0 = byte[]
         inner = pk_field.get("f0")
         if isinstance(inner, list):
-            return [int(b) for b in inner]
+            return list(reversed([int(b) for b in inner]))
     return []
 
 
