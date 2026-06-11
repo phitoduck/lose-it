@@ -89,31 +89,42 @@ The first run on macOS triggers a Keychain prompt so the OS can unlock the brows
 ```text
 $ lose-it search "x-treme carb balance tortilla"
 
-  #  Food                                               Brand
-───  ────────────────────────────────────────────────── ────────────────────
-  1  Xtreme Wellness Tortilla Wrap High Fiber Low Carb  Carb balance
-  2  Tortilla Wraps, High Fiber, Low Carb, Xtreme Welln Mission Tortillas Ca
+  #  Food                                               Brand                Food ID
+───  ────────────────────────────────────────────────── ──────────────────── ───────────
+  1  Xtreme Wellness Tortilla Wrap High Fiber Low Carb  Carb balance         9eba9129b8…
+  2  Tortilla Wraps, High Fiber, Low Carb, Xtreme Welln Mission Tortillas Ca 0d5f30bf42…
 ```
+
+The `Food ID` column is the lowercase-hex form of the food's stable 16-byte primary key. The text view truncates it to 10 chars; the full 32-char value is in the JSON `food_id` field (`lose-it search ... -o json`).
 
 ### `log`
 
 ```text
 $ lose-it log "x-treme carb balance tortilla" --meal lunch --pick 2 --servings 1
 
-  #  Food                                               Brand
-───  ────────────────────────────────────────────────── ────────────────────
-  1  Xtreme Wellness Tortilla Wrap High Fiber Low Carb  Carb balance
-  2  Tortilla Wraps, High Fiber, Low Carb, Xtreme Welln Mission Tortillas Ca
+  #  Food                                               Brand                Food ID
+───  ────────────────────────────────────────────────── ──────────────────── ───────────
+  1  Xtreme Wellness Tortilla Wrap High Fiber Low Carb  Carb balance         9eba9129b8…
+  2  Tortilla Wraps, High Fiber, Low Carb, Xtreme Welln Mission Tortillas Ca 0d5f30bf42…
 
-✅ Logged Tortilla Wraps, High Fiber, Low Carb, Xtreme Wellness → lunch 1 serving (70 cal)
+✅ Logged Tortilla Wraps, High Fiber, Low Carb, Xtreme Wellness (id 0d5f…) → lunch 1 serving (70 cal)
 ```
 
 For foods that should be logged by weight, use `--grams N` on a gram-measured entry. The CLI validates the picked food and errors if it isn't gram-measured, so you don't accidentally log "1.2 grams of chicken":
 
 ```text
 $ lose-it log "avocado per 100g" --meal snacks --pick 8 --grams 110
-✅ Logged Avocado (USDA Website Per 100g) → snacks 110 grams (176 cal)
+✅ Logged Avocado (USDA Website Per 100g) (id 7f3a…) → snacks 110 grams (176 cal)
 ```
+
+Pick indices drift between sessions (Lose It! mutates its index). For drift-proof, scriptable logging, pass the stable `--food-id` instead — it skips the search step entirely:
+
+```text
+$ lose-it log --food-id 0d5f30bf4231a3da8c3c9608f0630010 --meal snacks --servings 1.0
+✅ Logged Organic Tomato And Roasted Red Pepper Soup (id 0d5f…) → snacks 1 serving (207 cal)
+```
+
+`--food-id` is mutually exclusive with the positional `<query>` and `--pick`; pass exactly one.
 
 ### `diary`
 
