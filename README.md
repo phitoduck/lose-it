@@ -173,6 +173,74 @@ $ lose-it log "x-treme carb balance tortilla" -m lunch --pick 2 --dry-run
 🟡 DRY RUN — would log Tortilla Wraps, High Fiber, Low Carb, Xtreme Wellness → lunch × 1.0 (70 cal)
 ```
 
+### Verbose logging: `--log-level` / `--log-file`
+
+Every subcommand accepts two global logging flags (powered by [loguru](https://github.com/Delgan/loguru)):
+
+- `--log-level {trace|debug|info|success|warning|error|critical}` (env: `LOSEIT_LOG_LEVEL`) — verbosity for logs emitted on **stderr**. Default: **muted** (the CLI is silent unless you opt in).
+- `--log-file PATH` (env: `LOSEIT_LOG_FILE`) — append a **full TRACE-level transcript** of the session to this file. The file sink always captures at TRACE regardless of `--log-level`, so you can keep the console quiet and still get the wire dump on disk.
+
+The levels, from loudest to quietest:
+
+| Level | What you get |
+|---|---|
+| `trace` | Full HTTP request + response dumps: URL, every header, both auth cookies, full GWT-RPC body for each direction. |
+| `debug` | One-liner per RPC (`rpc <method>: POST <url> → <status> in Xms`), payload sizes, parser intermediates. |
+| `info` | High-level events: CLI command + args, search queries, food lookups, log/delete intent, resolved user. |
+| `success` | Mutating RPCs that returned `//OK`. |
+| `warning` | Degraded paths (empty diaries, missing day-keys, fallback parses). |
+| `error` | HTTP 4xx/5xx, GWT `//EX[…]` errors, transport failures. |
+
+**`--log-level info`** — one line per high-level event:
+
+```text
+$ lose-it --log-level info search "tortilla" 1>/dev/null
+12:00:00.123 INFO     lose_it_utils.cli:search:344 cli.search: query='tortilla' output=text
+12:00:00.135 INFO     lose_it_utils.client:from_env:65 Client.from_env: user='you@example.com' hours_from_gmt=-6 permutation=351AE5DC0CA36AD3BA9C7CBA7B0E07B8
+12:00:00.140 INFO     lose_it_utils.client.foods:search:135 foods.search: query='tortilla'
+12:00:00.330 SUCCESS  lose_it_utils.client._http:post_rpc:205 rpc searchFoods OK in 188.5 ms (2764 bytes)
+```
+
+**`--log-level trace`** — dumps every request and response in full, headers included. Useful for reverse-engineering the GWT-RPC surface:
+
+```text
+$ lose-it --log-level trace search "avocado" 1>/dev/null
+12:00:00.123 TRACE    lose_it_utils.client._http:post_rpc:121 HTTP REQUEST → searchFoods
+POST https://www.loseit.com/web/service
+── headers ──
+  content-type: text/x-gwt-rpc; charset=UTF-8
+  x-gwt-module-base: https://d3hsih69yn4d89.cloudfront.net/web/
+  x-gwt-permutation: 351AE5DC0CA36AD3BA9C7CBA7B0E07B8
+  x-loseit-gwtversion: devmode
+  x-loseit-hoursfromgmt: -6
+  origin: https://www.loseit.com
+  referer: https://www.loseit.com/
+── cookies ──
+  liauth=<REDACTED-JWT>
+  fn_auth=<REDACTED-JWT>
+── body (380 bytes) ──
+7|0|12|https://d3hsih69yn4d89.cloudfront.net/web/|8F87EC8969F17AE77B6283D3A83F6D4C|com.loseit.core.client.service.LoseItRemoteService|searchFoods|com.loseit.core.client.service.ServiceRequestToken/1076571655|java.lang.String/2004016611|I|Z|com.loseit.core.client.model.UserId/4281239478|you@example.com|avocado|en-US|1|2|3|4|6|5|6|6|7|8|8|5|0|9|12345678|10|-6|11|12|15|1|1|
+12:00:00.310 TRACE    lose_it_utils.client._http:post_rpc:150 HTTP RESPONSE ← searchFoods
+HTTP/1.1 200 (188.4 ms)
+── headers ──
+  content-type: application/json;charset=utf-8
+  content-length: 1235
+  ...
+── body (2764 bytes) ──
+//OK[0,17,2,42,40,13,-51,-6,9290,"Z6mB_lo",...]
+```
+
+**`--log-file`** — captures a full session to disk (TRACE-level by default), regardless of `--log-level`. The file format uses pipe-separated columns so it round-trips cleanly through `less` / `grep`:
+
+```text
+$ lose-it --log-file ~/lose-it-session.log diary
+$ grep -E "rpc.*OK" ~/lose-it-session.log
+2026-06-11 12:00:00.578 | SUCCESS  | lose_it_utils.client._http:post_rpc:205 | rpc getInitializationData OK in 159.1 ms (10306 bytes)
+2026-06-11 12:00:00.672 | SUCCESS  | lose_it_utils.client._http:post_rpc:205 | rpc getDailyDetailsIncludingPendingForDate OK in 92.7 ms (7610 bytes)
+```
+
+> ⚠️ **Heads up:** at TRACE level the `liauth` and `fn_auth` cookies are dumped **verbatim** — the JWT is a bearer credential for your Lose It! account. Treat any file written via `--log-file` as sensitive: don't paste sessions into bug reports without scrubbing them. The repo's gitleaks config (see [Lint, format, secret-scan (prek)](#lint-format-secret-scan-prek)) blocks any commit containing a real `liauth`/`fn_auth` JWT exactly to prevent accidental disclosure.
+
 ## Configuration
 
 The Quickstart used env vars because they're the fastest path. For anything more permanent, every setting can also come from a YAML file or a CLI flag.
