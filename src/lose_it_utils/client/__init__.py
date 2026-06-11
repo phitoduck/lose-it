@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import httpx
 
+from .._logging import logger
 from . import auth as _auth
 from ._config import Config, MissingConfigError
 from ._http import HttpClient, LoseItAuthError, LoseItError
@@ -54,9 +55,19 @@ class Client:
         ``config.token`` is used; otherwise the token file at
         ``config.token_file`` is read.
         """
+        logger.debug(
+            "Client.from_env: overrides={ov}",
+            ov={k: v for k, v in config_overrides.items() if v is not None},
+        )
         config = Config.from_env(**config_overrides)
         if token is None:
             token = config.token or _auth.load_token(config.token_file)
+        logger.info(
+            "Client.from_env: user={u!r} hours_from_gmt={h} permutation={p}",
+            u=config.user_name,
+            h=config.hours_from_gmt,
+            p=config.strong_name,
+        )
         return cls(config, token, transport=transport)
 
     def close(self) -> None:

@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from datetime import date
 
+from .._logging import logger
 from ._config import Config
 from ._dates import day_number_for
 from ._gwt import build_envelope, is_food_identifier_code, parse_response
@@ -368,14 +369,22 @@ def parse_entries(
 
 def get_daily_details(http: HttpClient, target_date: date) -> list[FoodLogEntry]:
     """Fetch + parse today's (or any day's) FoodLogEntry list."""
+    logger.info("daily.get_daily_details: date={d}", d=target_date.isoformat())
     day_num = day_number_for(target_date)
     day_key = get_daydate_key(http, day_num) or ""
+    logger.debug("daily.get_daily_details: day_num={n} day_key={k!r}", n=day_num, k=day_key)
     text = http.post_rpc(_build_payload(http.config, target_date, day_key))
-    return parse_entries(
+    entries = parse_entries(
         text,
         default_hours_from_gmt=http.config.hours_from_gmt,
         user_name=http.config.user_name,
     )
+    logger.debug(
+        "daily.get_daily_details: parsed {n} entries for {d}",
+        n=len(entries),
+        d=target_date.isoformat(),
+    )
+    return entries
 
 
 def get_daily_details_raw(http: HttpClient, target_date: date) -> str:
@@ -383,6 +392,7 @@ def get_daily_details_raw(http: HttpClient, target_date: date) -> str:
 
     Useful for fixture capture in tests.
     """
+    logger.info("daily.get_daily_details_raw: date={d}", d=target_date.isoformat())
     day_num = day_number_for(target_date)
     day_key = get_daydate_key(http, day_num) or ""
     return http.post_rpc(_build_payload(http.config, target_date, day_key))
