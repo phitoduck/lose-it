@@ -14,8 +14,11 @@ The CLI is a thin wrapper around :class:`lose_it_utils.Client` and the
 
 Two global options are honored by every subcommand:
 
-- ``--output text|json`` (alias ``-o``) — emit either the default human-friendly
-  text or a JSON document suitable for piping into ``jq`` or another tool.
+- ``--output text|json|toon`` (alias ``-o``) — emit either the default
+  human-friendly text, a JSON document suitable for piping into ``jq``, or a
+  `Token-Oriented Object Notation <https://toonformat.dev>`_ document, which
+  carries the same data shape as JSON but uses ~40-60% fewer tokens — handy
+  when piping results into an LLM.
 - ``--dry-run`` (applies to ``log`` and ``delete`` only) — perform the read-only
   lookups, then print what *would* be logged / deleted without making the
   mutating RPC call.
@@ -34,6 +37,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Annotated, Any
 
+import toon_format
 import typer
 
 from ._logging import configure as _configure_logging
@@ -73,6 +77,7 @@ class OutputFormat(enum.StrEnum):
 
     text = "text"
     json = "json"
+    toon = "toon"
 
 
 class Browser(enum.StrEnum):
@@ -119,7 +124,9 @@ def _root(
             "--output",
             "-o",
             help="Output format. `text` (default) is human-friendly; "
-            "`json` emits a script-friendly JSON document on stdout.",
+            "`json` emits a script-friendly JSON document on stdout; "
+            "`toon` emits the same data as Token-Oriented Object Notation, "
+            "a compact JSON-equivalent that uses ~40-60% fewer LLM tokens.",
         ),
     ] = OutputFormat.text,
     config_file: Annotated[
@@ -253,6 +260,32 @@ def _emit_json(data: Any) -> None:
     typer.echo(json.dumps(data, indent=2, default=_jsonable))
 
 
+def _emit_toon(data: Any) -> None:
+    """Print ``data`` as a TOON document on stdout.
+
+    Goes through ``json.dumps`` / ``json.loads`` first so the same dataclass
+    coercion (and string-keying of int dict keys) that ``--output json`` uses
+    applies here too — TOON sees the same canonicalized payload, just rendered
+    in fewer tokens.
+    """
+    canonical = json.loads(json.dumps(data, default=_jsonable))
+    typer.echo(toon_format.encode(canonical))
+
+
+def _emit_structured(fmt: OutputFormat, data: Any) -> None:
+    """Dispatch to the right structured-output emitter for ``fmt``.
+
+    ``fmt`` comes first so the ``data`` argument can be a large multi-line
+    dict literal at the call site without the format parameter dangling on
+    the end. Callers should already have gated this with
+    ``fmt is not OutputFormat.text``.
+    """
+    if fmt is OutputFormat.toon:
+        _emit_toon(data)
+    else:
+        _emit_json(data)
+
+
 def _jsonable(obj: Any) -> Any:
     """Coerce dataclass-like objects to plain dicts for ``json.dumps``."""
     if hasattr(obj, "__dataclass_fields__"):
@@ -366,8 +399,9 @@ def search(
     logger.info("cli.search: query={q!r} output={o}", q=query, o=fmt.value)
     with _open_client(ctx) as client:
         results = foods.search(client.http, query)
-        if fmt is OutputFormat.json:
-            _emit_json(
+        if fmt is not OutputFormat.text:
+            _emit_structured(
+                fmt,
                 {
                     "query": query,
                     "count": len(results),
@@ -381,7 +415,7 @@ def search(
                         }
                         for r in results
                     ],
-                }
+                },
             )
         else:
             _print_search_results(results)
@@ -487,15 +521,15 @@ def log(
     # ── Food-selection validation: --food-id vs query/--pick ────────────
     if food_id is not None and (query is not None or pick is not None):
         msg = "--food-id and <query>/--pick are mutually exclusive"
-        if fmt is OutputFormat.json:
-            _emit_json({"error": "mutually_exclusive", "message": msg})
+        if fmt is not OutputFormat.text:
+            _emit_structured(fmt, {"error": "mutually_exclusive", "message": msg})
         else:
             typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2)
     if food_id is None and query is None:
         msg = "must pass either --food-id or a search query"
-        if fmt is OutputFormat.json:
-            _emit_json({"error": "missing_food", "message": msg})
+        if fmt is not OutputFormat.text:
+            _emit_structured(fmt, {"error": "missing_food", "message": msg})
         else:
             typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2)
@@ -513,22 +547,22 @@ def log(
             "--serving-amount and --serving-unit must be passed together "
             "(neither is meaningful alone)."
         )
-        if fmt is OutputFormat.json:
-            _emit_json({"error": "serving_pair_incomplete", "message": msg})
+        if fmt is not OutputFormat.text:
+            _emit_structured(fmt, {"error": "serving_pair_incomplete", "message": msg})
         else:
             typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2)
     if sa_set and servings != 1.0:
         msg = "--serving-amount / --serving-unit are mutually exclusive with --servings."
-        if fmt is OutputFormat.json:
-            _emit_json({"error": "mutually_exclusive_flags", "message": msg})
+        if fmt is not OutputFormat.text:
+            _emit_structured(fmt, {"error": "mutually_exclusive_flags", "message": msg})
         else:
             typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2)
     if sa_set and serving_amount is not None and serving_amount <= 0:
         msg = f"--serving-amount must be positive (got {serving_amount})."
-        if fmt is OutputFormat.json:
-            _emit_json({"error": "non_positive_serving_amount", "message": msg})
+        if fmt is not OutputFormat.text:
+            _emit_structured(fmt, {"error": "non_positive_serving_amount", "message": msg})
         else:
             typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2)
@@ -538,8 +572,8 @@ def log(
             chosen_ord = resolve_unit(serving_unit)
         except ValueError as exc:
             msg = str(exc)
-            if fmt is OutputFormat.json:
-                _emit_json({"error": "unknown_serving_unit", "message": msg})
+            if fmt is not OutputFormat.text:
+                _emit_structured(fmt, {"error": "unknown_serving_unit", "message": msg})
             else:
                 typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
             raise typer.Exit(code=2) from exc
@@ -550,16 +584,16 @@ def log(
             try:
                 pk_bytes = hex_to_pk(food_id)
             except ValueError as exc:
-                if fmt is OutputFormat.json:
-                    _emit_json({"error": "invalid_food_id", "message": str(exc)})
+                if fmt is not OutputFormat.text:
+                    _emit_structured(fmt, {"error": "invalid_food_id", "message": str(exc)})
                 else:
                     typer.secho(f"❌ {exc}", fg=typer.colors.RED, err=True)
                 raise typer.Exit(code=2) from exc
             try:
                 selected = foods.get_food(client.http, pk_bytes)
             except Exception as exc:
-                if fmt is OutputFormat.json:
-                    _emit_json({"error": "food_not_found", "message": str(exc)})
+                if fmt is not OutputFormat.text:
+                    _emit_structured(fmt, {"error": "food_not_found", "message": str(exc)})
                 else:
                     typer.secho(f"❌ {exc}", fg=typer.colors.RED, err=True)
                 raise typer.Exit(code=1) from exc
@@ -570,8 +604,8 @@ def log(
             if fmt is OutputFormat.text:
                 _print_search_results(results)
             if not results:
-                if fmt is OutputFormat.json:
-                    _emit_json({"error": "no_results", "query": query})
+                if fmt is not OutputFormat.text:
+                    _emit_structured(fmt, {"error": "no_results", "query": query})
                 raise typer.Exit(code=1)
             idx = _resolve_pick(pick, "Select food #", len(results))
             selected = results[idx]
@@ -613,15 +647,16 @@ def log(
                     f"native unit is {chosen_name}, or use --servings to "
                     f"log in the food's native unit."
                 )
-                if fmt is OutputFormat.json:
-                    _emit_json(
+                if fmt is not OutputFormat.text:
+                    _emit_structured(
+                        fmt,
                         {
                             "error": "unit_not_supported",
                             "food": selected.name,
                             "native_unit": native_name,
                             "requested_unit": chosen_name,
                             "message": msg,
-                        }
+                        },
                     )
                 else:
                     typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
@@ -673,8 +708,9 @@ def log(
             )
 
         selected_food_id = pk_to_hex(selected.pk_bytes) if len(selected.pk_bytes) == 16 else ""
-        if fmt is OutputFormat.json:
-            _emit_json(
+        if fmt is not OutputFormat.text:
+            _emit_structured(
+                fmt,
                 {
                     "action": "log",
                     "dry_run": dry_run,
@@ -691,7 +727,7 @@ def log(
                         "food_id": selected_food_id,
                     },
                     "calories": scaled_cal,
-                }
+                },
             )
         else:
             prefix = "🟡 DRY RUN — would log" if dry_run else "✅ Logged"
@@ -716,13 +752,14 @@ def diary(
     logger.info("cli.diary: date={d}", d=when.isoformat())
     with _open_client(ctx) as client:
         es = daily.get_daily_details(client.http, when)
-        if fmt is OutputFormat.json:
-            _emit_json(
+        if fmt is not OutputFormat.text:
+            _emit_structured(
+                fmt,
                 {
                     "date": when.isoformat(),
                     "count": len(es),
                     "entries": [_entry_to_dict(e) for e in es],
-                }
+                },
             )
         else:
             _print_diary(es, when)
@@ -774,20 +811,21 @@ def delete(
         es = daily.get_daily_details(client.http, when)
         if not es:
             msg = f"No diary entries for {when.isoformat()}"
-            if fmt is OutputFormat.json:
-                _emit_json({"error": "empty_diary", "date": when.isoformat()})
+            if fmt is not OutputFormat.text:
+                _emit_structured(fmt, {"error": "empty_diary", "date": when.isoformat()})
             else:
                 typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
             raise typer.Exit(code=1)
         meal_es = [e for e in es if e.meal_ordinal == meal_ord]
         if not meal_es:
-            if fmt is OutputFormat.json:
-                _emit_json(
+            if fmt is not OutputFormat.text:
+                _emit_structured(
+                    fmt,
                     {
                         "error": "empty_meal",
                         "date": when.isoformat(),
                         "meal": MEAL_NAMES[meal_ord],
-                    }
+                    },
                 )
             else:
                 typer.secho(
@@ -798,13 +836,14 @@ def delete(
                 _print_diary(es, when)
             raise typer.Exit(code=1)
         if pick is None:
-            if fmt is OutputFormat.json:
-                _emit_json(
+            if fmt is not OutputFormat.text:
+                _emit_structured(
+                    fmt,
                     {
                         "error": "missing_pick",
                         "meal": MEAL_NAMES[meal_ord],
                         "candidates": [_entry_to_dict(e) for e in meal_es],
-                    }
+                    },
                 )
             else:
                 _print_diary(es, when)
@@ -832,15 +871,16 @@ def delete(
                     typer.echo("Cancelled.")
                     raise typer.Exit(code=0)
             entries.delete(client.http, target)
-        if fmt is OutputFormat.json:
-            _emit_json(
+        if fmt is not OutputFormat.text:
+            _emit_structured(
+                fmt,
                 {
                     "action": "delete",
                     "dry_run": dry_run,
                     "date": when.isoformat(),
                     "meal": MEAL_NAMES[meal_ord],
                     "target": _entry_to_dict(target),
-                }
+                },
             )
         elif not dry_run:
             typer.secho("✅ Deleted", fg=typer.colors.GREEN)
@@ -965,8 +1005,9 @@ def login(
             interactive=fmt is OutputFormat.text,
         )
 
-    if fmt is OutputFormat.json:
-        _emit_json(
+    if fmt is not OutputFormat.text:
+        _emit_structured(
+            fmt,
             {
                 "action": "login",
                 "status": "ok",
@@ -976,7 +1017,7 @@ def login(
                 "exp_iso": _exp_iso(exp),
                 "config_file": str(written_config) if written_config else None,
                 "config_values": written_values or None,
-            }
+            },
         )
     else:
         typer.secho(
@@ -1068,8 +1109,9 @@ def _login_failure(
     if open_signin:
         opened = _open_in_browser(SIGNIN_URL, browser)
 
-    if fmt is OutputFormat.json:
-        _emit_json(
+    if fmt is not OutputFormat.text:
+        _emit_structured(
+            fmt,
             {
                 "action": "login",
                 "status": reason,
@@ -1080,7 +1122,7 @@ def _login_failure(
                 "signin_url": SIGNIN_URL,
                 "opened_browser": opened,
                 "message": message,
-            }
+            },
         )
     else:
         typer.secho(f"❌ {message}", fg=typer.colors.RED, err=True)
@@ -1134,15 +1176,16 @@ def whoami(ctx: typer.Context) -> None:
     logger.info("cli.whoami: output={o}", o=fmt.value)
     with _open_client(ctx) as client:
         cfg = client.config
-        if fmt is OutputFormat.json:
-            _emit_json(
+        if fmt is not OutputFormat.text:
+            _emit_structured(
+                fmt,
                 {
                     "user_id": cfg.user_id,
                     "user_name": cfg.user_name,
                     "hours_from_gmt": cfg.hours_from_gmt,
                     "policy_hash": cfg.policy_hash,
                     "strong_name": cfg.strong_name,
-                }
+                },
             )
         else:
             typer.echo(f"user_id        : {cfg.user_id}")

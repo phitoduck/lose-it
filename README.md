@@ -174,6 +174,30 @@ $ lose-it -o json diary --date 2026-06-08 | jq '.entries[] | .food_name'
 "Real Good Lightly Breaded Chicken Strips"
 ```
 
+### LLM-friendly output: `--output toon` / `-o toon`
+
+Pass `toon` to render the same payload as [Token-Oriented Object Notation](https://toonformat.dev) — a compact, JSON-equivalent format designed for shovelling structured data into LLM prompts. The data shape is identical to `-o json` (you can round-trip it through `toon-format`), but it spends ~40–60% fewer characters (and tokens) on arrays of records because field names are pulled into a single header row.
+
+```text
+$ lose-it -o toon search "tortilla"
+query: tortilla
+count: 3
+results[3]:
+  - name: "Tortilla Wraps, High Fiber, Low Carb"
+    brand: Mission
+    category: Bread
+    food_id: 9eba9129b8494967c8cb3385acf0f614
+    pk_bytes[16]: 158,186,145,41,184,73,73,103,200,203,51,133,172,240,246,20
+  ...
+```
+
+On a typical 3-row search payload, the JSON view is 1,224 chars and the TOON view is 622 chars — a ~49% reduction. Round-tripping the TOON output through a decoder produces the same Python dict as `json.loads` of the JSON output, so anything downstream that wants real JSON can recover it on demand:
+
+```python
+import toon_format
+data = toon_format.decode(toon_output)
+```
+
 ### Preview without mutating: `--dry-run`
 
 `log` and `delete` accept `--dry-run`. Read-only lookups still run (so you see what *would* be logged or deleted), but the mutating RPC is skipped.
