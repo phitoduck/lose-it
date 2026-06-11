@@ -9,14 +9,21 @@ from __future__ import annotations
 
 import re
 from datetime import date
+from typing import Any
 
 from .._logging import logger
 from ._config import Config
 from ._dates import day_number_for
-from ._gwt import build_envelope, is_food_identifier_code, parse_response
+from ._decoder import decode_response
+from ._gwt import build_envelope, parse_response
 from ._http import HttpClient
 from ._models import FoodLogEntry
 from .init import get_daydate_key
+
+# Type hashes used to walk the decoder's output.
+_FLE_FQCN = "com.loseit.core.client.model.FoodLogEntry/264522954"
+_FOOD_SERVING_SIZE_FQCN = "com.loseit.core.client.model.FoodServingSize/63998910"
+_FOOD_MEASURE_PREFIX = "com.loseit.core.client.model.FoodMeasure/"
 
 
 def _build_payload(config: Config, target_date: date, day_key: str) -> str:
@@ -55,257 +62,198 @@ def _build_payload(config: Config, target_date: date, day_key: str) -> str:
     return build_envelope(strings, data)
 
 
-def _resolve_refs(string_table: list[str]) -> dict[str, int]:
-    refs: dict[str, int] = {}
-    for i, s in enumerate(string_table):
-        ref = i + 1
-        if s == "[B/3308590456":
-            refs["bytes"] = ref
-        elif s.startswith("com.loseit.core.client.model.SimplePrimaryKey/"):
-            refs["pk"] = ref
-        elif s.startswith("com.loseit.core.client.model.FoodLogEntry/"):
-            refs["food_log_entry"] = ref
-        elif s.startswith("com.loseit.core.client.model.interfaces.FoodLogEntryType/"):
-            refs["meal"] = ref
-        elif s.startswith("com.loseit.core.client.model.interfaces.FoodLogEntryTypeExtra/"):
-            refs["extra"] = ref
-        elif s.startswith("com.loseit.core.client.model.FoodMeasure/"):
-            refs["food_measure"] = ref
-        elif s.startswith("com.loseit.healthdata.model.shared.food.FoodMeasurement/"):
-            refs["food_measurement"] = ref
-        elif s == "java.lang.Double/858496421":
-            refs["double"] = ref
-    return refs
+def _pk_bytes_from(pk_obj: Any) -> list[int]:
+    """SimplePrimaryKey wraps a raw byte[] in its sole field."""
+    if isinstance(pk_obj, dict):
+        inner = pk_obj.get("f0")
+        if isinstance(inner, list):
+            return [int(b) for b in inner]
+    if isinstance(pk_obj, list):
+        return [int(b) for b in pk_obj]
+    return []
 
 
-def _find_pk_blocks(tokens: list, bytes_ref: int, pk_ref: int) -> list[dict]:
-    """Locate every 16-byte PK block followed by ``[16, bytes_ref, pk_ref, "<key>"]``."""
-    blocks: list[dict] = []
-    for i in range(16, len(tokens) - 3):
-        if (
-            tokens[i] == 16
-            and tokens[i + 1] == bytes_ref
-            and tokens[i + 2] == pk_ref
-            and isinstance(tokens[i + 3], str)
-        ):
-            slice_ = tokens[i - 16 : i]
-            if all(isinstance(x, (int, float)) for x in slice_):
-                blocks.append(
-                    {
-                        "marker_i": i,
-                        "pk_bytes": [int(x) for x in slice_],
-                        "day_key": tokens[i + 3],
-                    }
-                )
-    return blocks
+def _walk_dicts(root: Any):
+    """Yield every dict node in ``root`` (depth-first)."""
+    if isinstance(root, dict):
+        yield root
+        for v in root.values():
+            yield from _walk_dicts(v)
+    elif isinstance(root, list):
+        for v in root:
+            yield from _walk_dicts(v)
 
 
-def _extract_entry(
-    tokens: list,
-    string_table: list[str],
-    entry_pk_block: dict,
-    food_pk_block: dict,
-    refs: dict[str, int],
+def _scan_for_short_key(o: Any) -> str | None:
+    """Pull out the first GWT short-string day_key shaped like ``Z6mB_lo``."""
+    if isinstance(o, str) and 4 <= len(o) <= 16 and re.match(r"^[A-Za-z0-9_$]+$", o):
+        return o
+    if isinstance(o, dict):
+        for v in o.values():
+            r = _scan_for_short_key(v)
+            if r:
+                return r
+    elif isinstance(o, list):
+        for v in o:
+            r = _scan_for_short_key(v)
+            if r:
+                return r
+    return None
+
+
+def _entry_from_decoded(
+    fle: dict,
     default_hours_from_gmt: int,
     user_name: str = "",
 ) -> FoodLogEntry | None:
-    """Build a :class:`FoodLogEntry` from its two PK blocks.
+    """Build a :class:`FoodLogEntry` from a decoded FoodLogEntry dict.
 
-    GWT serializes a ``FoodLogEntry`` in the order
-    ``FoodIdentifier → context → meal → nutrients → … → SimplePrimaryKey``
-    so the request has the food's stable PK FIRST and the entry's UUID LAST.
-    Responses reverse this: in the stream we first see the entry's UUID and
-    then the food's PK. The caller passes the blocks in that stream order:
-    ``entry_pk_block`` first, ``food_pk_block`` second.
+    Walks the decoded tree to find:
+
+    - ``FoodIdentifier`` — name/brand/category/food-id-code/food PK
+    - ``FoodLogEntryContext`` — context day_key + day_num + hours_from_gmt + meal
+    - ``FoodServing`` → ``FoodServingSize`` → servings
+    - ``FoodMeasure`` — measure ordinal
+    - nutrient HashMap — ordinal → value pairs
+
+    The entry's own PK is the deepest SimplePrimaryKey we encounter
+    inside this FLE that isn't the food's identifier PK.
     """
-    day_key = entry_pk_block["day_key"]
-    mid_start = entry_pk_block["marker_i"] + 4
-    mid_end = food_pk_block["marker_i"] - 16
+    # FoodLogEntry positional fields (verified against live fixtures):
+    #   f0 → FoodIdentifier   (name/brand/category/food PK)
+    #   f1 → FoodLogEntryContext (day, meal, hours_from_gmt)
+    #   f2 → FoodServing       (servings + serving size + measure)
+    #   f3 → bool   (deleted/pending flag)
+    #   f4 → long   (created? timestamp)
+    #   f5 → long   (modified? timestamp)
+    #   f6 → SimplePrimaryKey  (the entry's own UUID)
+    identifier = fle.get("f0") if isinstance(fle.get("f0"), dict) else None
+    food_name = (identifier.get("f3") if identifier else "") or ""
+    food_brand = (identifier.get("f4") if identifier else "") or ""
+    food_category = (identifier.get("f1") if identifier else "") or ""
+    food_pk_bytes: list[int] = []
+    if identifier is not None:
+        food_pk_bytes = _pk_bytes_from(identifier.get("f9"))
 
-    food_id_code = ""
-    if mid_start < len(tokens) and isinstance(tokens[mid_start], str):
-        food_id_code = tokens[mid_start]
+    # Strip the user's email-local-part / full email if Lose It! stamped
+    # it as the brand on personally-saved foods.
+    if user_name:
+        local_part = user_name.split("@", 1)[0]
+        if food_brand in {user_name, local_part}:
+            food_brand = ""
 
-    # FoodMeasure ordinal — the int immediately before the food_measure ref.
-    food_measure_ord = None
-    fm_ref = refs.get("food_measure")
-    if fm_ref:
-        for j in range(mid_start, min(mid_end, mid_start + 20)):
-            if tokens[j] == fm_ref and j > 0 and isinstance(tokens[j - 1], (int, float)):
-                food_measure_ord = int(tokens[j - 1])
-                break
+    # food_identifier_code is the "DoXyz" short string that uniquely names
+    # the food in Lose It's internal index. It doesn't sit in any of the
+    # positional fields the schema exposes — it travels alongside the
+    # FoodLogEntry as a separate inline string. ``parse_entries`` zips
+    # the per-FLE codes by source order; we leave it blank here.
+    food_identifier_code = ""
 
-    # Nutrients — server writes them as <value, Double_ref, ordinal, FoodMeasurement_ref>.
-    # When multiple entries share identical nutrient values (same food, same
-    # servings) GWT deduplicates the HashMap, writing it only once. So scan
-    # the entry's mid range first; if empty, fall back to the whole response.
-    fmment_ref = refs.get("food_measurement")
-    dbl_ref = refs.get("double")
+    # Entry PK is FLE.f6 (the entry's own UUID), not the food's PK.
+    entry_pk_bytes: list[int] = _pk_bytes_from(fle.get("f6"))
 
-    def _collect_nutrients(start: int, end: int) -> list[tuple[int, float]]:
-        out: list[tuple[int, float]] = []
-        if not (fmment_ref and dbl_ref):
-            return out
-        for j in range(start, end):
-            if (
-                tokens[j] == fmment_ref
-                and j >= 3
-                and tokens[j - 2] == dbl_ref
-                and isinstance(tokens[j - 1], int)
-                and isinstance(tokens[j - 3], (int, float))
-            ):
-                ord_ = int(tokens[j - 1])
-                if 0 <= ord_ <= 30:
-                    out.append((ord_, float(tokens[j - 3])))
-        return out
-
-    nutrients_ordered = _collect_nutrients(mid_start, mid_end)
-    if not nutrients_ordered:
-        nutrients_ordered = _collect_nutrients(0, len(tokens))
-
-    # Meal + extra ordinals.
-    # GWT deduplicates enum values across an array of objects: if 3 FoodLogEntries
-    # all share meal=snacks, the FoodLogEntryType enum appears once and each entry
-    # references it. So when our entry's mid range doesn't contain a meal_ref,
-    # we fall back to searching the WHOLE response (typically the dedup'd enum
-    # sits just after the last entry's body).
-    #
-    # **Disambiguation by valid range**: small GWT string-table refs (e.g.
-    # meal_ref=53) collide with literal integer values that show up all over
-    # the response — PK bytes, nutrient counts, day offsets, byte-array
-    # entries. Without a value filter the parser's first-hit logic lands on
-    # those coincidences and produces nonsense ordinals like "meal=47" /
-    # "meal=75", which then break ``entries.delete`` because the resulting
-    # payload doesn't match anything stored on the server. We constrain the
-    # meal ordinal to {0..3} (breakfast/lunch/dinner/snacks) and the extra
-    # ordinal to the small range the server actually emits (≤15 observed).
-    def _find_ord_before_ref(
-        ref_id: int,
-        search_start: int,
-        search_end: int,
-        valid_range: range | None = None,
-    ) -> int | None:
-        for j in range(search_start, search_end):
-            if tokens[j] == ref_id and j > 0 and isinstance(tokens[j - 1], int):
-                val = int(tokens[j - 1])
-                if valid_range is None or val in valid_range:
-                    return val
-        return None
-
-    meal_range = range(0, 4)
+    # Context: day_key, day_num, hours_from_gmt, meal_ordinal, extra_ordinal.
+    context = fle.get("f1") if isinstance(fle.get("f1"), dict) else None
     meal_ord = 0
-    if refs.get("meal"):
-        meal_ord = (
-            _find_ord_before_ref(refs["meal"], mid_start, mid_end, meal_range)
-            or _find_ord_before_ref(refs["meal"], 0, len(tokens), meal_range)
-            or 0
-        )
-    extra_range = range(0, 16)
     extra_ord = 3
-    if refs.get("extra"):
-        extra_ord = (
-            _find_ord_before_ref(refs["extra"], mid_start, mid_end, extra_range)
-            or _find_ord_before_ref(refs["extra"], 0, len(tokens), extra_range)
-            or 3
-        )
-
-    # Context (day_num + day_key + hours_from_gmt). In response order, the
-    # tokens appear as: ..., hours_from_gmt, day_num, "<context_day_key>", ...
-    # Skip "Do…" strings (those are food identifier codes, not day keys).
-    context_day_key = ""
     day_num = 0
     hours_from_gmt = default_hours_from_gmt
-    for j in range(mid_start, mid_end):
-        t = tokens[j]
-        if (
-            isinstance(t, str)
-            and t != day_key
-            and not t.startswith("Do")
-            and re.match(r"^[A-Za-z0-9_$]+$", t)
-            and len(t) >= 5
-        ):
-            context_day_key = t
-            for k in range(j - 1, max(j - 6, mid_start), -1):
-                if isinstance(tokens[k], int) and tokens[k] >= 5000:
-                    day_num = int(tokens[k])
-                    break
-            for k in range(j - 1, max(j - 8, mid_start), -1):
-                if isinstance(tokens[k], int) and -12 <= tokens[k] <= 14 and tokens[k] != day_num:
-                    hours_from_gmt = int(tokens[k])
-                    break
-            break
+    context_day_key = ""
+    if context is not None:
+        # FoodLogEntryContext schema:
+        # [OBJECT, OBJECT, BOOLEAN, RAW, RAW, BOOLEAN, OBJECT, OBJECT, OBJECT, OBJECT]
+        # f0 → ??  (often null)
+        # f1 → DayDate (containing day_key, day_num, hours_from_gmt)
+        # f2 → bool
+        # f3/f4 → raw ints
+        # f5 → bool
+        # f6/f7 → polymorphic Objects (often null)
+        # f8 → FoodLogEntryType enum   (meal ordinal: 0..3)
+        # f9 → FoodLogEntryTypeExtra enum (extra ordinal)
+        meal_obj = context.get("f8")
+        if isinstance(meal_obj, dict):
+            o = meal_obj.get("ordinal")
+            if isinstance(o, (int, float)) and 0 <= int(o) <= 3:
+                meal_ord = int(o)
+        extra_obj = context.get("f9")
+        if isinstance(extra_obj, dict):
+            o = extra_obj.get("ordinal")
+            if isinstance(o, (int, float)) and 0 <= int(o) <= 15:
+                extra_ord = int(o)
+        daydate = context.get("f1")
+        if isinstance(daydate, dict):
+            # DayDate schema: [OBJECT, RAW, RAW]
+            # f0 → Date (epoch ms long), f1 → day_num int, f2 → hours_from_gmt int
+            f1 = daydate.get("f1")
+            f2 = daydate.get("f2")
+            if isinstance(f1, (int, float)) and int(f1) >= 5000:
+                day_num = int(f1)
+            if isinstance(f2, (int, float)) and -12 <= int(f2) <= 14:
+                hours_from_gmt = int(f2)
+        # day_key: short-string within the DayDate / context subtree.
+        context_day_key = _scan_for_short_key(context) or ""
 
-    # Food name/brand/category — the FoodIdentifier's string refs are
-    # serialized AFTER the food PK marker (the SECOND PK marker in stream).
-    # In the response stream the field order is brand_ref, name_ref, then
-    # a null/locale, then category_ref. Collect string refs, skipping
-    # framework / ProductType / username strings.
-    #
-    # Lose It! emits the logging user's email-local-part (e.g. "alice.smith"
-    # for "alice.smith@example.com") as a placeholder string in the
-    # brand_ref slot for foods the user has saved/customized in their
-    # personal DB without a real brand. We use the placeholder's presence
-    # as a positive signal that brand is empty and only collect two more
-    # strings (name + category); without that signal the scan window
-    # walks past the food's identifier into adjacent shared/dedup'd
-    # strings (e.g. nutrition-goal names) and ends up with the wrong
-    # three values in food_brand/food_name/food_category.
-    user_aliases = {user_name, user_name.split("@", 1)[0]} if user_name else set()
-    food_category = food_name = food_brand = ""
-    after = food_pk_block["marker_i"] + 4
-    seen: list[str] = []
-    brand_is_placeholder = False
-    needed = 3
-    for j in range(after, min(after + 15, len(tokens))):
-        t = tokens[j]
-        if not (isinstance(t, int) and 1 <= t <= len(string_table)):
-            continue
-        s = string_table[t - 1]
-        if not s or s.startswith("com.") or s.startswith("java.") or s.startswith("["):
-            continue
-        if s in user_aliases and not seen:
-            brand_is_placeholder = True
-            needed = 2
-            continue
-        seen.append(s)
-        if len(seen) >= needed:
-            break
-    if brand_is_placeholder:
-        if len(seen) >= 2:
-            food_name, food_category = seen[:2]
-        elif len(seen) == 1:
-            food_name = seen[0]
-    else:
-        if len(seen) >= 3:
-            food_brand, food_name, food_category = seen[:3]
-        elif len(seen) == 2:
-            food_name, food_category = seen
-        elif len(seen) == 1:
-            food_name = seen[0]
+    # FoodMeasure (enum) — pluck the ordinal.
+    food_measure_ord = 27
+    for d in _walk_dicts(fle):
+        t = d.get("__type__", "")
+        if isinstance(t, str) and t.startswith(_FOOD_MEASURE_PREFIX) and "ordinal" in d:
+            o = d.get("ordinal")
+            if isinstance(o, (int, float)):
+                food_measure_ord = int(o)
+                break
 
-    # Servings — the first float in [mid_start+1, mid_start+5).
+    # FoodServingSize.f0 = quantity → servings on the FoodServing.
     servings = 1.0
-    for j in range(mid_start + 1, min(mid_start + 5, len(tokens))):
-        if isinstance(tokens[j], float):
-            servings = float(tokens[j])
+    serving_size = next(
+        (d for d in _walk_dicts(fle) if d.get("__type__") == _FOOD_SERVING_SIZE_FQCN),
+        None,
+    )
+    if serving_size is not None:
+        q = serving_size.get("f0")
+        if isinstance(q, (int, float)):
+            servings = float(q)
+
+    # Nutrients — any HashMap whose keys carry an ordinal 0..30 and values are numeric.
+    nutrients: list[tuple[int, float]] = []
+    for d in _walk_dicts(fle):
+        if not isinstance(d.get("__type__"), str):
+            continue
+        if not d.get("__type__", "").startswith("java.util.HashMap"):
+            continue
+        entries = d.get("entries")
+        if not isinstance(entries, list):
+            continue
+        for key, val in entries:
+            if isinstance(key, dict) and "ordinal" in key and isinstance(val, (int, float)):
+                ord_ = key["ordinal"]
+                if isinstance(ord_, (int, float)) and 0 <= int(ord_) <= 30:
+                    nutrients.append((int(ord_), float(val)))
+        if nutrients:
             break
+
+    # Top-level day_key (the "Z6mB_lo"-style short string near the FLE).
+    entry_day_key = _scan_for_short_key(fle) or context_day_key
+
+    if not food_pk_bytes or not entry_pk_bytes:
+        return None
 
     return FoodLogEntry(
-        food_pk_response=food_pk_block["pk_bytes"],  # SECOND PK in stream
-        entry_pk_response=entry_pk_block["pk_bytes"],  # FIRST PK in stream (UUID)
-        entry_day_key=day_key,
+        food_pk_response=food_pk_bytes,
+        entry_pk_response=entry_pk_bytes,
+        entry_day_key=entry_day_key,
         context_day_key=context_day_key,
         day_num=day_num,
         hours_from_gmt=hours_from_gmt,
         meal_ordinal=meal_ord,
         extra_ordinal=extra_ord,
-        food_measure_ordinal=food_measure_ord if food_measure_ord is not None else 27,
+        food_measure_ordinal=food_measure_ord,
         servings=servings,
-        food_identifier_code=food_id_code,
+        food_identifier_code=food_identifier_code,
         food_category=food_category,
         food_name=food_name,
         food_brand=food_brand,
-        nutrients_ordered=nutrients_ordered,
+        nutrients_ordered=nutrients,
     )
 
 
@@ -314,57 +262,55 @@ def parse_entries(
     default_hours_from_gmt: int = -5,
     user_name: str = "",
 ) -> list[FoodLogEntry]:
-    """Extract every :class:`FoodLogEntry` from a daily-details response."""
-    tokens, strings = parse_response(text)
-    if not strings:
-        return []
-    refs = _resolve_refs(strings)
-    if not (refs.get("bytes") and refs.get("pk")):
-        return []
-    bytes_ref = refs["bytes"]
-    pk_ref = refs["pk"]
-    pk_blocks = _find_pk_blocks(tokens, bytes_ref, pk_ref)
+    """Extract every :class:`FoodLogEntry` from a daily-details response.
 
-    # Identify each FoodLogEntry by its FOOD PK block — the one whose
-    # following token is a "Do…"-prefixed food identifier code. The ENTRY
-    # PK block is the IMMEDIATELY following PK block in the stream.
-    # The two PKs USUALLY share a day_key, but not always (the entry-PK
-    # marker can carry a different short string when other objects in the
-    # response reference the entry), so we don't gate on day_key equality.
-    fle_ref = refs.get("food_log_entry")
-    entries: list[FoodLogEntry] = []
-    i = 0
-    while i < len(pk_blocks) - 1:
-        a = pk_blocks[i]
-        after_first = tokens[a["marker_i"] + 4] if a["marker_i"] + 4 < len(tokens) else None
-        if not is_food_identifier_code(after_first):
-            i += 1
-            continue
-        b = pk_blocks[i + 1]
-        # Reject pairs that look too far apart — a real entry body is < 200 tokens.
-        if b["marker_i"] - a["marker_i"] > 200:
-            i += 1
-            continue
-        # Sanity check: the entry PK block should have a FoodLogEntry type
-        # ref nearby (within the FoodIdentifier sub-section that follows).
-        has_fle_ref = False
-        if fle_ref is not None:
-            for j in range(b["marker_i"] + 4, min(b["marker_i"] + 20, len(tokens))):
-                if tokens[j] == fle_ref:
-                    has_fle_ref = True
-                    break
-        if not has_fle_ref:
-            i += 1
-            continue
-        # a = first PK block in stream = ENTRY PK (entry UUID).
-        # b = second PK block in stream = FOOD PK (food's stable PK).
-        entry = _extract_entry(
-            tokens, strings, a, b, refs, default_hours_from_gmt, user_name=user_name
-        )
-        if entry is not None:
-            entries.append(entry)
-        i += 2
-    return entries
+    Uses the schema-driven decoder to walk the response, then maps each
+    decoded ``FoodLogEntry`` dict into the public dataclass shape.
+    ``decode_response`` is lenient — if it encounters an unknown type or
+    a stream desync it returns a partial result with ``backrefs``
+    populated, and we scan that list for any FoodLogEntries that
+    completed before the failure.
+
+    The ``food_identifier_code`` (``DoXXX`` strings) is the only field
+    whose position the decoder hasn't yet pinned down; we fall back to
+    scanning the raw token stream for those literals and zip them with
+    the decoded entries in source order.
+    """
+    decoded = decode_response(text)
+    if decoded is None:
+        return []
+    out: list[FoodLogEntry] = []
+    seen_ids: set[int] = set()
+    sources = [decoded]
+    if isinstance(decoded, dict) and decoded.get("__partial__"):
+        sources.extend(decoded.get("backrefs") or [])
+    for src in sources:
+        for d in _walk_dicts(src):
+            if d.get("__type__") != _FLE_FQCN:
+                continue
+            ident = id(d)
+            if ident in seen_ids:
+                continue
+            seen_ids.add(ident)
+            entry = _entry_from_decoded(d, default_hours_from_gmt, user_name=user_name)
+            if entry is not None:
+                out.append(entry)
+
+    # Backfill missing food_identifier_codes from the raw token stream.
+    # Each FLE in a daily-details response carries exactly one ``DoXXX``
+    # short string inline; the source order matches the order entries
+    # land in the decoded tree, so zipping is safe.
+    if any(not e.food_identifier_code for e in out):
+        tokens, _ = parse_response(text)
+        codes = [
+            t
+            for t in tokens
+            if isinstance(t, str) and len(t) >= 4 and len(t) <= 20 and t.startswith("Do")
+        ]
+        for entry, code in zip(out, codes, strict=False):
+            if not entry.food_identifier_code:
+                entry.food_identifier_code = code
+    return out
 
 
 def get_daily_details(http: HttpClient, target_date: date) -> list[FoodLogEntry]:

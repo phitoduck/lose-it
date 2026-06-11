@@ -1,0 +1,3519 @@
+{
+  "permutation": "351AE5DC0CA36AD3BA9C7CBA7B0E07B8",
+  "primitives": {
+    "cast_assert": "sQ",
+    "read_boolean": "yGd",
+    "read_double": "zGd",
+    "read_long": "BGd",
+    "read_object": "pGd",
+    "read_string": "wGd"
+  },
+  "schemas": {
+    "[Lcom.loseit.core.client.model.AccountDetails;/3192859924": {
+      "deserialize_fn": "jwg",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.ActiveExercise;/4112181072": {
+      "deserialize_fn": "Vwg",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.ActiveExerciseCategory;/3948310042": {
+      "deserialize_fn": "Lwg",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.Challenge;/3743068782": {
+      "deserialize_fn": "Rzg",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.ChallengeLeader;/2380496464": {
+      "deserialize_fn": "Tyg",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.ChallengeLocalization;/3126610460": {
+      "deserialize_fn": "jzg",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.City;/275360693": {
+      "deserialize_fn": "vAg",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.ConnectedEntity;/3196022774": {
+      "deserialize_fn": "OAg",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.ConversationUserDetails;/3715067389": {
+      "deserialize_fn": "iBg",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.CustomFood;/3891990944": {
+      "deserialize_fn": "tBg",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.CustomGoal;/4104812613": {
+      "deserialize_fn": "wCg",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.CustomGoalValue;/3340358626": {
+      "deserialize_fn": "lCg",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.DailyDetails;/2036651502": {
+      "deserialize_fn": "dDg",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.DailyLogEntry;/2146499172": {
+      "deserialize_fn": "BEg",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.DailyLogEntryWithMeals;/3034949036": {
+      "deserialize_fn": "MDg",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.Device;/3566810925": {
+      "deserialize_fn": "aFg",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.EmailReportJobData;/1964807568": {
+      "deserialize_fn": "wFg",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.ExerciseCategoryLocaleOverride;/530206017": {
+      "deserialize_fn": "fGg",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.ExerciseLocaleOverride;/31604535": {
+      "deserialize_fn": "IGg",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.ExerciseLogEntry;/1448715428": {
+      "deserialize_fn": "lHg",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.ExtendedUserDetails;/1773089271": {
+      "deserialize_fn": "iIg",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.FoodForFoodDatabase;/3009199238": {
+      "deserialize_fn": "xIg",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.FoodInsightDetailItem;/1458776255": {
+      "deserialize_fn": "cJg",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.FoodLogEntry;/3918943916": {
+      "deserialize_fn": "aKg",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.FoodServingSize;/810599869": {
+      "deserialize_fn": "gMg",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.Group;/4020776143": {
+      "deserialize_fn": "CQg",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.GroupDetails;/2816724428": {
+      "deserialize_fn": "cQg",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.GroupLocalization;/1807972113": {
+      "deserialize_fn": "nQg",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.InsightPattern;/3895548342": {
+      "deserialize_fn": "QRg",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.IntegratedSystem;/2316922153": {
+      "deserialize_fn": "y$g",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.InternalAccountDetails;/664848994": {
+      "deserialize_fn": "E$g",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.Invitation;/217127847": {
+      "deserialize_fn": "P$g",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.LogEntry;/105466560": {
+      "deserialize_fn": "U_g",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.MyFoodIdentifier;/3672613004": {
+      "deserialize_fn": "o0g",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.Note;/2857659498": {
+      "deserialize_fn": "l1g",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.NutrientSummary;/2824137653": {
+      "deserialize_fn": "w3g",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.PopularEntry;/216212859": {
+      "deserialize_fn": "N3g",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.ProfileDetails;/208950177": {
+      "deserialize_fn": "r4g",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.Recipe;/246827078": {
+      "deserialize_fn": "m5g",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.RecipeIngredient;/2059606128": {
+      "deserialize_fn": "_4g",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.RecordedWeight;/503475614": {
+      "deserialize_fn": "a7g",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.ReminderJobData;/1047339722": {
+      "deserialize_fn": "G7g",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.SharedItem;/3737107063": {
+      "deserialize_fn": "m8g",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.SimplePrimaryKey;/995428388": {
+      "deserialize_fn": "a9g",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.Team;/1007853726": {
+      "deserialize_fn": "z9g",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.TeamDetails;/2783239976": {
+      "deserialize_fn": "r9g",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.UserChallenge;/62776769": {
+      "deserialize_fn": "Eah",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.UserDetails;/3342858499": {
+      "deserialize_fn": "Mah",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.activity.AchievementActivity;/3674177494": {
+      "deserialize_fn": "$bh",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.activity.Activity;/1029547820": {
+      "deserialize_fn": "och",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.activity.ChallengeMessageActivity;/3933961534": {
+      "deserialize_fn": "xch",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.activity.CommentActivity;/1805863315": {
+      "deserialize_fn": "Fch",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.activity.ConversationActivity;/1339610487": {
+      "deserialize_fn": "Nch",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.activity.ExerciseActivity;/1854627422": {
+      "deserialize_fn": "Zch",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.activity.GoalActivity;/4169300991": {
+      "deserialize_fn": "fdh",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.activity.GroupMessageActivity;/2101678362": {
+      "deserialize_fn": "ndh",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.activity.MessageActivity;/2151147214": {
+      "deserialize_fn": "vdh",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.activity.UserActivity;/3697812154": {
+      "deserialize_fn": "Bdh",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.activity.WeighInActivity;/690250147": {
+      "deserialize_fn": "Gdh",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.budget.DailyBudgetContext;/32223838": {
+      "deserialize_fn": "ieh",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.interfaces.ILogEntry;/2338671867": {
+      "deserialize_fn": "Ugh",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.interfaces.ILogEntryWithPending;/2549867056": {
+      "deserialize_fn": "Rgh",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.interfaces.IPrimaryKey;/2835828912": {
+      "deserialize_fn": "Xgh",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.interfaces.SearchableUserDetails;/2103144036": {
+      "deserialize_fn": "phh",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.search.SearchResult;/1298022602": {
+      "deserialize_fn": "_jh",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.search.SearchResultExercise;/781409772": {
+      "deserialize_fn": "qjh",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.search.SearchResultFood;/1670943319": {
+      "deserialize_fn": "Bjh",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.search.SearchResultHeader;/2374251150": {
+      "deserialize_fn": "Kjh",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.model.search.SearchResultMeal;/4217720383": {
+      "deserialize_fn": "Xjh",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.client.service.responses.AddFriendResponse;/2940537098": {
+      "deserialize_fn": "hkr",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.shared.landing.HintedLandingDescriptor$HintSet;/3109587479": {
+      "deserialize_fn": "YIt",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.shared.model.ClientApplicationContext;/996892391": {
+      "deserialize_fn": "VKt",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.shared.model.connect.ExternalConnectProgram;/4203474425": {
+      "deserialize_fn": "nNt",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Lcom.loseit.core.shared.model.conversations.Conversation;/457233624": {
+      "deserialize_fn": "PNt",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Ljava.lang.Double;/2857560407": {
+      "deserialize_fn": "vCd",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Ljava.lang.Integer;/1574882222": {
+      "deserialize_fn": "TCd",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Ljava.lang.StackTraceElement;/3867167983": {
+      "deserialize_fn": "uDd",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "[Ljava.lang.String;/2600011424": {
+      "deserialize_fn": "DDd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.google.gwt.ajaxloader.client.Properties$TypeException/806639172": {
+      "deserialize_fn": "Bc",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.google.gwt.core.shared.SerializableThrowable/2791287161": {
+      "deserialize_fn": "TBd",
+      "fields": [
+        "STRING",
+        "BOOLEAN",
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.google.gwt.event.shared.UmbrellaException/3104463596": {
+      "deserialize_fn": "XD",
+      "fields": [
+        "OBJECT",
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.google.gwt.http.client.RequestException/190587325": {
+      "deserialize_fn": "tE",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.google.gwt.i18n.shared.impl.DateRecord/3173882066": {
+      "deserialize_fn": "QM",
+      "fields": [
+        "BOOLEAN",
+        "RAW",
+        "RAW",
+        "RAW",
+        "RAW",
+        "RAW",
+        "BOOLEAN",
+        "RAW",
+        "RAW",
+        "RAW",
+        "RAW",
+        "RAW",
+        "RAW"
+      ],
+      "is_enum": false
+    },
+    "com.google.gwt.inject.client.multibindings.SimpleMultimap/2234506554": {
+      "deserialize_fn": "kO",
+      "fields": [
+        "RAW",
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.google.gwt.json.client.JSONException/2941795468": {
+      "deserialize_fn": "GO",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.google.gwt.jsonp.client.TimeoutException/1112787596": {
+      "deserialize_fn": "vP",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.google.gwt.safehtml.shared.SafeHtmlString/235635043": {
+      "deserialize_fn": "Qwd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.google.gwt.user.client.rpc.IncompatibleRemoteServiceException/3936916533": {
+      "deserialize_fn": "dBd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.google.gwt.user.client.rpc.RpcTokenException/2345075298": {
+      "deserialize_fn": "tBd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.google.gwt.user.client.rpc.SerializableException/3047383460": {
+      "deserialize_fn": "yBd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.google.gwt.user.client.rpc.SerializationException/2836333220": {
+      "deserialize_fn": "DBd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.google.gwt.user.client.rpc.SerializedTypeViolationException/914601580": {
+      "deserialize_fn": "HBd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.google.gwt.user.client.rpc.ServiceDefTarget$NoServiceEntryPointSpecifiedException/3408313447": {
+      "deserialize_fn": "LBd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.google.gwt.user.client.ui.ChangeListenerCollection/287642957": {
+      "deserialize_fn": "nId",
+      "fields": [
+        "RAW",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.google.gwt.user.client.ui.ClickListenerCollection/2152455986": {
+      "deserialize_fn": "KId",
+      "fields": [
+        "RAW",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.google.gwt.user.client.ui.FocusListenerCollection/119490835": {
+      "deserialize_fn": "kLd",
+      "fields": [
+        "RAW",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.google.gwt.user.client.ui.FormHandlerCollection/3088681894": {
+      "deserialize_fn": "xLd",
+      "fields": [
+        "RAW",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.google.gwt.user.client.ui.KeyboardListenerCollection/1040442242": {
+      "deserialize_fn": "INd",
+      "fields": [
+        "RAW",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.google.gwt.user.client.ui.LoadListenerCollection/3174178888": {
+      "deserialize_fn": "TNd",
+      "fields": [
+        "RAW",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.google.gwt.user.client.ui.MouseListenerCollection/465158911": {
+      "deserialize_fn": "QOd",
+      "fields": [
+        "RAW",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.google.gwt.user.client.ui.MouseWheelListenerCollection/370304552": {
+      "deserialize_fn": "UOd",
+      "fields": [
+        "RAW",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.google.gwt.user.client.ui.PopupListenerCollection/1920131050": {
+      "deserialize_fn": "KPd",
+      "fields": [
+        "RAW",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.google.gwt.user.client.ui.ScrollListenerCollection/210686268": {
+      "deserialize_fn": "rRd",
+      "fields": [
+        "RAW",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.google.gwt.user.client.ui.TabListenerCollection/3768293299": {
+      "deserialize_fn": "zSd",
+      "fields": [
+        "RAW",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.google.gwt.user.client.ui.TableListenerCollection/2254740473": {
+      "deserialize_fn": "DSd",
+      "fields": [
+        "RAW",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.google.gwt.user.client.ui.TreeListenerCollection/3716243734": {
+      "deserialize_fn": "OSd",
+      "fields": [
+        "RAW",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.google.gwt.useragent.client.UserAgentAsserter$UserAgentAssertionError/1267019011": {
+      "deserialize_fn": "NVd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.google.gwt.xml.client.impl.DOMParseException/3799120635": {
+      "deserialize_fn": "pWd",
+      "fields": [
+        "STRING",
+        "RAW",
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.google.web.bindery.event.shared.UmbrellaException/1025846929": {
+      "deserialize_fn": "QWd",
+      "fields": [
+        "OBJECT",
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.application.ApplicationUnits/56862441": {
+      "deserialize_fn": "NYd",
+      "fields": [
+        "DOUBLE",
+        "OBJECT",
+        "OBJECT",
+        "DOUBLE",
+        "OBJECT",
+        "DOUBLE",
+        "OBJECT",
+        "DOUBLE",
+        "OBJECT",
+        "DOUBLE",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.helpers.StringConfiguration/3665392721": {
+      "deserialize_fn": "c_f",
+      "fields": [
+        "STRING",
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.AccountDetails/1131632329": {
+      "deserialize_fn": "mwg",
+      "fields": [
+        "BOOLEAN",
+        "STRING",
+        "STRING",
+        "STRING",
+        "OBJECT",
+        "RAW",
+        "STRING",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.AccountSettings/63081682": {
+      "deserialize_fn": "wwg",
+      "fields": [
+        "BOOLEAN",
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.ActiveExercise/2291195331": {
+      "deserialize_fn": "Ywg",
+      "fields": [
+        "RAW",
+        "OBJECT",
+        "OBJECT",
+        "BOOLEAN",
+        "RAW",
+        "OBJECT",
+        "BOOLEAN",
+        "RAW",
+        "BOOLEAN",
+        "LONG",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.ActiveExerciseCategory/1493499494": {
+      "deserialize_fn": "Owg",
+      "fields": [
+        "RAW",
+        "STRING",
+        "OBJECT",
+        "STRING",
+        "LONG",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.ActiveFood/640079221": {
+      "deserialize_fn": "pxg",
+      "fields": [
+        "RAW",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "BOOLEAN",
+        "RAW",
+        "BOOLEAN",
+        "BOOLEAN",
+        "LONG",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.BMRSummary/4065403370": {
+      "deserialize_fn": "Hxg",
+      "fields": [
+        "DOUBLE",
+        "RAW",
+        "DOUBLE",
+        "LONG",
+        "OBJECT",
+        "OBJECT",
+        "DOUBLE"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.BasicChallengeDetails/2672607967": {
+      "deserialize_fn": "$xg",
+      "fields": [
+        "STRING",
+        "STRING",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.BasicGroupDetails/1618295411": {
+      "deserialize_fn": "jyg",
+      "fields": [
+        "STRING",
+        "BOOLEAN",
+        "STRING",
+        "STRING",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.CalorieBurnMetrics/3650191062": {
+      "deserialize_fn": "pyg",
+      "fields": [
+        "OBJECT",
+        "DOUBLE",
+        "DOUBLE"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.Challenge/2299582057": {
+      "deserialize_fn": "Uzg",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "STRING",
+        "RAW",
+        "STRING",
+        "RAW",
+        "BOOLEAN",
+        "BOOLEAN",
+        "RAW",
+        "RAW",
+        "RAW",
+        "STRING",
+        "OBJECT",
+        "RAW",
+        "RAW",
+        "RAW",
+        "RAW",
+        "RAW",
+        "RAW",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.ChallengeConfiguration/1288869657": {
+      "deserialize_fn": "Hyg",
+      "fields": [
+        "STRING",
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.ChallengeLeader$ChallengeLeaderType/3156927838": {
+      "deserialize_fn": "Wyg",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.client.model.ChallengeLeader/1451105523": {
+      "deserialize_fn": "Zyg",
+      "fields": [
+        "STRING",
+        "OBJECT",
+        "STRING",
+        "STRING",
+        "RAW",
+        "DOUBLE",
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.ChallengeLocalization/231945978": {
+      "deserialize_fn": "mzg",
+      "fields": [
+        "STRING",
+        "STRING",
+        "STRING",
+        "STRING",
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.ChallengeResults/2243877049": {
+      "deserialize_fn": "vzg",
+      "fields": [
+        "BOOLEAN",
+        "RAW",
+        "DOUBLE",
+        "RAW",
+        "RAW",
+        "DOUBLE",
+        "RAW",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.ChallengeType/2488299936": {
+      "deserialize_fn": "Ozg",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.client.model.City/2457139280": {
+      "deserialize_fn": "xAg",
+      "fields": [
+        "STRING",
+        "RAW",
+        "STRING",
+        "OBJECT",
+        "STRING",
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.ConnectedEntity$ConnectedEntityType/2794522375": {
+      "deserialize_fn": "QAg",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.client.model.ConnectedEntity/3517880022": {
+      "deserialize_fn": "TAg",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "BOOLEAN",
+        "STRING",
+        "OBJECT",
+        "STRING",
+        "STRING",
+        "STRING",
+        "STRING",
+        "RAW",
+        "STRING",
+        "STRING",
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.ConversationUserDetails/1389826723": {
+      "deserialize_fn": "kBg",
+      "fields": [
+        "STRING",
+        "STRING",
+        "STRING",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.CustomFood/327171432": {
+      "deserialize_fn": "vBg",
+      "fields": [
+        "BOOLEAN",
+        "BOOLEAN",
+        "DOUBLE",
+        "RAW",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "BOOLEAN",
+        "RAW",
+        "BOOLEAN",
+        "BOOLEAN",
+        "LONG",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.CustomGoal/3094185758": {
+      "deserialize_fn": "yCg",
+      "fields": [
+        "OBJECT",
+        "DOUBLE",
+        "BOOLEAN",
+        "STRING",
+        "OBJECT",
+        "OBJECT",
+        "DOUBLE",
+        "DOUBLE",
+        "STRING",
+        "OBJECT",
+        "STRING",
+        "STRING",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "DOUBLE",
+        "STRING",
+        "LONG",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.CustomGoalMeasureFrequency/3968844069": {
+      "deserialize_fn": "RBg",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.client.model.CustomGoalType/3025174884": {
+      "deserialize_fn": "dCg",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.client.model.CustomGoalValue/1455343169": {
+      "deserialize_fn": "nCg",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "BOOLEAN",
+        "OBJECT",
+        "OBJECT",
+        "DOUBLE",
+        "LONG",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.DailyDetails/1565598417": {
+      "deserialize_fn": "fDg",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "LONG",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.DailyLogEntry/612926967": {
+      "deserialize_fn": "EEg",
+      "fields": [
+        "RAW",
+        "OBJECT",
+        "DOUBLE",
+        "DOUBLE",
+        "DOUBLE",
+        "DOUBLE",
+        "OBJECT",
+        "LONG"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.DailyLogEntryWithMeals/2444475740": {
+      "deserialize_fn": "PDg",
+      "fields": [
+        "DOUBLE",
+        "DOUBLE",
+        "DOUBLE",
+        "RAW",
+        "DOUBLE",
+        "RAW",
+        "OBJECT",
+        "DOUBLE",
+        "DOUBLE",
+        "DOUBLE",
+        "DOUBLE",
+        "OBJECT",
+        "LONG"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.DailyLogGoalsState/1324910267": {
+      "deserialize_fn": "REg",
+      "fields": [
+        "DOUBLE",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.DailySummary/2893279651": {
+      "deserialize_fn": "XEg",
+      "fields": [
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.Device/2727491380": {
+      "deserialize_fn": "cFg",
+      "fields": [
+        "BOOLEAN",
+        "STRING",
+        "OBJECT",
+        "STRING",
+        "STRING",
+        "STRING",
+        "STRING",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.EmailReportJobData/2315164848": {
+      "deserialize_fn": "yFg",
+      "fields": [
+        "STRING",
+        "BOOLEAN",
+        "RAW",
+        "RAW"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.EmailReportJobs/2139437073": {
+      "deserialize_fn": "HFg",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.Exercise/768553247": {
+      "deserialize_fn": "HHg",
+      "fields": [
+        "RAW",
+        "RAW",
+        "STRING",
+        "DOUBLE",
+        "STRING",
+        "STRING",
+        "LONG",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.ExerciseCategory/2279150703": {
+      "deserialize_fn": "qGg",
+      "fields": [
+        "RAW",
+        "OBJECT",
+        "RAW",
+        "STRING",
+        "BOOLEAN",
+        "STRING",
+        "STRING",
+        "LONG",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.ExerciseCategoryI18N/2818558255": {
+      "deserialize_fn": "_Fg",
+      "fields": [
+        "BOOLEAN",
+        "OBJECT",
+        "RAW",
+        "OBJECT",
+        "RAW",
+        "STRING",
+        "BOOLEAN",
+        "STRING",
+        "STRING",
+        "LONG",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.ExerciseCategoryLocaleOverride/1911762829": {
+      "deserialize_fn": "iGg",
+      "fields": [
+        "OBJECT",
+        "STRING",
+        "RAW",
+        "STRING",
+        "STRING",
+        "LONG",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.ExerciseI18N/160268637": {
+      "deserialize_fn": "CGg",
+      "fields": [
+        "BOOLEAN",
+        "OBJECT",
+        "RAW",
+        "RAW",
+        "STRING",
+        "DOUBLE",
+        "STRING",
+        "STRING",
+        "LONG",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.ExerciseLocaleOverride/528288820": {
+      "deserialize_fn": "LGg",
+      "fields": [
+        "STRING",
+        "OBJECT",
+        "STRING",
+        "STRING",
+        "RAW",
+        "STRING",
+        "BOOLEAN",
+        "LONG",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.ExerciseLogEntry/3129076305": {
+      "deserialize_fn": "oHg",
+      "fields": [
+        "OBJECT",
+        "DOUBLE",
+        "OBJECT",
+        "BOOLEAN",
+        "OBJECT",
+        "OBJECT",
+        "BOOLEAN",
+        "RAW",
+        "BOOLEAN",
+        "RAW",
+        "BOOLEAN",
+        "LONG",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.ExtendedUserDetails/2147557844": {
+      "deserialize_fn": "lIg",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "STRING",
+        "RAW",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "STRING",
+        "BOOLEAN",
+        "STRING",
+        "STRING",
+        "STRING",
+        "OBJECT",
+        "RAW",
+        "STRING",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.FoodForFoodDatabase/2501655516": {
+      "deserialize_fn": "zIg",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "BOOLEAN",
+        "BOOLEAN",
+        "BOOLEAN",
+        "LONG",
+        "RAW",
+        "RAW"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.FoodIdentifier/2763145970": {
+      "deserialize_fn": "SIg",
+      "fields": [
+        "RAW",
+        "STRING",
+        "STRING",
+        "STRING",
+        "STRING",
+        "OBJECT",
+        "RAW",
+        "OBJECT",
+        "LONG",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.FoodInsightDetailItem/1738289974": {
+      "deserialize_fn": "gJg",
+      "fields": [
+        "DOUBLE",
+        "DOUBLE",
+        "DOUBLE",
+        "RAW",
+        "DOUBLE",
+        "DOUBLE",
+        "STRING",
+        "STRING",
+        "OBJECT",
+        "STRING",
+        "DOUBLE",
+        "DOUBLE",
+        "DOUBLE",
+        "DOUBLE",
+        "RAW"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.FoodLogEntry/264522954": {
+      "deserialize_fn": "dKg",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "BOOLEAN",
+        "LONG",
+        "LONG",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.FoodLogEntryContext/4082213671": {
+      "deserialize_fn": "PJg",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "BOOLEAN",
+        "RAW",
+        "RAW",
+        "BOOLEAN",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.FoodMeasure/1457474932": {
+      "deserialize_fn": "uLg",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.client.model.FoodNutrients/1097231324": {
+      "deserialize_fn": "NLg",
+      "fields": [
+        "DOUBLE",
+        "DOUBLE",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.FoodServing/1858865662": {
+      "deserialize_fn": "rMg",
+      "fields": [
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.FoodServingSize/63998910": {
+      "deserialize_fn": "iMg",
+      "fields": [
+        "DOUBLE",
+        "BOOLEAN",
+        "OBJECT",
+        "DOUBLE",
+        "DOUBLE",
+        "DOUBLE"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.FriendPrivacyPolicy/2556698540": {
+      "deserialize_fn": "NMg",
+      "fields": [
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.FriendRequests/706891495": {
+      "deserialize_fn": "SMg",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.FriendsInitializationData/3216022052": {
+      "deserialize_fn": "YMg",
+      "fields": [
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.FriendsToShareWith/821023005": {
+      "deserialize_fn": "bNg",
+      "fields": [
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.GoalsData/340668567": {
+      "deserialize_fn": "gNg",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.GoalsProfileGender/539918532": {
+      "deserialize_fn": "wNg",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.client.model.GoalsStatus/3937902525": {
+      "deserialize_fn": "ANg",
+      "fields": [
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.GoalsSummary$GoalsPlan/3474298027": {
+      "deserialize_fn": "TOg",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.client.model.GoalsSummary/907689655": {
+      "deserialize_fn": "FOg",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "BOOLEAN",
+        "DOUBLE",
+        "OBJECT",
+        "OBJECT",
+        "DOUBLE",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "DOUBLE",
+        "BOOLEAN",
+        "BOOLEAN",
+        "DOUBLE",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "DOUBLE",
+        "BOOLEAN"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.Group/1784714703": {
+      "deserialize_fn": "FQg",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "STRING",
+        "STRING",
+        "OBJECT",
+        "STRING",
+        "RAW",
+        "STRING",
+        "OBJECT",
+        "STRING",
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.GroupDetails/117347956": {
+      "deserialize_fn": "fQg",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "STRING",
+        "STRING",
+        "OBJECT",
+        "STRING",
+        "RAW",
+        "STRING",
+        "OBJECT",
+        "STRING",
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.GroupLocalization/2250983111": {
+      "deserialize_fn": "qQg",
+      "fields": [
+        "STRING",
+        "STRING",
+        "STRING",
+        "STRING",
+        "STRING",
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.GroupMembers/2659481073": {
+      "deserialize_fn": "AQg",
+      "fields": [
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.HourDate/83922329": {
+      "deserialize_fn": "ZQg",
+      "fields": [
+        "OBJECT",
+        "RAW"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.InitializationData/816563993": {
+      "deserialize_fn": "dRg",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "STRING",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.InitializationFriendsData/542454938": {
+      "deserialize_fn": "oRg",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.InsightPattern$InsightPatternType/2326390359": {
+      "deserialize_fn": "cSg",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.client.model.InsightPattern/2539910762": {
+      "deserialize_fn": "SRg",
+      "fields": [
+        "OBJECT",
+        "DOUBLE",
+        "DOUBLE",
+        "RAW",
+        "OBJECT",
+        "STRING",
+        "OBJECT",
+        "STRING",
+        "RAW",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.InsightPatternExternalResource/1168473427": {
+      "deserialize_fn": "LRg",
+      "fields": [
+        "STRING",
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.InsightPatternSupplementalContent/2176461969": {
+      "deserialize_fn": "ORg",
+      "fields": [
+        "STRING",
+        "OBJECT",
+        "STRING",
+        "STRING",
+        "STRING",
+        "STRING",
+        "STRING",
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.InsightPatternsResponse/3381492235": {
+      "deserialize_fn": "fSg",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "RAW",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.IntegratedSystem/1801028358": {
+      "deserialize_fn": "A$g",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.client.model.InternalAccountDetails/691026731": {
+      "deserialize_fn": "H$g",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "STRING",
+        "BOOLEAN",
+        "STRING",
+        "STRING",
+        "STRING",
+        "OBJECT",
+        "RAW",
+        "STRING",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.Invitation/536385869": {
+      "deserialize_fn": "R$g",
+      "fields": [
+        "STRING",
+        "OBJECT",
+        "STRING",
+        "STRING",
+        "OBJECT",
+        "STRING",
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.InviteContainer/2183478804": {
+      "deserialize_fn": "_$g",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.LogEntriesAndGoalsData/1494133653": {
+      "deserialize_fn": "v_g",
+      "fields": [
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.LogEntry/2095195315": {
+      "deserialize_fn": "X_g",
+      "fields": [
+        "RAW",
+        "DOUBLE",
+        "DOUBLE",
+        "DOUBLE",
+        "RAW",
+        "RAW",
+        "OBJECT",
+        "DOUBLE",
+        "DOUBLE"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.MotivatorData/954103295": {
+      "deserialize_fn": "i0g",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.MyFoodIdentifier/4176489858": {
+      "deserialize_fn": "q0g",
+      "fields": [
+        "STRING",
+        "OBJECT",
+        "OBJECT",
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.NewAccountCreationResult/2416032993": {
+      "deserialize_fn": "Y0g",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.client.model.Note/3916765409": {
+      "deserialize_fn": "n1g",
+      "fields": [
+        "STRING",
+        "RAW",
+        "BOOLEAN",
+        "RAW",
+        "STRING",
+        "RAW",
+        "LONG",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.NotificationData/2585969803": {
+      "deserialize_fn": "y1g",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.NotificationLevel/4078218942": {
+      "deserialize_fn": "O1g",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.client.model.NotificationSettings/4225275760": {
+      "deserialize_fn": "k2g",
+      "fields": [
+        "STRING",
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.NutrientPreferences/1319652251": {
+      "deserialize_fn": "X2g",
+      "fields": [
+        "BOOLEAN",
+        "BOOLEAN",
+        "BOOLEAN",
+        "BOOLEAN",
+        "BOOLEAN",
+        "BOOLEAN",
+        "BOOLEAN",
+        "BOOLEAN"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.NutrientSummary/3271902303": {
+      "deserialize_fn": "y3g",
+      "fields": [
+        "OBJECT",
+        "DOUBLE",
+        "DOUBLE",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "DOUBLE",
+        "DOUBLE",
+        "OBJECT",
+        "OBJECT",
+        "DOUBLE",
+        "DOUBLE",
+        "DOUBLE",
+        "DOUBLE"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.PopularEntry/2103893536": {
+      "deserialize_fn": "Q3g",
+      "fields": [
+        "DOUBLE",
+        "RAW",
+        "STRING",
+        "RAW",
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.Preferences/1976681881": {
+      "deserialize_fn": "c4g",
+      "fields": [
+        "BOOLEAN",
+        "STRING",
+        "STRING",
+        "RAW",
+        "OBJECT",
+        "BOOLEAN",
+        "OBJECT",
+        "BOOLEAN",
+        "BOOLEAN",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.ProfileDetails/1071469966": {
+      "deserialize_fn": "u4g",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "DOUBLE",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "DOUBLE",
+        "OBJECT",
+        "DOUBLE",
+        "OBJECT",
+        "OBJECT",
+        "STRING",
+        "RAW",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "STRING",
+        "BOOLEAN",
+        "STRING",
+        "STRING",
+        "STRING",
+        "OBJECT",
+        "RAW",
+        "STRING",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.Recipe/643213359": {
+      "deserialize_fn": "p5g",
+      "fields": [
+        "OBJECT",
+        "STRING",
+        "OBJECT",
+        "BOOLEAN",
+        "DOUBLE",
+        "STRING",
+        "OBJECT",
+        "BOOLEAN",
+        "STRING",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "BOOLEAN",
+        "LONG",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.RecipeIngredient/3403312587": {
+      "deserialize_fn": "c5g",
+      "fields": [
+        "BOOLEAN",
+        "OBJECT",
+        "OBJECT",
+        "RAW",
+        "BOOLEAN",
+        "RAW",
+        "OBJECT",
+        "LONG",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.RecordedWeight/1309383152": {
+      "deserialize_fn": "c7g",
+      "fields": [
+        "OBJECT",
+        "BOOLEAN",
+        "LONG",
+        "DOUBLE"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.ReminderJobData$ReminderType/1420999111": {
+      "deserialize_fn": "P7g",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.client.model.ReminderJobData/1060897383": {
+      "deserialize_fn": "I7g",
+      "fields": [
+        "RAW",
+        "RAW",
+        "OBJECT",
+        "RAW"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.ReminderJobs/992842049": {
+      "deserialize_fn": "Y7g",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.SharedItem$SharedItemType/1200324739": {
+      "deserialize_fn": "A8g",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.client.model.SharedItem/3229011724": {
+      "deserialize_fn": "p8g",
+      "fields": [
+        "RAW",
+        "STRING",
+        "STRING",
+        "OBJECT",
+        "OBJECT",
+        "RAW",
+        "STRING",
+        "RAW"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.SimplePrimaryKey/3621315060": {
+      "deserialize_fn": "d9g",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.SubscriptionDetails/510514359": {
+      "deserialize_fn": "i9g",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "BOOLEAN"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.Team/1605656868": {
+      "deserialize_fn": "C9g",
+      "fields": [
+        "RAW",
+        "OBJECT",
+        "OBJECT",
+        "STRING",
+        "STRING",
+        "OBJECT",
+        "STRING",
+        "RAW",
+        "STRING",
+        "OBJECT",
+        "STRING",
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.TeamDetails/2497366650": {
+      "deserialize_fn": "u9g",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "STRING",
+        "STRING",
+        "OBJECT",
+        "STRING",
+        "RAW",
+        "STRING",
+        "OBJECT",
+        "STRING",
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.UnitTypeBloodGlucose/870205571": {
+      "deserialize_fn": "L9g",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.client.model.UnitTypeDistance/1938114904": {
+      "deserialize_fn": "T9g",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.client.model.UnitTypeEnergy/783891761": {
+      "deserialize_fn": "_9g",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.client.model.UnitTypeHeight/3122048970": {
+      "deserialize_fn": "hah",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.client.model.UnitTypeLiquidVolume/484106684": {
+      "deserialize_fn": "rah",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.client.model.UnitTypeWeight/3360017842": {
+      "deserialize_fn": "Aah",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.client.model.UserChallenge/2219552848": {
+      "deserialize_fn": "Hah",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "STRING",
+        "RAW",
+        "STRING",
+        "RAW",
+        "BOOLEAN",
+        "BOOLEAN",
+        "RAW",
+        "RAW",
+        "RAW",
+        "STRING",
+        "OBJECT",
+        "RAW",
+        "RAW",
+        "RAW",
+        "RAW",
+        "RAW",
+        "RAW",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.UserDetails/4192519093": {
+      "deserialize_fn": "Pah",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "STRING",
+        "BOOLEAN",
+        "STRING",
+        "STRING",
+        "STRING",
+        "OBJECT",
+        "RAW",
+        "STRING",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.UserId/4281239478": {
+      "deserialize_fn": "$ah",
+      "fields": [
+        "RAW",
+        "STRING",
+        "RAW"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.UserStatus/2206774507": {
+      "deserialize_fn": "fbh",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "DOUBLE",
+        "DOUBLE",
+        "DOUBLE",
+        "DOUBLE"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.Version/837272391": {
+      "deserialize_fn": "vbh",
+      "fields": [
+        "RAW",
+        "RAW",
+        "RAW",
+        "RAW",
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.WeeklyDetails/3764412608": {
+      "deserialize_fn": "Ebh",
+      "fields": [
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.WeeklySummary/1735863179": {
+      "deserialize_fn": "Jbh",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.activity.AchievementActivity/879150730": {
+      "deserialize_fn": "bch",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "RAW",
+        "RAW",
+        "RAW",
+        "STRING",
+        "STRING",
+        "STRING",
+        "OBJECT",
+        "OBJECT",
+        "RAW"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.activity.Activities/3700705398": {
+      "deserialize_fn": "ich",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.activity.ChallengeMessageActivity/3070871551": {
+      "deserialize_fn": "Ach",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "RAW",
+        "RAW",
+        "RAW",
+        "STRING",
+        "STRING",
+        "STRING",
+        "OBJECT",
+        "OBJECT",
+        "RAW"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.activity.CommentActivity/1680192258": {
+      "deserialize_fn": "Ich",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "RAW",
+        "RAW",
+        "RAW",
+        "STRING",
+        "STRING",
+        "STRING",
+        "OBJECT",
+        "OBJECT",
+        "RAW"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.activity.ConversationActivity/3988320673": {
+      "deserialize_fn": "Qch",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "STRING",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "RAW",
+        "RAW",
+        "RAW",
+        "STRING",
+        "STRING",
+        "STRING",
+        "OBJECT",
+        "OBJECT",
+        "RAW"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.activity.ExerciseActivity/543106761": {
+      "deserialize_fn": "adh",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "RAW",
+        "RAW",
+        "RAW",
+        "STRING",
+        "STRING",
+        "STRING",
+        "OBJECT",
+        "OBJECT",
+        "RAW"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.activity.GoalActivity/3469248285": {
+      "deserialize_fn": "idh",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "RAW",
+        "RAW",
+        "RAW",
+        "STRING",
+        "STRING",
+        "STRING",
+        "OBJECT",
+        "OBJECT",
+        "RAW"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.activity.GroupMessageActivity/3065920568": {
+      "deserialize_fn": "qdh",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "RAW",
+        "RAW",
+        "RAW",
+        "STRING",
+        "STRING",
+        "STRING",
+        "OBJECT",
+        "OBJECT",
+        "RAW"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.activity.MessageActivity/3594426607": {
+      "deserialize_fn": "ydh",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "RAW",
+        "RAW",
+        "RAW",
+        "STRING",
+        "STRING",
+        "STRING",
+        "OBJECT",
+        "OBJECT",
+        "RAW"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.activity.WeighInActivity/738371510": {
+      "deserialize_fn": "Jdh",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "RAW",
+        "RAW",
+        "RAW",
+        "STRING",
+        "STRING",
+        "STRING",
+        "OBJECT",
+        "OBJECT",
+        "RAW"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.budget.BudgetStateContext/1231009769": {
+      "deserialize_fn": "_dh",
+      "fields": [
+        "OBJECT",
+        "BOOLEAN"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.budget.DailyBudget/2551066014": {
+      "deserialize_fn": "Geh",
+      "fields": [
+        "OBJECT",
+        "DOUBLE",
+        "DOUBLE",
+        "OBJECT",
+        "DOUBLE",
+        "DOUBLE"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.budget.DailyBudgetContext/795512248": {
+      "deserialize_fn": "keh",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "BOOLEAN",
+        "DOUBLE"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.budget.DailyBudgetIdentifier/2427954186": {
+      "deserialize_fn": "Beh",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.client.model.budget.WeeklyBudgetContext/3975343574": {
+      "deserialize_fn": "Weh",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.exceptions.ChallengeMaxLimitException/1630355280": {
+      "deserialize_fn": "bfh",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.exceptions.ChallengeTeamMaxLimitException/3923719384": {
+      "deserialize_fn": "ffh",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.integratedsystems.Capabilities/1178913253": {
+      "deserialize_fn": "jfh",
+      "fields": [
+        "STRING",
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.interfaces.FoodLogEntryType/1152459170": {
+      "deserialize_fn": "Yfh",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.client.model.interfaces.FoodLogEntryTypeExtra/4048538730": {
+      "deserialize_fn": "Vfh",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.client.model.interfaces.FoodProductType/2860616120": {
+      "deserialize_fn": "igh",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.client.model.interfaces.GoalsProfileActivityLevel/3913803717": {
+      "deserialize_fn": "Ogh",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.client.model.interfaces.NutritionStrategyType/707945675": {
+      "deserialize_fn": "mhh",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.client.model.payment.CardErrorException$Reason/3536192073": {
+      "deserialize_fn": "Ihh",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.client.model.payment.CardErrorException/1182846405": {
+      "deserialize_fn": "Ehh",
+      "fields": [
+        "OBJECT",
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.payment.IntroductoryPeriodType/50258068": {
+      "deserialize_fn": "Zhh",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.client.model.payment.PaymentCustomer/2152784070": {
+      "deserialize_fn": "aih",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "BOOLEAN",
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.payment.Plan$Interval/1942828892": {
+      "deserialize_fn": "Bih",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.client.model.payment.Plan/3481011143": {
+      "deserialize_fn": "zih",
+      "fields": [
+        "OBJECT",
+        "BOOLEAN",
+        "RAW",
+        "OBJECT",
+        "RAW",
+        "OBJECT",
+        "OBJECT",
+        "BOOLEAN",
+        "STRING",
+        "STRING",
+        "BOOLEAN"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.payment.UserPaymentTransactionSource/3777837374": {
+      "deserialize_fn": "Mih",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.client.model.search.SearchResult/1043338856": {
+      "deserialize_fn": "bkh",
+      "fields": [
+        "RAW"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.search.SearchResultDialogActionType/1465237681": {
+      "deserialize_fn": "kjh",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.client.model.search.SearchResultExercise/4144849034": {
+      "deserialize_fn": "sjh",
+      "fields": [
+        "OBJECT",
+        "STRING",
+        "STRING",
+        "STRING",
+        "RAW",
+        "OBJECT",
+        "OBJECT",
+        "RAW"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.search.SearchResultFood/3343986608": {
+      "deserialize_fn": "Djh",
+      "fields": [
+        "OBJECT",
+        "STRING",
+        "STRING",
+        "STRING",
+        "STRING",
+        "OBJECT",
+        "RAW"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.search.SearchResultHeader/1305410512": {
+      "deserialize_fn": "Mjh",
+      "fields": [
+        "BOOLEAN",
+        "LONG",
+        "OBJECT",
+        "STRING",
+        "RAW"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.search.SearchResultMeal/1893882416": {
+      "deserialize_fn": "Zjh",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "STRING",
+        "STRING",
+        "STRING",
+        "RAW"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.model.search.SearchResults/1258509077": {
+      "deserialize_fn": "ekh",
+      "fields": [
+        "OBJECT",
+        "RAW"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.service.NewAccountCreationFailedException/233574200": {
+      "deserialize_fn": "sjr",
+      "fields": [
+        "OBJECT",
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.service.UserAuthenticationFailedException/2362299878": {
+      "deserialize_fn": "ckr",
+      "fields": [
+        "RAW",
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.service.responses.AddFriendResponse/2022374134": {
+      "deserialize_fn": "jkr",
+      "fields": [
+        "STRING",
+        "RAW"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.service.responses.LoseItRemoteServiceResponse/1071940969": {
+      "deserialize_fn": "pkr",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "LONG",
+        "OBJECT",
+        "BOOLEAN"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.service.responses.UnauthenticatedServiceResponse/2725618067": {
+      "deserialize_fn": "ykr",
+      "fields": [
+        "LONG",
+        "OBJECT",
+        "BOOLEAN"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.client.service.responses.UpdateProfileResponse/227386058": {
+      "deserialize_fn": "Bkr",
+      "fields": [
+        "STRING",
+        "RAW",
+        "RAW"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.lava.model.app.App/4057627814": {
+      "deserialize_fn": "EGt",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.shared.exceptions.DisplayableUserException/1748904296": {
+      "deserialize_fn": "XGt",
+      "fields": [
+        "STRING",
+        "STRING",
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.shared.exceptions.NoPartitionException/1162340371": {
+      "deserialize_fn": "bHt",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.shared.exceptions.NokiaException/1702371333": {
+      "deserialize_fn": "fHt",
+      "fields": [
+        "RAW",
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.shared.exceptions.NonloggingException/2560524743": {
+      "deserialize_fn": "jHt",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.shared.exceptions.PartitionOfflineException/1374732313": {
+      "deserialize_fn": "nHt",
+      "fields": [
+        "STRING",
+        "STRING",
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.shared.exceptions.PermissionDeniedException/2876868375": {
+      "deserialize_fn": "rHt",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.shared.exceptions.SystemMaintenanceException/3478816138": {
+      "deserialize_fn": "wHt",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.shared.landing.ChallengesLandingDescriptor/2837871445": {
+      "deserialize_fn": "vIt",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.shared.landing.ConfirmInfoLandingDescriptor/3145419265": {
+      "deserialize_fn": "zIt",
+      "fields": [
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.shared.landing.EligibilityLandingDescriptor$EligibilityFormat/2909519928": {
+      "deserialize_fn": "KIt",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.shared.landing.EligibilityLandingDescriptor/1638974938": {
+      "deserialize_fn": "NIt",
+      "fields": [
+        "BOOLEAN",
+        "OBJECT",
+        "STRING",
+        "RAW",
+        "STRING",
+        "STRING",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.shared.landing.HintedLandingDescriptor$HintSet/3198251040": {
+      "deserialize_fn": "_It",
+      "fields": [
+        "OBJECT",
+        "STRING",
+        "OBJECT",
+        "RAW"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.shared.landing.LandingContext$LandingContextType/3815039363": {
+      "deserialize_fn": "yJt",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.shared.landing.LandingContext/1194748876": {
+      "deserialize_fn": "mJt",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "STRING",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.shared.landing.LandingDescriptor/4085941921": {
+      "deserialize_fn": "BJt",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.shared.landing.LandingStepResult/2072004494": {
+      "deserialize_fn": "GJt",
+      "fields": [
+        "RAW",
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.shared.landing.TermsLandingDescriptor/2475939776": {
+      "deserialize_fn": "MJt",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.shared.model.ClientApplicationContext/1459658406": {
+      "deserialize_fn": "YKt",
+      "fields": [
+        "BOOLEAN",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.shared.model.DayDate/1611136587": {
+      "deserialize_fn": "BLt",
+      "fields": [
+        "OBJECT",
+        "RAW",
+        "RAW"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.shared.model.DayOfWeek/736725074": {
+      "deserialize_fn": "SLt",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.shared.model.PrivacyPreferences/421687247": {
+      "deserialize_fn": "nMt",
+      "fields": [
+        "OBJECT",
+        "RAW"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.shared.model.RelationshipValue/3067905684": {
+      "deserialize_fn": "$Mt",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.shared.model.UserApplicationContext/3404477518": {
+      "deserialize_fn": "dNt",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "STRING",
+        "BOOLEAN",
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.shared.model.connect.ExternalConnectProgram/3426893366": {
+      "deserialize_fn": "pNt",
+      "fields": [
+        "RAW",
+        "OBJECT",
+        "OBJECT",
+        "RAW",
+        "STRING",
+        "OBJECT",
+        "OBJECT",
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.shared.model.connect.ProgramProperties/790624794": {
+      "deserialize_fn": "BNt",
+      "fields": [
+        "STRING",
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.shared.model.connect.ProgramType/4151848851": {
+      "deserialize_fn": "JNt",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.core.shared.model.conversations.Conversation/3738141544": {
+      "deserialize_fn": "RNt",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "STRING",
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.shared.model.invitations.UserInvitationAlreadyClaimedException/311018182": {
+      "deserialize_fn": "_Nt",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.shared.model.invitations.UserInvitationAlreadyUsedException/3628127033": {
+      "deserialize_fn": "dOt",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.shared.model.invitations.UserInvitationExpiredException/3693669771": {
+      "deserialize_fn": "hOt",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.core.shared.model.invitations.UserInvitationSentTooRecentlyException/2686976851": {
+      "deserialize_fn": "lOt",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.healthdata.model.shared.GwtSerializationDependencies$BrandDependencies/2442178065": {
+      "deserialize_fn": "DOt",
+      "fields": [
+        "OBJECT",
+        "STRING",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.healthdata.model.shared.Verification/3485154600": {
+      "deserialize_fn": "ZOt",
+      "fields": [],
+      "is_enum": true
+    },
+    "com.loseit.healthdata.model.shared.exception.BrandDeletedImportException/1821590252": {
+      "deserialize_fn": "cPt",
+      "fields": [
+        "OBJECT",
+        "STRING",
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.healthdata.model.shared.exception.BrandNotFoundImportException/2049185062": {
+      "deserialize_fn": "hPt",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "STRING",
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.healthdata.model.shared.exception.BrandNotLocalizedImportException/4067239006": {
+      "deserialize_fn": "nPt",
+      "fields": [
+        "OBJECT",
+        "OBJECT",
+        "STRING",
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.healthdata.model.shared.exception.ImportException/3209422176": {
+      "deserialize_fn": "sPt",
+      "fields": [
+        "STRING",
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.healthdata.model.shared.food.Brand/3024558857": {
+      "deserialize_fn": "GPt",
+      "fields": [
+        "STRING",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.healthdata.model.shared.food.BrandForLocale/2435789751": {
+      "deserialize_fn": "xPt",
+      "fields": [
+        "STRING",
+        "OBJECT",
+        "STRING",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.healthdata.model.shared.food.BrandId/2672631526": {
+      "deserialize_fn": "DPt",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "com.loseit.healthdata.model.shared.food.FoodMeasurement/2371921172": {
+      "deserialize_fn": "rQt",
+      "fields": [],
+      "is_enum": true
+    },
+    "java.io.IOException/1159940531": {
+      "deserialize_fn": "WBd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "java.io.UnsupportedEncodingException/1526756933": {
+      "deserialize_fn": "ZBd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "java.lang.ArithmeticException/1539622151": {
+      "deserialize_fn": "aCd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "java.lang.ArrayIndexOutOfBoundsException/600550433": {
+      "deserialize_fn": "dCd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "java.lang.ArrayStoreException/3540507190": {
+      "deserialize_fn": "gCd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "java.lang.AssertionError/3490171458": {
+      "deserialize_fn": "jCd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "java.lang.Boolean/476441737": {
+      "deserialize_fn": "mCd",
+      "fields": [],
+      "is_enum": false
+    },
+    "java.lang.ClassCastException/702295179": {
+      "deserialize_fn": "pCd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "java.lang.CloneNotSupportedException/1114494199": {
+      "deserialize_fn": "sCd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "java.lang.Double/858496421": {
+      "deserialize_fn": "yCd",
+      "fields": [],
+      "is_enum": false
+    },
+    "java.lang.Error/1331973429": {
+      "deserialize_fn": "BCd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "java.lang.Exception/1920171873": {
+      "deserialize_fn": "ECd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "java.lang.Float/1718559123": {
+      "deserialize_fn": "HCd",
+      "fields": [],
+      "is_enum": false
+    },
+    "java.lang.IllegalArgumentException/1755012560": {
+      "deserialize_fn": "KCd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "java.lang.IllegalStateException/1972187323": {
+      "deserialize_fn": "NCd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "java.lang.IndexOutOfBoundsException/2489527753": {
+      "deserialize_fn": "QCd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "java.lang.Integer/3438268394": {
+      "deserialize_fn": "WCd",
+      "fields": [],
+      "is_enum": false
+    },
+    "java.lang.InterruptedException/3896610207": {
+      "deserialize_fn": "ZCd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "java.lang.NegativeArraySizeException/3846860241": {
+      "deserialize_fn": "aDd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "java.lang.NoSuchMethodException/260969707": {
+      "deserialize_fn": "dDd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "java.lang.NullPointerException/3618884511": {
+      "deserialize_fn": "gDd",
+      "fields": [
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "java.lang.NumberFormatException/3305228476": {
+      "deserialize_fn": "jDd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "java.lang.RuntimeException/515124647": {
+      "deserialize_fn": "oDd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "java.lang.SecurityException/2381737870": {
+      "deserialize_fn": "rDd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "java.lang.StackTraceElement/455763907": {
+      "deserialize_fn": "xDd",
+      "fields": [],
+      "is_enum": false
+    },
+    "java.lang.String/2004016611": {
+      "deserialize_fn": "GDd",
+      "fields": [],
+      "is_enum": false
+    },
+    "java.lang.StringIndexOutOfBoundsException/500777603": {
+      "deserialize_fn": "ADd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "java.lang.Throwable/2953622131": {
+      "deserialize_fn": "JDd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "java.lang.UnsupportedOperationException/3744010015": {
+      "deserialize_fn": "NDd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "java.lang.Void/2139725816": {
+      "deserialize_fn": "QDd",
+      "fields": [],
+      "is_enum": false
+    },
+    "java.lang.annotation.AnnotationFormatError/2257184627": {
+      "deserialize_fn": "SDd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "java.lang.annotation.AnnotationTypeMismatchException/976205828": {
+      "deserialize_fn": "VDd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "java.math.BigDecimal/8151472": {
+      "deserialize_fn": "YDd",
+      "fields": [],
+      "is_enum": false
+    },
+    "java.math.BigInteger/927293797": {
+      "deserialize_fn": "$Dd",
+      "fields": [],
+      "is_enum": false
+    },
+    "java.security.DigestException/629316798": {
+      "deserialize_fn": "aEd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "java.security.GeneralSecurityException/2669239907": {
+      "deserialize_fn": "dEd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "java.security.NoSuchAlgorithmException/2892037213": {
+      "deserialize_fn": "gEd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "java.sql.Date/730999118": {
+      "deserialize_fn": "jEd",
+      "fields": [],
+      "is_enum": false
+    },
+    "java.sql.Time/1816797103": {
+      "deserialize_fn": "mEd",
+      "fields": [],
+      "is_enum": false
+    },
+    "java.sql.Timestamp/3040052672": {
+      "deserialize_fn": "pEd",
+      "fields": [
+        "RAW"
+      ],
+      "is_enum": false
+    },
+    "java.util.ArrayList/4159755760": {
+      "deserialize_fn": "sEd",
+      "fields": [
+        "RAW",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "java.util.Arrays$ArrayList/2507071751": {
+      "deserialize_fn": "vEd",
+      "fields": [],
+      "is_enum": false
+    },
+    "java.util.Collections$EmptyList/4157118744": {
+      "deserialize_fn": "AEd",
+      "fields": [],
+      "is_enum": false
+    },
+    "java.util.Collections$EmptyMap/4174664486": {
+      "deserialize_fn": "DEd",
+      "fields": [],
+      "is_enum": false
+    },
+    "java.util.Collections$EmptySet/3523698179": {
+      "deserialize_fn": "GEd",
+      "fields": [],
+      "is_enum": false
+    },
+    "java.util.Collections$SingletonList/1586180994": {
+      "deserialize_fn": "JEd",
+      "fields": [],
+      "is_enum": false
+    },
+    "java.util.ConcurrentModificationException/2717383897": {
+      "deserialize_fn": "MEd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "java.util.Date/3385151746": {
+      "deserialize_fn": "PEd",
+      "fields": [],
+      "is_enum": false
+    },
+    "java.util.EmptyStackException/89438517": {
+      "deserialize_fn": "SEd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "java.util.EnumMap/1826390227": {
+      "deserialize_fn": "VEd",
+      "fields": [
+        "RAW",
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "java.util.HashMap/1797211028": {
+      "deserialize_fn": "YEd",
+      "fields": [
+        "RAW",
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "java.util.HashSet/3273092938": {
+      "deserialize_fn": "_Ed",
+      "fields": [
+        "RAW",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "java.util.IdentityHashMap/1839153020": {
+      "deserialize_fn": "cFd",
+      "fields": [
+        "RAW",
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "java.util.LinkedHashMap/3008245022": {
+      "deserialize_fn": "fFd",
+      "fields": [
+        "RAW",
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "java.util.LinkedHashSet/95640124": {
+      "deserialize_fn": "iFd",
+      "fields": [
+        "RAW",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "java.util.LinkedList/3953877921": {
+      "deserialize_fn": "lFd",
+      "fields": [
+        "RAW",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "java.util.NoSuchElementException/1559248883": {
+      "deserialize_fn": "qFd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "java.util.Stack/1346942793": {
+      "deserialize_fn": "tFd",
+      "fields": [
+        "RAW",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "java.util.TooManyListenersException/2023078032": {
+      "deserialize_fn": "wFd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "java.util.TreeMap/1493889780": {
+      "deserialize_fn": "zFd",
+      "fields": [
+        "RAW",
+        "OBJECT",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "java.util.TreeSet/4043497002": {
+      "deserialize_fn": "CFd",
+      "fields": [
+        "RAW",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "java.util.Vector/3057315478": {
+      "deserialize_fn": "FFd",
+      "fields": [
+        "RAW",
+        "OBJECT"
+      ],
+      "is_enum": false
+    },
+    "java.util.concurrent.CancellationException/1029019779": {
+      "deserialize_fn": "IFd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "java.util.concurrent.ExecutionException/1787452083": {
+      "deserialize_fn": "LFd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "java.util.concurrent.RejectedExecutionException/680785068": {
+      "deserialize_fn": "OFd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "java.util.concurrent.TimeoutException/3757923520": {
+      "deserialize_fn": "RFd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "javax.validation.ConstraintDeclarationException/3610544007": {
+      "deserialize_fn": "WFd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "javax.validation.ConstraintDefinitionException/3732439488": {
+      "deserialize_fn": "ZFd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "javax.validation.ConstraintViolationException/1185386591": {
+      "deserialize_fn": "DSv",
+      "fields": [],
+      "is_enum": false
+    },
+    "javax.validation.GroupDefinitionException/4024780846": {
+      "deserialize_fn": "aGd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "javax.validation.UnexpectedTypeException/593026390": {
+      "deserialize_fn": "dGd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    },
+    "javax.validation.ValidationException/1570221831": {
+      "deserialize_fn": "gGd",
+      "fields": [
+        "STRING"
+      ],
+      "is_enum": false
+    }
+  }
+}
