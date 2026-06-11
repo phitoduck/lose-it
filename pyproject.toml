@@ -19,6 +19,7 @@ dependencies = [
 
 [project.scripts]
 loseit = "lose_it.cli:main"
+lose-it = "lose_it.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.10.7,<0.11.0"]
