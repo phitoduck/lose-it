@@ -1,5 +1,5 @@
 [project]
-name = "lose-it-utils"
+name = "lose-it"
 version = "0.1.0"
 description = "Unofficial Lose It! Python SDK and CLI (reverse-engineered GWT-RPC)"
 readme = "README.md"
@@ -18,8 +18,7 @@ dependencies = [
 ]
 
 [project.scripts]
-lose-it = "lose_it_utils.cli:main"
-lose-it-utils = "lose_it_utils.cli:main"
+loseit = "lose_it.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.10.7,<0.11.0"]

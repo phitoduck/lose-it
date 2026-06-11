@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from lose_it_utils import Client
-from lose_it_utils.client import foods
-from lose_it_utils.client._config import Config
-from lose_it_utils.client._models import FoodSearchResult
+from lose_it import Client
+from lose_it.client import foods
+from lose_it.client._config import Config
+from lose_it.client._models import FoodSearchResult
 
 SERVICE_URL = "https://www.loseit.com/web/service"
 

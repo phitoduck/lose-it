@@ -1,4 +1,4 @@
-"""Unit-table conformance tests for ``lose_it_utils.client._units``.
+"""Unit-table conformance tests for ``lose_it.client._units``.
 
 Covers the Phase 1 cases from ``docs/serving-unit-spec.md``:
 
@@ -21,7 +21,7 @@ import math
 
 import pytest
 
-from lose_it_utils.client._units import (
+from lose_it.client._units import (
     CANONICAL_UNIT_NAMES,
     CONVERSIONS,
     UNIT_ALIASES,

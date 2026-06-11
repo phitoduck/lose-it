@@ -1,9 +1,9 @@
-<h1 align="center">lose-it</h1>
+<h1 align="center">loseit</h1>
 
 <p align="center">Unofficial Python SDK + CLI for <a href="https://www.loseit.com/"><b>Lose It!</b></a> — log meals, query your diary, and delete entries from the command line.</p>
 
 <p align="center">
-  <img src="docs/diagram.svg" alt="lose-it CLI → Lose It! web API" width="640"/>
+  <img src="docs/diagram.svg" alt="loseit CLI → Lose It! web API" width="640"/>
 </p>
 
 <p align="center">
@@ -24,11 +24,11 @@ You need to already be signed into [loseit.com](https://www.loseit.com/) in Chro
 uv tool install git+https://github.com/phitoduck/lose-it
 
 # 2. Import your auth token AND populate the config from the browser
-lose-it login                       # default: --browser chrome
-# or:  lose-it login --browser brave
+loseit login                       # default: --browser chrome
+# or:  loseit login --browser brave
 
 # 3. You're ready
-lose-it diary
+loseit diary
 ```
 
 Prompt for, e.g. Claude Code:
@@ -39,18 +39,18 @@ Prompt for, e.g. Claude Code:
   <img src="docs/mobile-app-demo.jpeg" alt="Lose It! mobile app — Mon, Jun 8: Snacks (451 cal): Tortilla Wraps 1 Serving (70 cal), Real good Lightly Breaded Chicken 120 Grams (187 cal), Avocado (USDA Website Per 100g) 110 Grams (194 cal)" width="320"/>
 </p>
 
-`lose-it login` does the one-time setup for you: it imports the `liauth` JWT from the browser, derives `user_id` from the JWT's `sub` claim, picks up `user_name` from the JWT payload or the browser's other `loseit.com` cookies (prompting once if neither has it), reads `hours_from_gmt` from your OS timezone, and writes them all to `~/.config/loseit/config.yaml`. No `LOSEIT_*` env vars to set by hand — see [Configuration](#configuration) for layered overrides.
+`loseit login` does the one-time setup for you: it imports the `liauth` JWT from the browser, derives `user_id` from the JWT's `sub` claim, picks up `user_name` from the JWT payload or the browser's other `loseit.com` cookies (prompting once if neither has it), reads `hours_from_gmt` from your OS timezone, and writes them all to `~/.config/loseit/config.yaml`. No `LOSEIT_*` env vars to set by hand — see [Configuration](#configuration) for layered overrides.
 
-If `lose-it login` reports the cookie is missing or expired, it opens the Lose It! signin page in the chosen browser — sign in, then re-run `lose-it login`.
+If `loseit login` reports the cookie is missing or expired, it opens the Lose It! signin page in the chosen browser — sign in, then re-run `loseit login`.
 
-Want to skip the install? `uvx --from git+https://github.com/phitoduck/lose-it lose-it diary` runs any command in an ephemeral environment.
+Want to skip the install? `uvx --from git+https://github.com/phitoduck/lose-it loseit diary` runs any command in an ephemeral environment.
 
 ## Examples
 
 ```text
-$ lose-it --help
+$ loseit --help
 
- Usage: lose-it [OPTIONS] COMMAND [ARGS]...
+ Usage: loseit [OPTIONS] COMMAND [ARGS]...
 
  Unofficial Lose It! food logger / diary CLI.
 
@@ -67,7 +67,7 @@ $ lose-it --help
 ### `login` — import the auth token *and* populate the config
 
 ```text
-$ lose-it login --browser chrome
+$ loseit login --browser chrome
 ✅ Imported liauth from Chrome → /Users/you/.config/loseit/token
    JWT exp: 2026-06-22T20:41:44+00:00
 ✅ Wrote config → /Users/you/.config/loseit/config.yaml
@@ -75,19 +75,19 @@ $ lose-it login --browser chrome
    hours_from_gmt: -6
    user_id       : 12345678
 
-$ lose-it login --browser brave
+$ loseit login --browser brave
 ❌ liauth cookie in Brave is expired.
    JWT exp: 2026-04-01T12:00:00+00:00 (now: 2026-06-08T19:30:00+00:00)
    Opened https://www.loseit.com/ in Brave.
-   Then re-run: lose-it login --browser brave
+   Then re-run: loseit login --browser brave
 ```
 
-The first run on macOS triggers a Keychain prompt so the OS can unlock the browser's cookie store. After that it's silent. If neither the JWT nor any `loseit.com` cookie carries your username, `lose-it login` prompts once and saves it to the YAML. Pass `--user-name alice@example.com` to skip the prompt (handy in CI), or `--no-write-config` to import only the token.
+The first run on macOS triggers a Keychain prompt so the OS can unlock the browser's cookie store. After that it's silent. If neither the JWT nor any `loseit.com` cookie carries your username, `loseit login` prompts once and saves it to the YAML. Pass `--user-name alice@example.com` to skip the prompt (handy in CI), or `--no-write-config` to import only the token.
 
 ### `search`
 
 ```text
-$ lose-it search "x-treme carb balance tortilla"
+$ loseit search "x-treme carb balance tortilla"
 
   #  Food                                               Brand                Food ID
 ───  ────────────────────────────────────────────────── ──────────────────── ───────────
@@ -95,12 +95,12 @@ $ lose-it search "x-treme carb balance tortilla"
   2  Tortilla Wraps, High Fiber, Low Carb, Xtreme Welln Mission Tortillas Ca 0d5f30bf42…
 ```
 
-The `Food ID` column is the lowercase-hex form of the food's stable 16-byte primary key. The text view truncates it to 10 chars; the full 32-char value is in the JSON `food_id` field (`lose-it search ... -o json`).
+The `Food ID` column is the lowercase-hex form of the food's stable 16-byte primary key. The text view truncates it to 10 chars; the full 32-char value is in the JSON `food_id` field (`loseit search ... -o json`).
 
 ### `log`
 
 ```text
-$ lose-it log "x-treme carb balance tortilla" --meal lunch --pick 2 --servings 1
+$ loseit log "x-treme carb balance tortilla" --meal lunch --pick 2 --servings 1
 
   #  Food                                               Brand                Food ID
 ───  ────────────────────────────────────────────────── ──────────────────── ───────────
@@ -113,14 +113,14 @@ $ lose-it log "x-treme carb balance tortilla" --meal lunch --pick 2 --servings 1
 For foods that should be logged by weight, use `--grams N` on a gram-measured entry. The CLI validates the picked food and errors if it isn't gram-measured, so you don't accidentally log "1.2 grams of chicken":
 
 ```text
-$ lose-it log "avocado per 100g" --meal snacks --pick 8 --grams 110
+$ loseit log "avocado per 100g" --meal snacks --pick 8 --grams 110
 ✅ Logged Avocado (USDA Website Per 100g) (id 7f3a…) → snacks 110 grams (176 cal)
 ```
 
 Pick indices drift between sessions (Lose It! mutates its index). For drift-proof, scriptable logging, pass the stable `--food-id` instead — it skips the search step entirely:
 
 ```text
-$ lose-it log --food-id 0d5f30bf4231a3da8c3c9608f0630010 --meal snacks --servings 1.0
+$ loseit log --food-id 0d5f30bf4231a3da8c3c9608f0630010 --meal snacks --servings 1.0
 ✅ Logged Organic Tomato And Roasted Red Pepper Soup (id 0d5f…) → snacks 1 serving (207 cal)
 ```
 
@@ -129,7 +129,7 @@ $ lose-it log --food-id 0d5f30bf4231a3da8c3c9608f0630010 --meal snacks --serving
 ### `diary`
 
 ```text
-$ lose-it diary
+$ loseit diary
 
 📅 Diary for 2026-06-08:
 
@@ -145,7 +145,7 @@ $ lose-it diary
 ### `delete`
 
 ```text
-$ lose-it delete --meal lunch --pick 1 --yes
+$ loseit delete --meal lunch --pick 1 --yes
 
 🗑️  Deleting from lunch: Tortilla Wraps, High Fiber, Low Carb, Xtreme Wellness (Mission) × 1.0
 ✅ Deleted
@@ -154,7 +154,7 @@ $ lose-it delete --meal lunch --pick 1 --yes
 ### `whoami`
 
 ```text
-$ lose-it whoami
+$ loseit whoami
 
 user_id        : 12345678
 user_name      : your.username
@@ -168,7 +168,7 @@ strong_name    : 351AE5DC0CA36AD3BA9C7CBA7B0E07B8
 Every subcommand accepts a global `--output` (alias `-o`) flag. The default is `text`; pass `json` to get a JSON document on stdout suitable for piping into `jq`.
 
 ```text
-$ lose-it -o json diary --date 2026-06-08 | jq '.entries[] | .food_name'
+$ loseit -o json diary --date 2026-06-08 | jq '.entries[] | .food_name'
 "Tortilla Wraps, High Fiber, Low Carb, Xtreme Wellness"
 "Avocado, whole"
 "Real Good Lightly Breaded Chicken Strips"
@@ -203,7 +203,7 @@ data = toon_format.decode(toon_output)
 `log` and `delete` accept `--dry-run`. Read-only lookups still run (so you see what *would* be logged or deleted), but the mutating RPC is skipped.
 
 ```text
-$ lose-it log "x-treme carb balance tortilla" -m lunch --pick 2 --dry-run
+$ loseit log "x-treme carb balance tortilla" -m lunch --pick 2 --dry-run
 
 🟡 DRY RUN — would log Tortilla Wraps, High Fiber, Low Carb, Xtreme Wellness → lunch × 1.0 (70 cal)
 ```
@@ -229,18 +229,18 @@ The levels, from loudest to quietest:
 **`--log-level info`** — one line per high-level event:
 
 ```text
-$ lose-it --log-level info search "tortilla" 1>/dev/null
-12:00:00.123 INFO     lose_it_utils.cli:search:344 cli.search: query='tortilla' output=text
-12:00:00.135 INFO     lose_it_utils.client:from_env:65 Client.from_env: user='you@example.com' hours_from_gmt=-6 permutation=351AE5DC0CA36AD3BA9C7CBA7B0E07B8
-12:00:00.140 INFO     lose_it_utils.client.foods:search:135 foods.search: query='tortilla'
-12:00:00.330 SUCCESS  lose_it_utils.client._http:post_rpc:205 rpc searchFoods OK in 188.5 ms (2764 bytes)
+$ loseit --log-level info search "tortilla" 1>/dev/null
+12:00:00.123 INFO     lose_it.cli:search:344 cli.search: query='tortilla' output=text
+12:00:00.135 INFO     lose_it.client:from_env:65 Client.from_env: user='you@example.com' hours_from_gmt=-6 permutation=351AE5DC0CA36AD3BA9C7CBA7B0E07B8
+12:00:00.140 INFO     lose_it.client.foods:search:135 foods.search: query='tortilla'
+12:00:00.330 SUCCESS  lose_it.client._http:post_rpc:205 rpc searchFoods OK in 188.5 ms (2764 bytes)
 ```
 
 **`--log-level trace`** — dumps every request and response in full, headers included. Useful for reverse-engineering the GWT-RPC surface:
 
 ```text
-$ lose-it --log-level trace search "avocado" 1>/dev/null
-12:00:00.123 TRACE    lose_it_utils.client._http:post_rpc:121 HTTP REQUEST → searchFoods
+$ loseit --log-level trace search "avocado" 1>/dev/null
+12:00:00.123 TRACE    lose_it.client._http:post_rpc:121 HTTP REQUEST → searchFoods
 POST https://www.loseit.com/web/service
 ── headers ──
   content-type: text/x-gwt-rpc; charset=UTF-8
@@ -255,7 +255,7 @@ POST https://www.loseit.com/web/service
   fn_auth=<REDACTED-JWT>
 ── body (380 bytes) ──
 7|0|12|https://d3hsih69yn4d89.cloudfront.net/web/|8F87EC8969F17AE77B6283D3A83F6D4C|com.loseit.core.client.service.LoseItRemoteService|searchFoods|com.loseit.core.client.service.ServiceRequestToken/1076571655|java.lang.String/2004016611|I|Z|com.loseit.core.client.model.UserId/4281239478|you@example.com|avocado|en-US|1|2|3|4|6|5|6|6|7|8|8|5|0|9|12345678|10|-6|11|12|15|1|1|
-12:00:00.310 TRACE    lose_it_utils.client._http:post_rpc:150 HTTP RESPONSE ← searchFoods
+12:00:00.310 TRACE    lose_it.client._http:post_rpc:150 HTTP RESPONSE ← searchFoods
 HTTP/1.1 200 (188.4 ms)
 ── headers ──
   content-type: application/json;charset=utf-8
@@ -268,10 +268,10 @@ HTTP/1.1 200 (188.4 ms)
 **`--log-file`** — captures a full session to disk (TRACE-level by default), regardless of `--log-level`. The file format uses pipe-separated columns so it round-trips cleanly through `less` / `grep`:
 
 ```text
-$ lose-it --log-file ~/lose-it-session.log diary
-$ grep -E "rpc.*OK" ~/lose-it-session.log
-2026-06-11 12:00:00.578 | SUCCESS  | lose_it_utils.client._http:post_rpc:205 | rpc getInitializationData OK in 159.1 ms (10306 bytes)
-2026-06-11 12:00:00.672 | SUCCESS  | lose_it_utils.client._http:post_rpc:205 | rpc getDailyDetailsIncludingPendingForDate OK in 92.7 ms (7610 bytes)
+$ loseit --log-file ~/loseit-session.log diary
+$ grep -E "rpc.*OK" ~/loseit-session.log
+2026-06-11 12:00:00.578 | SUCCESS  | lose_it.client._http:post_rpc:205 | rpc getInitializationData OK in 159.1 ms (10306 bytes)
+2026-06-11 12:00:00.672 | SUCCESS  | lose_it.client._http:post_rpc:205 | rpc getDailyDetailsIncludingPendingForDate OK in 92.7 ms (7610 bytes)
 ```
 
 > ⚠️ **Heads up:** at TRACE level the `liauth` and `fn_auth` cookies are dumped **verbatim** — the JWT is a bearer credential for your Lose It! account. Treat any file written via `--log-file` as sensitive: don't paste sessions into bug reports without scrubbing them. The repo's gitleaks config (see [Lint, format, secret-scan (prek)](#lint-format-secret-scan-prek)) blocks any commit containing a real `liauth`/`fn_auth` JWT exactly to prevent accidental disclosure.
@@ -282,13 +282,13 @@ The Quickstart used env vars because they're the fastest path. For anything more
 
 ### Priority (highest wins)
 
-1. **CLI flag** — e.g. `lose-it --user-id 12345678 whoami`
+1. **CLI flag** — e.g. `loseit --user-id 12345678 whoami`
 2. **`LOSEIT_*` env var** — e.g. `LOSEIT_USER_ID=…`
 3. **YAML file** — default path `~/.config/loseit/config.yaml`
    (override with `--config-file` or `LOSEIT_CONFIG_FILE`)
 4. **Built-in default** — applied when no other layer sets the field
 
-`user_id`, `user_name`, and `hours_from_gmt` have **no defaults** — the SDK raises `MissingConfigError` rather than silently posting to the wrong account. `lose-it login` writes all three to the YAML on first run, so you only hit this error if you skipped the login flow (e.g. running in CI).
+`user_id`, `user_name`, and `hours_from_gmt` have **no defaults** — the SDK raises `MissingConfigError` rather than silently posting to the wrong account. `loseit login` writes all three to the YAML on first run, so you only hit this error if you skipped the login flow (e.g. running in CI).
 
 ### YAML file (most ergonomic for long-term setup)
 
@@ -308,21 +308,21 @@ hours_from_gmt: -6
 
 | YAML key / field  | CLI flag             | Env var                 | Type   | Default                                  | Description                                                                 |
 |-------------------|----------------------|-------------------------|--------|------------------------------------------|-----------------------------------------------------------------------------|
-| `user_id`         | `--user-id`          | `LOSEIT_USER_ID`        | `str`  | *(written by `lose-it login`)*           | Numeric `sub` claim of your `liauth` JWT — `lose-it login` extracts it for you.            |
-| `user_name`       | `--user-name`        | `LOSEIT_USER_NAME`      | `str`  | *(written by `lose-it login`)*           | Your loseit.com username — `lose-it login` sniffs it from the JWT/cookies or prompts once. |
-| `hours_from_gmt`  | `--hours-from-gmt`   | `LOSEIT_HOURS_FROM_GMT` | `int`  | *(written by `lose-it login`)*           | Local offset from UTC (e.g. `-6`) — `lose-it login` reads it from the OS timezone.         |
+| `user_id`         | `--user-id`          | `LOSEIT_USER_ID`        | `str`  | *(written by `loseit login`)*           | Numeric `sub` claim of your `liauth` JWT — `loseit login` extracts it for you.            |
+| `user_name`       | `--user-name`        | `LOSEIT_USER_NAME`      | `str`  | *(written by `loseit login`)*           | Your loseit.com username — `loseit login` sniffs it from the JWT/cookies or prompts once. |
+| `hours_from_gmt`  | `--hours-from-gmt`   | `LOSEIT_HOURS_FROM_GMT` | `int`  | *(written by `loseit login`)*           | Local offset from UTC (e.g. `-6`) — `loseit login` reads it from the OS timezone.         |
 | `policy_hash`     | `--policy-hash`      | `LOSEIT_POLICY_HASH`    | `str`  | last-known-good                          | 5th `\|`-field of any `/web/service` POST body. Refresh on LoseIt redeploy. |
 | `strong_name`     | `--strong-name`      | `LOSEIT_STRONG_NAME`    | `str`  | last-known-good                          | `x-gwt-permutation` request header. Refresh on LoseIt redeploy.             |
 | `base_url`        | *(not exposed)*      | `LOSEIT_BASE_URL`       | `str`  | `https://d3hsih69yn4d89.cloudfront.net/web/` | GWT module base URL.                                                    |
 | `service_url`     | *(not exposed)*      | `LOSEIT_SERVICE_URL`    | `str`  | `https://www.loseit.com/web/service`     | GWT-RPC service endpoint.                                                   |
 | `token`           | *(not exposed)*      | `LOSEIT_TOKEN`          | `str`  | `None` → read from `token_file`          | `liauth` JWT. If unset, falls back to reading `token_file`.                 |
-| `token_file`      | *(not exposed)*      | `LOSEIT_TOKEN_FILE`     | `Path` | `~/.config/loseit/token`                 | Where `lose-it login` writes the JWT, and where the SDK reads it from.      |
+| `token_file`      | *(not exposed)*      | `LOSEIT_TOKEN_FILE`     | `Path` | `~/.config/loseit/token`                 | Where `loseit login` writes the JWT, and where the SDK reads it from.      |
 
-The pydantic-settings model in [`src/lose_it_utils/client/_settings.py`](src/lose_it_utils/client/_settings.py) is the single source of truth and the spec of the YAML file.
+The pydantic-settings model in [`src/lose_it/client/_settings.py`](src/lose_it/client/_settings.py) is the single source of truth and the spec of the YAML file.
 
 ### Refreshing the auth token
 
-`lose-it login` is the easy path; it reads the cookie out of Chrome or Brave (via `browser-cookie3`) and writes it to `~/.config/loseit/token`. The manual fallback:
+`loseit login` is the easy path; it reads the cookie out of Chrome or Brave (via `browser-cookie3`) and writes it to `~/.config/loseit/token`. The manual fallback:
 
 ```bash
 # DevTools → Application → Cookies → www.loseit.com → liauth → copy value
@@ -348,10 +348,10 @@ The `Class/<digits>` strings you'll see in the SDK source — `UserId/4281239478
 
 ```python
 from datetime import date
-from lose_it_utils import Client
-from lose_it_utils.client import foods, entries, daily
-from lose_it_utils.client._dates import day_number_for
-from lose_it_utils.client.init import get_daydate_key
+from lose_it import Client
+from lose_it.client import foods, entries, daily
+from lose_it.client._dates import day_number_for
+from lose_it.client.init import get_daydate_key
 
 with Client.from_env() as client:
     # Search
@@ -386,7 +386,7 @@ LOSEIT_RUN_FUNCTIONAL=1 uv run pytest  # incl. real-API CRUD
 ### Package layout
 
 ```text
-src/lose_it_utils/
+src/lose_it/
 ├── __init__.py             # exports `Client`
 ├── cli.py                  # typer CLI
 └── client/
@@ -410,7 +410,7 @@ Module structure mirrors the underlying GWT-RPC resources: one module per backen
 
 ```bash
 # Unit tests (mocked httpx, replay captured fixtures) + coverage
-uv run pytest --cov=lose_it_utils --cov-report=term-missing
+uv run pytest --cov=lose_it --cov-report=term-missing
 
 # Real-API CRUD (requires LOSEIT_RUN_FUNCTIONAL=1 + valid token + config)
 LOSEIT_RUN_FUNCTIONAL=1 uv run pytest tests/functional
@@ -443,7 +443,7 @@ The gitleaks config has two custom rules: a tight ES384-JWT match (kid-agnostic,
 - **GWT writes byte arrays in reverse**: both PKs you see in responses are reversed copies of their wire-form bytes. `_gwt.reverse_bytes` handles round-trips.
 - **GWT writes object fields in declaration order, dedup'd across an array**: when several `FoodLogEntry` objects share the same enum value (e.g. all in *snacks*) or the same nutrient HashMap (e.g. multiple identical logs), the response writes the shared value *once* and references it from each entry. The parser falls back to a global search when an entry's local range comes up empty.
 - **Food codes can contain `$` and `_`**: e.g. `DoA3$q`. The food-identifier-code regex allows the full GWT short-string alphabet.
-- **The serving-unit is the food's default**: `--servings N` is a multiplier on the food's default serving — 1 wrap, 1 avocado, 100 g, etc. For **gram-measured** foods (FoodMeasurement ordinal 8) the default serving is 100 g, so `--servings 1.2` correctly logs 120 g (the official UI displays "120 grams"). For more natural gram logging, use `--grams N` on a gram-measured food entry: `lose-it log "avocado per 100g" --pick 8 -m snacks --grams 110` logs 110 g directly and errors if the picked entry isn't gram-measured. The CLI advertises the food's unit in the dry-run / log output (`× 110 grams`, `× 1.0 serving`, `× 1.1 each`).
+- **The serving-unit is the food's default**: `--servings N` is a multiplier on the food's default serving — 1 wrap, 1 avocado, 100 g, etc. For **gram-measured** foods (FoodMeasurement ordinal 8) the default serving is 100 g, so `--servings 1.2` correctly logs 120 g (the official UI displays "120 grams"). For more natural gram logging, use `--grams N` on a gram-measured food entry: `loseit log "avocado per 100g" --pick 8 -m snacks --grams 110` logs 110 g directly and errors if the picked entry isn't gram-measured. The CLI advertises the food's unit in the dry-run / log output (`× 110 grams`, `× 1.0 serving`, `× 1.1 each`).
 
 ## License
 

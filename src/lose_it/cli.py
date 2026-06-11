@@ -1,16 +1,16 @@
 """Typer-based CLI for the Lose It! SDK.
 
-The CLI is a thin wrapper around :class:`lose_it_utils.Client` and the
-``lose_it_utils.client.*`` modules. Subcommands::
+The CLI is a thin wrapper around :class:`lose_it.Client` and the
+``lose_it.client.*`` modules. Subcommands::
 
-    lose-it search "tortilla"                              List candidate foods
-    lose-it log "tortilla" --meal lunch --servings 1.0     Search + log
-    lose-it log "tortilla" --meal lunch --pick 2           Skip the interactive prompt
-    lose-it diary                                          Show today's diary
-    lose-it diary --date 2026-06-08                        Show another day's diary
-    lose-it delete --meal lunch --pick 1                   Delete an entry by index
-    lose-it delete --meal lunch --pick 1 --yes             Skip the confirmation prompt
-    lose-it whoami                                         Print resolved config
+    loseit search "tortilla"                              List candidate foods
+    loseit log "tortilla" --meal lunch --servings 1.0     Search + log
+    loseit log "tortilla" --meal lunch --pick 2           Skip the interactive prompt
+    loseit diary                                          Show today's diary
+    loseit diary --date 2026-06-08                        Show another day's diary
+    loseit delete --meal lunch --pick 1                   Delete an entry by index
+    loseit delete --meal lunch --pick 1 --yes             Skip the confirmation prompt
+    loseit whoami                                         Print resolved config
 
 Two global options are honored by every subcommand:
 
@@ -105,7 +105,7 @@ class LogLevel(enum.StrEnum):
 
 
 app = typer.Typer(
-    name="lose-it",
+    name="loseit",
     help="Unofficial Lose It! food logger / diary CLI.",
     no_args_is_help=True,
     add_completion=False,
@@ -477,7 +477,7 @@ def log(
         typer.Option(
             "--food-id",
             help=(
-                "Stable 32-char hex food ID (from `lose-it search`'s Food ID "
+                "Stable 32-char hex food ID (from `loseit search`'s Food ID "
                 "column or JSON `food_id` field). Bypasses the search step and "
                 "goes straight to the unsaved-entry RPC. Mutually exclusive "
                 "with the positional query and --pick."
@@ -1132,7 +1132,7 @@ def _login_failure(
             typer.echo(f"   Opened {SIGNIN_URL} in {browser.title()}.", err=True)
         else:
             typer.echo(f"   Sign in here: {SIGNIN_URL}", err=True)
-        typer.echo(f"   Then re-run: lose-it login --browser {browser}", err=True)
+        typer.echo(f"   Then re-run: loseit login --browser {browser}", err=True)
     raise typer.Exit(code=1)
 
 
@@ -1198,7 +1198,7 @@ def whoami(ctx: typer.Context) -> None:
 # ── Entrypoint ───────────────────────────────────────────────────────────────
 
 
-def main() -> None:  # used by the `lose-it` script entry point
+def main() -> None:  # used by the `loseit` script entry point
     app()
 
 

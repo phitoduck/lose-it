@@ -228,7 +228,7 @@ wheels = [
 ]
 
 [[package]]
-name = "lose-it-utils"
+name = "lose-it"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

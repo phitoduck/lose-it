@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from lose_it_utils.cli import app
+from lose_it.cli import app
 
 SERVICE_URL = "https://www.loseit.com/web/service"
 FIXTURES = Path(__file__).parent / "fixtures"

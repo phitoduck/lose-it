@@ -3,7 +3,7 @@
 # Inherits the default ruleset (`useDefault = true`) which catches AWS keys,
 # generic high-entropy tokens, private keys, and dozens of provider tokens.
 # The custom rules below specifically target the ``liauth`` / ``fn_auth``
-# JWTs that ``lose-it login`` imports from a browser cookie store; these
+# JWTs that ``loseit login`` imports from a browser cookie store; these
 # are the only secrets a contributor would realistically have on disk in a
 # location that touches this repo.
 #

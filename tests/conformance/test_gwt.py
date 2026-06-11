@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from lose_it_utils.client import _gwt
+from lose_it.client import _gwt
 
 
 def test_reverse_bytes_roundtrips() -> None:

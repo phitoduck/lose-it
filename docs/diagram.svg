@@ -28,9 +28,9 @@
     <circle cx="24" cy="8" r="2.5" fill="#a6e3a1"/>
     <!-- prompt $ -->
     <text x="8" y="36" font-family="'SF Mono', Menlo, monospace" font-size="10" fill="#a6e3a1">$</text>
-    <text x="18" y="36" font-family="'SF Mono', Menlo, monospace" font-size="10" fill="#cdd6f4">lose-it</text>
+    <text x="18" y="36" font-family="'SF Mono', Menlo, monospace" font-size="10" fill="#cdd6f4">loseit</text>
   </g>
-  <text class="label" x="180" y="148">lose-it CLI</text>
+  <text class="label" x="180" y="148">loseit CLI</text>
 
   <!-- ── Arrow with annotations ─────────────────────────────────────────── -->
   <line class="arrow" x1="290" y1="110" x2="430" y2="110"/>

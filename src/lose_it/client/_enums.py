@@ -3,7 +3,7 @@
 Single source of truth for human-readable labels of integer ordinals
 that flow across the GWT wire. The decoder consults these to attach a
 plain-English ``unit`` field next to the raw ``ordinal`` on decoded
-objects, so ``lose-it -o json`` output is self-documenting.
+objects, so ``loseit -o json`` output is self-documenting.
 
 These ordinals are stable across Lose It! releases (they're Java enum
 values on the server). Only add entries here once a value has been

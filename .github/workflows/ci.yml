@@ -59,7 +59,7 @@ jobs:
       - name: pytest (unit tests + coverage, no functional)
         run: |
           uv run pytest \
-            --cov=lose_it_utils \
+            --cov=lose_it \
             --cov-report=term-missing \
             --cov-report=xml \
             --cov-fail-under=70

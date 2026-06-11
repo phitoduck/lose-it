@@ -1,6 +1,6 @@
 """Unit tests for the JWT / cookie inspection helpers in ``client.auth``.
 
-These cover the building blocks ``lose-it login`` uses to populate the
+These cover the building blocks ``loseit login`` uses to populate the
 YAML config so it doesn't need ``LOSEIT_USER_ID`` / ``LOSEIT_USER_NAME``
 env vars: decoding the JWT payload, picking out the ``sub`` claim, and
 scavenging an email/username from the browser's other ``loseit.com``
@@ -13,7 +13,7 @@ import base64
 import json
 from typing import Any
 
-from lose_it_utils.client.auth import (
+from lose_it.client.auth import (
     decode_jwt_exp,
     decode_jwt_payload,
     extract_user_info_from_jwt,
