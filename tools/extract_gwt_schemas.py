@@ -91,7 +91,7 @@ def extract_fn_body(text: str, name: str) -> str | None:
         elif c == "}":
             depth -= 1
         i += 1
-    return text[m.start():i].replace("\\n", "\n")
+    return text[m.start() : i].replace("\\n", "\n")
 
 
 def collect_class_constants(js: str) -> dict[str, str]:
@@ -168,7 +168,7 @@ def discover_primitive_names(js: str) -> dict[str, str]:
                 elif c == "}":
                     depth -= 1
                 i += 1
-            body = js[header.end():i - 1]
+            body = js[header.end() : i - 1]
             if snippet in body:
                 return name
         return None
@@ -318,7 +318,9 @@ def main() -> int:
     # Detect enums by their instantiate-function body: it pops a token
     # for the ordinal (``b=a.b[--a.a]``) and returns ``array[b]``. Regular
     # classes' instantiate functions just do ``new wjh; return``.
-    enum_pat = re.compile(r"=\s*a\.b\[--a\.a\]\s*;[\s\S]*return\s+[A-Za-z_][\w$]*\s*\[\s*[a-z]\s*\]")
+    enum_pat = re.compile(
+        r"=\s*a\.b\[--a\.a\]\s*;[\s\S]*return\s+[A-Za-z_][\w$]*\s*\[\s*[a-z]\s*\]"
+    )
 
     schemas: dict[str, dict] = {}
     chain_cache: dict[str, list[str]] = {}
@@ -347,8 +349,7 @@ def main() -> int:
         }
 
     print(
-        f"→ extracted {len(schemas)} schemas "
-        f"(skipped {skipped} types without table entries)",
+        f"→ extracted {len(schemas)} schemas (skipped {skipped} types without table entries)",
         file=sys.stderr,
     )
 
