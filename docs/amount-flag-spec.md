@@ -1,7 +1,7 @@
 # Spec: `--amount <quantity><unit>` flag for native unit conversions
 
 This is a context-loss-resistant spec. Read it top to bottom before writing
-code; every claim below is backed by a line citation or a HAR quote.
+code; every claim below is backed by a line citation or a quoted wire snippet.
 
 ## Background
 
@@ -17,9 +17,10 @@ requested unit (search for an alternative entry that does).
 
 ## Wire-level evidence
 
-The user captured a HAR from the official UI on 2026-06-11 while logging
-**490 mL of `Organic Tomatoe & Roasted Red Pepper Soup` (Trader Joe's)** as
-a snack. The relevant `updateFoodLogEntry` `postData.text` tail is:
+Observed in 2026-06-11 manual testing: when the official UI logs
+**490 mL of `Organic Tomatoe & Roasted Red Pepper Soup` (Trader Joe's)**
+as a snack, the resulting `updateFoodLogEntry` GWT-RPC envelope has this
+`postData.text` tail (FoodServing → FoodNutrients → FoodServingSize):
 
 ```
 22|23|1|2.0711109608264158|
@@ -50,12 +51,10 @@ Decoded against the GWT-RPC schema (see `_schemas.json`):
 | `FoodServingSize.f4` | `236.58800000000002` | **Conversion factor**: `quantity_in_chosen_unit = canonical_servings × f4`. For cup→mL this is the universal constant 236.5882365 mL/US cup. |
 | `FoodServingSize.f5` | `490` | User's **raw input in the chosen unit**. |
 
-Two non-obvious facts confirmed by the HAR:
+Two non-obvious facts confirmed by the observed payload:
 
 1. **Conversion factors are universal volumetric constants**, not food-specific. `236.588` is just "US cup → mL". A different cup-measured food would still send `f4=236.588` when the user picks mL.
-2. **The wire shape is identical to what the CLI already sends** for the cup case — only `f4`, `f5`, and the FoodMeasure ord differ. See:
-   - This file:[snippet above] for the UI's wire bytes
-   - `src/lose_it_utils/client/entries.py:164-178` for the CLI's current FoodServingSize block
+2. **The wire shape is identical to what the CLI already sends** for the cup case — only `f4`, `f5`, and the FoodMeasure ord differ. See `src/lose_it_utils/client/entries.py:164-178` for the CLI's current FoodServingSize block.
 
 ## What works after PR #22
 
@@ -111,8 +110,9 @@ Single module that owns the conversion table and the parser.
 """Unit conversion table mirroring the official UI's display-unit dropdown.
 
 All factors are US customary measurement constants. The Lose It! web UI
-uses these same constants (e.g. ``236.5882365`` mL/US cup, observed in
-captured HARs); the figures here are not food-specific, only unit-specific.
+uses these same constants (e.g. ``236.5882365`` mL/US cup, confirmed by
+inspecting the official UI's outbound wire payload); the figures here
+are not food-specific, only unit-specific.
 """
 
 from __future__ import annotations
@@ -288,13 +288,15 @@ should resolve to the same wire payload.
    - Add optional `measure_ord_override`, `quantity_in_chosen_unit`,
      `conversion_factor` parameters. Default behaviour is unchanged.
    - When the override is set, emit the new FoodServingSize block matching
-     the HAR (lines 164-178 in current code).
+     the observed wire shape (the snippet quoted in *Wire-level evidence*
+     above; lines 164-178 in current code).
 3. Update `entries.log_food` to forward the new parameters.
 4. **Unit test**: construct payload for a known fixture (the soup pick 1)
-   with `--amount 490mL`. Diff against the HAR's `postData.text` tail
-   byte-for-byte. The whole HashMap should match exactly; the
-   FoodServingSize block should match exactly up to floating-point
-   serialization (we don't expect `2.0711109608264158` precision).
+   with `--amount 490mL`. Diff against the wire snippet from
+   *Wire-level evidence* byte-for-byte. The whole HashMap should match
+   exactly; the FoodServingSize block should match exactly up to
+   floating-point serialization (we don't expect `2.0711109608264158`
+   precision).
 
 ### Phase 2 — CLI flag (≈20 min)
 
@@ -341,7 +343,7 @@ Add `tests/conformance/test_entries_amount.py`:
 
 | Case | Expected |
 |---|---|
-| `_build_log_payload(soup, --amount=490mL)` byte-compare | Matches HAR snippet at `27|<canonical>|1|28|11|1.0|236.588|490` |
+| `_build_log_payload(soup, --amount=490mL)` byte-compare | Matches wire-evidence snippet at `27|<canonical>|1|28|11|1.0|236.588|490` |
 | Nutrient HashMap | Per-serving values (cal=100, sodium=750, …), no `× servings` |
 | `_build_log_payload(soup, --servings=2.07)` (legacy) | Wire bytes unchanged from current behaviour |
 
@@ -351,8 +353,8 @@ Add `tests/conformance/test_entries_amount.py`:
    ```
    ✅ DRY RUN — would log Organic Tomato And Roasted Red Pepper Soup → snacks 490 mL (207 cal)
    ```
-2. **Wire-byte check**: `lose-it --log-level trace --log-file /tmp/amount.log log ... --amount 490mL --dry-run` then grep for `27|`. The FoodServingSize block should match the HAR's `27|2.071…|1|28|11|1.0|236.588|490|…` byte-for-byte (modulo float precision).
-3. **Live log** (mutating; only after dry-run matches HAR): log at `--amount 490mL`. The official app should render **`490 mL`** in the entry's serving display and **≈ 207 cal** in the entry's calorie display.
+2. **Wire-byte check**: `lose-it --log-level trace --log-file /tmp/amount.log log ... --amount 490mL --dry-run` then grep for `27|`. The FoodServingSize block should match the wire-evidence snippet `27|2.071…|1|28|11|1.0|236.588|490|…` byte-for-byte (modulo float precision).
+3. **Live log** (mutating; only after dry-run matches the wire snippet): log at `--amount 490mL`. The official app should render **`490 mL`** in the entry's serving display and **≈ 207 cal** in the entry's calorie display.
 
 ### Alternatives-suggestion verification
 
@@ -380,15 +382,15 @@ Add `tests/conformance/test_entries_amount.py`:
 
 ## Citation index
 
-- HAR `updateFoodLogEntry`: user-provided HAR (2026-06-11), entries[6],
-  request.postData.text, see "Wire-level evidence" section.
+- Observed `updateFoodLogEntry` wire snippet (2026-06-11 manual UI test):
+  see "Wire-level evidence" section above.
 - `_build_log_payload`: src/lose_it_utils/client/entries.py:35-181
   (FoodServingSize block lines 164-178; portion_size logic lines 102-107).
 - `--grams` option + error: src/lose_it_utils/cli.py:398-409, 455-478.
 - `get_unsaved_food_log_entry`: src/lose_it_utils/client/foods.py:268-288.
 - `UnsavedFoodLogEntry`: src/lose_it_utils/client/_models.py:23-34.
 - `FoodLogEntry.calories` property: src/lose_it_utils/client/_models.py:62-67.
-- Conversion factor confirmation: HAR f4=236.588 (US cup→mL is exactly 236.5882365).
+- Conversion factor confirmation: f4=236.588 (US cup→mL is exactly 236.5882365).
 
 ## Glossary
 

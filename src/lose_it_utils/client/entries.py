@@ -51,9 +51,10 @@ def _build_log_payload(
     # ``displayed = (per_serving × servings) × servings = per_serving × servings²``.
     # For a 2.07-cup soup at 100 cal/serving, this turns 207 cal into 428.
     #
-    # Discovered by comparing a HAR capture of the official UI's
-    # ``updateFoodLogEntry`` payload (per-serving HashMap, e.g. cal=100) against
-    # our wire dump (pre-scaled, e.g. cal=207). The UI does not pre-scale.
+    # Confirmed by inspecting the official UI's outbound
+    # ``updateFoodLogEntry`` payload (per-serving HashMap, e.g. cal=100)
+    # against our wire dump (pre-scaled, e.g. cal=207). The UI does not
+    # pre-scale.
     nutrients = {k: v for k, v in (unsaved.nutrients or {}).items() if k in _CORE_NUTRIENT_ORDINALS}
     entry_pk = _uuid_signed_bytes(uuid.uuid4())
 
