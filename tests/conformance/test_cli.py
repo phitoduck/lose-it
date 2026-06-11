@@ -86,8 +86,12 @@ def test_search_json_output(env, runner: CliRunner, httpx_mock) -> None:
     assert payload["count"] == len(payload["results"])
     assert payload["count"] > 0
     for r in payload["results"]:
-        assert set(r) == {"name", "brand", "category", "pk_bytes"}
+        assert set(r) == {"name", "brand", "category", "food_id", "pk_bytes"}
         assert len(r["pk_bytes"]) == 16
+        # ``food_id`` is the 32-char lowercase-hex view of ``pk_bytes``.
+        assert isinstance(r["food_id"], str)
+        assert len(r["food_id"]) == 32
+        assert r["food_id"] == r["food_id"].lower()
 
 
 # ── diary ───────────────────────────────────────────────────────────────────

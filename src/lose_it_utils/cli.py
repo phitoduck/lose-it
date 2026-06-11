@@ -47,6 +47,7 @@ from .client._config import (
     measure_name,
 )
 from .client._dates import day_number_for, parse_date_arg
+from .client._ids import hex_to_pk, pk_to_hex
 from .client._settings import DEFAULT_CONFIG_FILE, write_yaml_config
 from .client.auth import (
     DEFAULT_TOKEN_FILE,
@@ -278,12 +279,14 @@ def _print_search_results(results) -> None:
     if not results:
         typer.echo("  No results.")
         return
-    typer.echo(f"\n{'#':>3}  {'Food':50} {'Brand'}")
-    typer.echo(f"{'─' * 3}  {'─' * 50} {'─' * 20}")
+    typer.echo(f"\n{'#':>3}  {'Food':50} {'Brand':20} {'Food ID'}")
+    typer.echo(f"{'─' * 3}  {'─' * 50} {'─' * 20} {'─' * 11}")
     for i, f in enumerate(results[:15]):
         name = (f.name or "")[:50]
         brand = (f.brand or "")[:20]
-        typer.echo(f"{i + 1:>3}  {name:50} {brand}")
+        food_id = pk_to_hex(f.pk_bytes) if len(f.pk_bytes) == 16 else ""
+        food_id_short = f"{food_id[:10]}…" if food_id else ""
+        typer.echo(f"{i + 1:>3}  {name:50} {brand:20} {food_id_short}")
 
 
 def _print_diary(entries_, when: date) -> None:
@@ -368,6 +371,7 @@ def search(
                             "name": r.name,
                             "brand": r.brand,
                             "category": r.category,
+                            "food_id": pk_to_hex(r.pk_bytes),
                             "pk_bytes": list(r.pk_bytes),
                         }
                         for r in results
