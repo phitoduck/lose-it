@@ -450,11 +450,14 @@ def log(
     """Search for a food and log it to a meal."""
     fmt = _output_format(ctx)
     logger.info(
-        "cli.log: query={q!r} meal={m} servings={s} grams={g} pick={p} date={d!r} dry_run={dr}",
+        "cli.log: query={q!r} meal={m} servings={s} grams={g} "
+        "serving_amount={sa} serving_unit={su!r} pick={p} date={d!r} dry_run={dr}",
         q=query,
         m=meal,
         s=servings,
         g=grams,
+        sa=serving_amount,
+        su=serving_unit,
         p=pick,
         d=on_date,
         dr=dry_run,
@@ -466,6 +469,80 @@ def log(
             err=True,
         )
         raise typer.Exit(code=2)
+
+    # ── Upfront flag-validation (cheap; fail before any RPC) ────────────
+    #
+    # The portion-size knobs come in three mutually-exclusive flavors:
+    #   • --servings N             (legacy, default)
+    #   • --grams N                (legacy alias; rewritten to the new pair)
+    #   • --serving-amount + --serving-unit  (new general unit override)
+    # Validate up front so the user gets a clean exit-code-2 before we
+    # spend a search RPC + a getUnsavedFoodLogEntry RPC.
+    sa_set = serving_amount is not None
+    su_set = serving_unit is not None
+    if sa_set != su_set:
+        msg = (
+            "--serving-amount and --serving-unit must be passed together "
+            "(neither is meaningful alone)."
+        )
+        if fmt is OutputFormat.json:
+            _emit_json({"error": "serving_pair_incomplete", "message": msg})
+        else:
+            typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    if sa_set and grams is not None:
+        msg = "--serving-amount / --serving-unit are mutually exclusive with --grams."
+        if fmt is OutputFormat.json:
+            _emit_json({"error": "mutually_exclusive_flags", "message": msg})
+        else:
+            typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    # ``--servings`` defaults to 1.0; treat any non-default value as
+    # explicit. (We can't perfectly distinguish ``--servings 1.0`` from
+    # the default in Typer without a sentinel — fine in practice because
+    # ``--serving-amount=N --serving-unit=u --servings=1.0`` is redundant
+    # anyway.)
+    if sa_set and servings != 1.0:
+        msg = "--serving-amount / --serving-unit are mutually exclusive with --servings."
+        if fmt is OutputFormat.json:
+            _emit_json({"error": "mutually_exclusive_flags", "message": msg})
+        else:
+            typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    if sa_set and serving_amount is not None and serving_amount <= 0:
+        msg = f"--serving-amount must be positive (got {serving_amount})."
+        if fmt is OutputFormat.json:
+            _emit_json({"error": "non_positive_serving_amount", "message": msg})
+        else:
+            typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
+    # Resolve --serving-unit to its ordinal up front (fails before any RPC
+    # for unknown / ambiguous units).
+    chosen_ord: int | None = None
+    if sa_set and serving_unit is not None:
+        try:
+            chosen_ord = resolve_unit(serving_unit)
+        except ValueError as exc:
+            msg = str(exc)
+            if fmt is OutputFormat.json:
+                _emit_json({"error": "unknown_serving_unit", "message": msg})
+            else:
+                typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=2) from exc
+    # Normalise --grams N into the new pair so the rest of the function
+    # has one code path. (--grams N == --serving-amount N --serving-unit g.)
+    if grams is not None:
+        if grams <= 0:
+            msg = f"--grams must be positive (got {grams})."
+            if fmt is OutputFormat.json:
+                _emit_json({"error": "non_positive_grams", "message": msg})
+            else:
+                typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=2)
+        serving_amount = float(grams)
+        chosen_ord = GRAMS_MEASURE_ORDINAL
+        sa_set = True
+
     when = parse_date_arg(on_date)
     with _open_client(ctx) as client:
         results = foods.search(client.http, query)
@@ -479,52 +556,89 @@ def log(
         selected = results[idx]
         unsaved = foods.get_unsaved_food_log_entry(client.http, selected)
 
-        # Resolve servings vs grams. --grams requires the food to be
-        # gram-measured; otherwise log to a different food entry.
+        # ── Resolve the portion-size knob into wire-payload parameters ──
         measure_ord = unsaved.food_measure_ordinal
-        if grams is not None:
-            if measure_ord != GRAMS_MEASURE_ORDINAL:
+        # Override parameters threaded to entries.log_food / _build_log_payload.
+        measure_ord_override: int | None = None
+        quantity_in_chosen_unit: float | None = None
+        conv_factor: float | None = None
+
+        if sa_set and chosen_ord is not None and serving_amount is not None:
+            # --serving-amount / --serving-unit (and legacy --grams, which
+            # we rewrote above). Look up the conversion factor against the
+            # food's native unit; bail if the combination isn't supported.
+            native_ord = measure_ord if measure_ord is not None else 0
+            conv_factor = _conversion_factor(native_ord, chosen_ord)
+            if conv_factor is None:
+                chosen_name = CANONICAL_UNIT_NAMES.get(chosen_ord, serving_unit or "?")
+                native_name = measure_name(measure_ord)
                 msg = (
-                    f"--grams was passed but {selected.name!r} is measured in "
-                    f"'{measure_name(measure_ord)}', not grams. Pick a "
-                    f"gram-measured entry (use --pick after `lose-it search` "
-                    f"to inspect candidates) or drop --grams."
+                    f"{selected.name!r} is measured in {native_name!r}; "
+                    f"the CLI doesn't have a {native_name}→{chosen_name} "
+                    f"conversion factor. Pick a different food entry whose "
+                    f"native unit is {chosen_name}, or use --servings to "
+                    f"log in the food's native unit."
                 )
+                # TODO(serving-unit-spec.md Phase 3): suggest alternatives —
+                # probe the remaining search results for ones whose native
+                # ord converts to ``chosen_ord`` and show a 5-row table.
                 if fmt is OutputFormat.json:
                     _emit_json(
                         {
-                            "error": "not_gram_measured",
+                            "error": "unit_not_supported",
                             "food": selected.name,
-                            "measure_unit": measure_name(measure_ord),
+                            "native_unit": native_name,
+                            "requested_unit": chosen_name,
                             "message": msg,
                         }
                     )
                 else:
                     typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
                 raise typer.Exit(code=2)
-            servings = grams / DEFAULT_SERVING_SIZE_GRAMS
+            # canonical_servings = quantity_in_chosen_unit / factor
+            servings = serving_amount / conv_factor
+            measure_ord_override = chosen_ord
+            quantity_in_chosen_unit = serving_amount
 
         day_num = day_number_for(when)
         meal_ord = MEAL_TYPES[meal]
         per_serving_cal = (unsaved.nutrients or {}).get(0)
         scaled_cal = (per_serving_cal * servings) if per_serving_cal is not None else None
 
-        # The portion size the official Lose It! UI will display next to the
-        # measure-unit name — for grams this is the literal gram count, for
-        # everything else it's the # of servings (= 1 each, 1 serving, …).
-        unit = measure_name(measure_ord)
-        if measure_ord == GRAMS_MEASURE_ORDINAL:
-            portion_size = servings * DEFAULT_SERVING_SIZE_GRAMS
-            portion_str = f"{portion_size:g} {unit}"
+        # ── Display: what we'll tell the user we're logging ─────────────
+        if measure_ord_override is not None and quantity_in_chosen_unit is not None:
+            # Override mode: render in the user's chosen unit.
+            unit = CANONICAL_UNIT_NAMES.get(
+                measure_ord_override, serving_unit or measure_name(measure_ord_override)
+            )
+            portion_size = quantity_in_chosen_unit
+            portion_str = f"{quantity_in_chosen_unit:g} {unit}"
         else:
-            portion_size = servings
-            portion_str = f"{servings:g} {unit}"
+            # Legacy: same logic as before — gram-measured shows grams,
+            # everything else shows servings.
+            unit = measure_name(measure_ord)
+            if measure_ord == GRAMS_MEASURE_ORDINAL:
+                portion_size = servings * DEFAULT_SERVING_SIZE_GRAMS
+                portion_str = f"{portion_size:g} {unit}"
+            else:
+                portion_size = servings
+                portion_str = f"{servings:g} {unit}"
 
         if not dry_run:
             # The day_key lookup is only needed to construct an actual log payload;
             # skip it in dry-run mode so we don't make an unnecessary network call.
             day_key = get_daydate_key(client.http, day_num) or ""
-            entries.log_food(client.http, unsaved, meal_ord, day_key, day_num, servings)
+            entries.log_food(
+                client.http,
+                unsaved,
+                meal_ord,
+                day_key,
+                day_num,
+                servings,
+                measure_ord_override=measure_ord_override,
+                quantity_in_chosen_unit=quantity_in_chosen_unit,
+                conversion_factor=conv_factor,
+            )
 
         if fmt is OutputFormat.json:
             _emit_json(
