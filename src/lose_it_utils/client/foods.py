@@ -6,15 +6,42 @@ candidate foods with their primary keys.
 ``getUnsavedFoodLogEntry`` is the second step before logging — it returns
 the food's serving size + nutrient template, which the client then scales
 by the desired number of servings when posting to ``updateFoodLogEntry``.
+
+Response parsing is delegated to :mod:`lose_it_utils.client._decoder`,
+which walks the GWT TypeSerializer schemas extracted from Lose It!'s
+compiled JS bundle. The schemas encode field order + type for every
+class on the wire, so positional access (``f0``, ``f1``, …) corresponds
+to declaration order in the Java source — no string-length heuristics
+required.
 """
 
 from __future__ import annotations
 
+from typing import Any
+
 from .._logging import logger
 from ._config import Config
-from ._gwt import build_envelope, parse_response, resolve_string
+from ._decoder import decode_response
+from ._gwt import build_envelope
 from ._http import HttpClient
 from ._models import FoodSearchResult, UnsavedFoodLogEntry
+
+# ── Schema field positions ───────────────────────────────────────────────────
+#
+# The schemas in ``_schemas.json`` give us POSITIONAL field types but not
+# semantic names. The mappings below were derived empirically by running
+# real captured responses through ``decode_response`` and pattern-matching
+# the values against what the live Lose It! UI shows. Each mapping is
+# pinned to the FQCN+hash, so a schema change (Lose It! redeploy that
+# alters a class) would invalidate them — but the hash in the FQCN would
+# change too, surfacing the issue at the schema-extraction stage.
+
+_SEARCH_RESULT_FOOD = "com.loseit.core.client.model.search.SearchResultFood/3343986608"
+_SEARCH_RESULTS = "com.loseit.core.client.model.search.SearchResults/1258509077"
+_SIMPLE_PK = "com.loseit.core.client.model.SimplePrimaryKey/3621315060"
+_FOOD_IDENTIFIER = "com.loseit.core.client.model.FoodIdentifier/2763145970"
+_UNSAVED_FOOD_LOG_ENTRY = "com.loseit.core.client.model.FoodLogEntry/264522954"
+
 
 # ── searchFoods ─────────────────────────────────────────────────────────────
 
@@ -40,114 +67,113 @@ def _build_search_payload(config: Config, query: str) -> str:
     return build_envelope(strings, data)
 
 
-def _extract_search_results(
-    tokens: list,
-    string_table: list[str],
+def _walk(root: Any, fqcn_prefix: str | None = None, fqcn: str | None = None):
+    """Yield every dict node in ``root`` whose ``__type__`` matches.
+
+    Either pass an exact ``fqcn`` (full FQCN+hash) or a ``fqcn_prefix``
+    (everything before the ``/<hash>``). Walks lists, dicts, and the
+    ``items`` / ``f*`` slots emitted by the decoder.
+    """
+
+    def match(t: str) -> bool:
+        if fqcn is not None:
+            return t == fqcn
+        if fqcn_prefix is not None:
+            return t.startswith(fqcn_prefix)
+        return False
+
+    if isinstance(root, dict):
+        t = root.get("__type__")
+        if isinstance(t, str) and match(t):
+            yield root
+        for v in root.values():
+            yield from _walk(v, fqcn_prefix, fqcn)
+    elif isinstance(root, list):
+        for v in root:
+            yield from _walk(v, fqcn_prefix, fqcn)
+
+
+def _extract_pk_bytes(pk_field: Any) -> list[int]:
+    """SimplePrimaryKey wraps a raw byte[] in its sole field.
+
+    Returns the bytes as a list of ints in *response order* (which the
+    SDK reverses again when round-tripping to a request payload).
+    """
+    if isinstance(pk_field, list):
+        return [int(b) for b in pk_field]
+    if isinstance(pk_field, dict):
+        # SimplePrimaryKey has f0 = byte[]
+        inner = pk_field.get("f0")
+        if isinstance(inner, list):
+            return [int(b) for b in inner]
+    return []
+
+
+def _extract_search_results_from_decoded(
+    decoded: Any,
     user_name: str = "",
 ) -> list[FoodSearchResult]:
-    """Extract food results from a ``searchFoods`` response.
+    """Walk the decoded LoseItRemoteServiceResponse for SearchResultFood rows.
 
-    Anchors on the per-row delimiter
-    ``[16 (length), [B_ref, SimplePrimaryKey_ref, SearchResultFood_ref]``
-    (in reverse-of-write order, since GWT responses are reversed).
+    The response wraps a ``SearchResults`` whose ``f0`` is an
+    ``ArrayList`` of ``SearchResult`` polymorphic items. We keep only the
+    ``SearchResultFood`` variants — headers (``All Foods`` / ``Previous
+    Meals``) and meal-recall rows are intentionally filtered out.
 
-    ``user_name`` is excluded from the name/brand/category heuristic candidates:
-    the server echoes it back in every response (because we sent it in the
-    request), and for short food names like "Avocado" the username is the
-    longest string in scope, so without this filter ``max(by_len)`` would
-    pick the username as the food name. Pass ``http.config.user_name``.
+    Field positions on SearchResultFood (verified against the schema and
+    live data — order matches the deserializer in the JS bundle):
+
+    - ``f0`` → primary key (SimplePrimaryKey)
+    - ``f1`` → category   (e.g. "Pancakes", "Beverages")
+    - ``f2`` → locale     (typically "en-US"; ignored)
+    - ``f3`` → food name  (the human-friendly label)
+    - ``f4`` → brand      (manufacturer / generic-by-brand)
+    - ``f5`` → verification status (enum; ignored at this layer)
+    - ``f6`` → flag (always observed as 1; ignored)
     """
-    food_type_ref = pk_type_ref = bytes_type_ref = None
-    for i, s in enumerate(string_table):
-        ref = i + 1
-        if "SearchResultFood/" in s:
-            food_type_ref = ref
-        elif "SimplePrimaryKey/" in s:
-            pk_type_ref = ref
-        elif s == "[B/3308590456":
-            bytes_type_ref = ref
-    if not (food_type_ref and pk_type_ref and bytes_type_ref):
-        return []
-
-    delim = [16, bytes_type_ref, pk_type_ref, food_type_ref]
-    ends: list[int] = []
-    for i in range(len(tokens) - 3):
-        if tokens[i : i + 4] == delim:
-            ends.append(i + 3)
-
-    # First entry starts after the first negative-int marker (a GWT idiom).
-    start = 0
-    for i, t in enumerate(tokens[:80]):
-        if isinstance(t, int) and t < 0:
-            start = i + 1
-            break
-
-    foods: list[FoodSearchResult] = []
-    prev = start
-    skip = {"All Foods", "BB", "BQ", "en-US", "I", "Z"}
-    if user_name:
-        # Lose It! tags personally-saved foods with the logging user's
-        # email-local-part as a brand-slot placeholder (e.g. "alice.smith"
-        # for "alice.smith@example.com"). When the configured ``user_name``
-        # is the full email, equality against the placeholder fails and the
-        # placeholder leaks into the search result's brand field. Drop both
-        # the full user_name and its ``@``-prefix to keep that from happening.
-        skip = skip | {user_name, user_name.split("@", 1)[0]}
-    for end in ends:
-        chunk = tokens[prev : end + 1]
-        pk_bytes: list[int] = []
-        if len(chunk) >= 4 + 16:
-            pk_bytes = [int(x) for x in chunk[-(4 + 16) : -4]]
-
-        candidates: list[str] = []
-        for t in chunk:
-            if isinstance(t, int) and 1 <= t <= len(string_table):
-                s = resolve_string(string_table, t)
-                if not s:
-                    continue
-                if s.startswith("com.") or s.startswith("java.") or s.startswith("["):
-                    continue
-                if s in skip:
-                    continue
-                candidates.append(s)
-
-        name = brand = category = ""
-        if candidates:
-            name = max(candidates, key=len)
-            for s in candidates:
-                if len(s) <= 16 and s[0].isupper() and " " not in s and s.lower() != "rich":
-                    category = s
-                    break
-            for s in candidates:
-                if s != name and s != category and 0 < len(s) <= 30:
-                    brand = s
-                    break
-
-        if name and pk_bytes and len(pk_bytes) == 16:
-            foods.append(
-                FoodSearchResult(
-                    name=name,
-                    brand=brand,
-                    category=category,
-                    pk_bytes=pk_bytes,
+    out: list[FoodSearchResult] = []
+    for sr in _walk(decoded, fqcn=_SEARCH_RESULTS):
+        items_holder = sr.get("f0")
+        if not isinstance(items_holder, dict):
+            continue
+        items = items_holder.get("items", [])
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            if item.get("__type__") != _SEARCH_RESULT_FOOD:
+                continue
+            pk_bytes = _extract_pk_bytes(item.get("f0"))
+            name = item.get("f3") or ""
+            brand = item.get("f4") or ""
+            category = item.get("f1") or ""
+            # Lose It! stamps personal-DB foods with the user's email
+            # local-part in the brand slot. Drop it so the brand column
+            # doesn't surface the username in CLI output.
+            if user_name:
+                local_part = user_name.split("@", 1)[0]
+                if brand in (user_name, local_part):
+                    brand = ""
+            if name and len(pk_bytes) == 16:
+                out.append(
+                    FoodSearchResult(
+                        name=name,
+                        brand=brand,
+                        category=category,
+                        pk_bytes=pk_bytes,
+                    )
                 )
-            )
-        prev = end + 1
-    return foods
+        # First SearchResults wins (responses occasionally carry more).
+        break
+    return out
 
 
 def search(http: HttpClient, query: str) -> list[FoodSearchResult]:
     """Search the LoseIt food database. Returns up to ~15 results."""
     logger.info("foods.search: query={q!r}", q=query)
     text = http.post_rpc(_build_search_payload(http.config, query))
-    tokens, strings = parse_response(text)
-    results = _extract_search_results(tokens, strings, user_name=http.config.user_name)
-    logger.debug(
-        "foods.search: parsed {tokens} tokens, {strings} strings, {n} results",
-        tokens=len(tokens),
-        strings=len(strings),
-        n=len(results),
-    )
+    decoded = decode_response(text)
+    results = _extract_search_results_from_decoded(decoded, user_name=http.config.user_name)
+    logger.debug("foods.search: {n} results", n=len(results))
     if not results:
         logger.warning("foods.search: 0 results for query={q!r}", q=query)
     return results
@@ -187,27 +213,18 @@ def _build_unsaved_payload(
     return build_envelope(strings, data)
 
 
-def _parse_unsaved_response(
-    tokens: list,
-    string_table: list[str],
+def _extract_unsaved_from_decoded(
+    decoded: Any,
     user_name: str = "",
 ) -> UnsavedFoodLogEntry:
-    fm_ref = dbl_ref = bytes_ref = pk_ref = serving_size_ref = food_measure_ref = None
-    for i, s in enumerate(string_table):
-        ref = i + 1
-        if "FoodMeasurement/" in s:
-            fm_ref = ref
-        elif s == "java.lang.Double/858496421":
-            dbl_ref = ref
-        elif s == "[B/3308590456":
-            bytes_ref = ref
-        elif "SimplePrimaryKey/" in s:
-            pk_ref = ref
-        elif "FoodServingSize/" in s:
-            serving_size_ref = ref
-        elif "FoodMeasure/" in s:
-            food_measure_ref = ref
+    """Pull the FoodLogEntry template + identifier + nutrients out of a decoded response.
 
+    The unsaved-entry response wraps a ``FoodLogEntry`` whose first
+    field (``f0``) is a ``FoodIdentifier`` carrying the food's
+    name/brand/category and PK. The serving size + measure ordinal live
+    in nested ``FoodServing`` → ``FoodServingSize`` / ``FoodMeasure``
+    objects; nutrients are in a ``HashMap<FoodMeasurement, Double>``.
+    """
     out = UnsavedFoodLogEntry(
         name="",
         brand="",
@@ -216,68 +233,96 @@ def _parse_unsaved_response(
         day_key="",
     )
 
-    skip = {"en-US", "I", "Z", "All Foods", "P__________"}
-    if user_name:
-        # See ``_extract_search_results`` for why we strip the email-local-part
-        # in addition to the full ``user_name``.
-        skip = skip | {user_name, user_name.split("@", 1)[0]}
-    candidates = [
-        s
-        for s in string_table
-        if s
-        and not (s.startswith("com.") or s.startswith("java.") or s.startswith("["))
-        and s not in skip
-    ]
-    if candidates:
-        out.name = max(candidates, key=len)
-        for s in candidates:
-            if len(s) <= 20 and " " not in s and s and s[0].isupper():
-                out.category = s
-                break
-        for s in candidates:
-            if s and s != out.name and s != out.category and len(s) <= 30:
-                out.brand = s
-                break
+    fle = next(_walk(decoded, fqcn=_UNSAVED_FOOD_LOG_ENTRY), None)
+    if fle is None:
+        return out
 
-    for t in tokens:
-        if isinstance(t, str) and len(t) >= 5 and t.startswith("Zw") and t != "P__________":
-            out.day_key = t
-            break
+    identifier = next(_walk(fle, fqcn=_FOOD_IDENTIFIER), None)
+    if identifier is not None:
+        # FoodIdentifier schema: [RAW, STRING, STRING, STRING, STRING,
+        #                        OBJECT, RAW, OBJECT, LONG, OBJECT]
+        # In source order from the deserializer (verified against live
+        # response fixtures):
+        #   f0 → raw int (typically -1)
+        #   f1 → category   (e.g. "Tortilla", "Pancakes")
+        #   f2 → locale     ("en-US"; ignored)
+        #   f3 → name       (canonical display name)
+        #   f4 → brand
+        #   f5 → ProductType enum
+        #   f6 → raw int
+        #   f7 → Verification
+        #   f8 → long (epoch ms; last-modified?)
+        #   f9 → PrimaryKey
+        out.category = identifier.get("f1") or ""
+        out.name = identifier.get("f3") or ""
+        out.brand = identifier.get("f4") or ""
+        pk_obj = identifier.get("f9")
+        if isinstance(pk_obj, dict) and pk_obj.get("__type__") == _SIMPLE_PK:
+            out.food_pk_bytes = _extract_pk_bytes(pk_obj)
 
-    if bytes_ref and pk_ref:
-        pk_positions = []
-        for i in range(16, len(tokens) - 2):
-            if tokens[i] == 16 and tokens[i + 1] == bytes_ref and tokens[i + 2] == pk_ref:
-                maybe = tokens[i - 16 : i]
-                if all(isinstance(x, (int, float)) for x in maybe):
-                    pk_positions.append([int(x) for x in maybe])
-        if len(pk_positions) >= 2:
-            out.food_pk_bytes = pk_positions[1]
-        elif pk_positions:
-            out.food_pk_bytes = pk_positions[0]
+    # day_key: scan all strings in the decoded tree for one shaped like a
+    # GWT short-key starting with "Zw". The schema doesn't tell us which
+    # slot carries it because day_key is a polymorphic Object field.
+    def _scan_for_daykey(o: Any) -> str | None:
+        if isinstance(o, str) and len(o) >= 5 and o.startswith("Zw") and o != "P__________":
+            return o
+        if isinstance(o, dict):
+            for v in o.values():
+                r = _scan_for_daykey(v)
+                if r:
+                    return r
+        elif isinstance(o, list):
+            for v in o:
+                r = _scan_for_daykey(v)
+                if r:
+                    return r
+        return None
 
-    if fm_ref and dbl_ref:
-        for i in range(len(tokens) - 3):
+    daykey = _scan_for_daykey(fle)
+    if daykey:
+        out.day_key = daykey
+
+    # Nutrients: any HashMap whose key is an enum with ordinal 0..30 and
+    # value is a Double.
+    for hm in _walk(decoded, fqcn_prefix="java.util.HashMap"):
+        entries = hm.get("entries")
+        if not isinstance(entries, list):
+            continue
+        for key, val in entries:
             if (
-                tokens[i + 3] == fm_ref
-                and tokens[i + 1] == dbl_ref
-                and isinstance(tokens[i + 2], int)
-                and isinstance(tokens[i], (int, float))
+                isinstance(key, dict)
+                and isinstance(val, (int, float))
+                and "ordinal" in key
+                and isinstance(key["ordinal"], (int, float))
+                and 0 <= int(key["ordinal"]) <= 30
             ):
-                ord_ = int(tokens[i + 2])
-                if 0 <= ord_ <= 30:
-                    out.nutrients[ord_] = float(tokens[i])
+                out.nutrients[int(key["ordinal"])] = float(val)
 
-    if serving_size_ref:
-        for i in range(1, len(tokens)):
-            if tokens[i] == serving_size_ref and isinstance(tokens[i - 1], (int, float)):
-                out.serving_qty = float(tokens[i - 1])
-                break
-    if food_measure_ref:
-        for i in range(1, len(tokens)):
-            if tokens[i] == food_measure_ref and isinstance(tokens[i - 1], int):
-                out.food_measure_ordinal = int(tokens[i - 1])
-                break
+    # Serving qty + measure ordinal: under FoodServing → FoodServingSize / FoodMeasure.
+    serving_size = next(
+        _walk(decoded, fqcn_prefix="com.loseit.core.client.model.FoodServingSize"),
+        None,
+    )
+    if serving_size is not None:
+        # FoodServingSize schema: [DOUBLE, BOOLEAN, OBJECT, DOUBLE, DOUBLE, DOUBLE]
+        # f0 is the quantity (per the deserializer source).
+        qty = serving_size.get("f0")
+        if isinstance(qty, (int, float)):
+            out.serving_qty = float(qty)
+    measure = next(
+        _walk(decoded, fqcn_prefix="com.loseit.core.client.model.FoodMeasure"),
+        None,
+    )
+    if isinstance(measure, dict):
+        # FoodMeasure is an enum; ordinal is in the "ordinal" slot.
+        ord_ = measure.get("ordinal")
+        if isinstance(ord_, (int, float)):
+            out.food_measure_ordinal = int(ord_)
+
+    if user_name:
+        local_part = user_name.split("@", 1)[0]
+        if out.brand in {user_name, local_part}:
+            out.brand = ""
 
     return out
 
@@ -294,8 +339,8 @@ def get_unsaved_food_log_entry(
         c=food.category,
     )
     text = http.post_rpc(_build_unsaved_payload(http.config, food))
-    tokens, strings = parse_response(text)
-    unsaved = _parse_unsaved_response(tokens, strings, user_name=http.config.user_name)
+    decoded = decode_response(text)
+    unsaved = _extract_unsaved_from_decoded(decoded, user_name=http.config.user_name)
     logger.debug(
         "foods.get_unsaved_food_log_entry: measure_ord={mo} serving_qty={sq} "
         "n_nutrients={nn} day_key={dk!r}",
