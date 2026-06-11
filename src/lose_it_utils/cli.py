@@ -40,8 +40,6 @@ from ._logging import configure as _configure_logging
 from ._logging import logger
 from .client import Client, MissingConfigError, daily, entries, foods
 from .client._config import (
-    DEFAULT_SERVING_SIZE_GRAMS,
-    GRAMS_MEASURE_ORDINAL,
     MEAL_NAMES,
     MEAL_TYPES,
     measure_name,
@@ -408,32 +406,21 @@ def log(
         float,
         typer.Option(
             help=(
-                "Number of servings (multiplier on the food's default serving "
-                "size). For gram-measured foods (ord=8) 1 serving = 100 g — "
-                "use --grams instead for a more natural interface."
+                "Number of canonical servings (server-side multiplier on the "
+                "food's per-serving nutrients). Use --serving-amount + "
+                "--serving-unit for unit-based logging (e.g. 61 g, 490 mL)."
             ),
         ),
     ] = 1.0,
-    grams: Annotated[
-        float | None,
-        typer.Option(
-            "--grams",
-            "-g",
-            help=(
-                "Quantity in grams. Only valid when the picked food's measure "
-                "unit is grams; equivalent to --serving-amount <N> "
-                "--serving-unit g."
-            ),
-        ),
-    ] = None,
     serving_amount: Annotated[
         float | None,
         typer.Option(
             "--serving-amount",
             help=(
-                "Quantity in the unit specified by --serving-unit (e.g. "
-                "490 paired with --serving-unit mL). Mutually exclusive with "
-                "--servings / --grams; must be passed together with --serving-unit."
+                "Quantity in the unit specified by --serving-unit (e.g. 490 "
+                "paired with --serving-unit mL, or 61 with --serving-unit g). "
+                "Mutually exclusive with --servings; must be passed together "
+                "with --serving-unit."
             ),
         ),
     ] = None,
@@ -443,7 +430,8 @@ def log(
             "--serving-unit",
             help=(
                 "Display unit for --serving-amount. One of: cup, mL, fl_oz, "
-                "tbsp, g (plus common aliases — see _units.UNIT_ALIASES)."
+                "tbsp, g, scoop, slice, each, serving (plus common aliases — "
+                "see _units.UNIT_ALIASES)."
             ),
         ),
     ] = None,
@@ -476,13 +464,12 @@ def log(
     """Search for a food and log it to a meal."""
     fmt = _output_format(ctx)
     logger.info(
-        "cli.log: query={q!r} food_id={fi!r} meal={m} servings={s} grams={g} "
+        "cli.log: query={q!r} food_id={fi!r} meal={m} servings={s} "
         "serving_amount={sa} serving_unit={su!r} pick={p} date={d!r} dry_run={dr}",
         q=query,
         fi=food_id,
         m=meal,
         s=servings,
-        g=grams,
         sa=serving_amount,
         su=serving_unit,
         p=pick,
@@ -515,10 +502,10 @@ def log(
 
     # ── Portion-size validation ──────────────────────────────────────────
     #
-    # The portion-size knobs come in three mutually-exclusive flavors:
-    #   • --servings N             (legacy, default)
-    #   • --grams N                (legacy alias; rewritten to the new pair)
-    #   • --serving-amount + --serving-unit  (new general unit override)
+    # Two mutually-exclusive ways to express portion size:
+    #   • --servings N                       (raw canonical multiplier)
+    #   • --serving-amount + --serving-unit  (unit-based; computes servings
+    #                                        from the food's stored per-serving qty)
     sa_set = serving_amount is not None
     su_set = serving_unit is not None
     if sa_set != su_set:
@@ -528,13 +515,6 @@ def log(
         )
         if fmt is OutputFormat.json:
             _emit_json({"error": "serving_pair_incomplete", "message": msg})
-        else:
-            typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2)
-    if sa_set and grams is not None:
-        msg = "--serving-amount / --serving-unit are mutually exclusive with --grams."
-        if fmt is OutputFormat.json:
-            _emit_json({"error": "mutually_exclusive_flags", "message": msg})
         else:
             typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2)
@@ -563,17 +543,6 @@ def log(
             else:
                 typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
             raise typer.Exit(code=2) from exc
-    if grams is not None:
-        if grams <= 0:
-            msg = f"--grams must be positive (got {grams})."
-            if fmt is OutputFormat.json:
-                _emit_json({"error": "non_positive_grams", "message": msg})
-            else:
-                typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=2)
-        serving_amount = float(grams)
-        chosen_ord = GRAMS_MEASURE_ORDINAL
-        sa_set = True
 
     when = parse_date_arg(on_date)
     with _open_client(ctx) as client:
@@ -609,21 +578,34 @@ def log(
         unsaved = foods.get_unsaved_food_log_entry(client.http, selected)
 
         # ── Resolve the portion-size knob into wire-payload parameters ──
+        #
+        # The food's getUnsavedFoodLogEntry response carries the per-serving
+        # quantity in its native unit at FoodServingSize.f4 / f3 (verified
+        # across >30 foods). Examples:
+        #   • TJ "8 fl oz" tomato soup: native=fl_oz, f4/f3 = 8.0
+        #   • Built Bar puff:           native=g,     f4/f3 = 40.0
+        #   • Orgain protein scoop:     native=g,     f4/f3 = ~28.0
+        #   • Generic 1-cup soup:       native=cup,   f4/f3 = 1.0
+        #
+        # canonical_servings (sent as f0, what the server multiplies
+        # nutrients by) =
+        #     user_amount_in_chosen_unit
+        #   / ( native_qty_per_serving × cf(native → chosen) )
+        #
+        # The wire's f4 is the chosen-unit qty per canonical serving
+        # (e.g. 236.588 mL per serving when chosen=mL and the food's
+        # per-serving qty in cups is 1 cup). f5 is the user's raw input.
         measure_ord = unsaved.food_measure_ordinal
-        # Override parameters threaded to entries.log_food / _build_log_payload.
         measure_ord_override: int | None = None
         quantity_in_chosen_unit: float | None = None
         conv_factor: float | None = None
 
         if sa_set and chosen_ord is not None and serving_amount is not None:
-            # --serving-amount / --serving-unit (and legacy --grams, which
-            # we rewrote above). Look up the conversion factor against the
-            # food's native unit; bail if the combination isn't supported.
             native_ord = measure_ord if measure_ord is not None else 0
-            conv_factor = _conversion_factor(native_ord, chosen_ord)
-            if conv_factor is None:
+            cf_native_to_chosen = _conversion_factor(native_ord, chosen_ord)
+            if cf_native_to_chosen is None:
                 chosen_name = CANONICAL_UNIT_NAMES.get(chosen_ord, serving_unit or "?")
-                native_name = measure_name(measure_ord)
+                native_name = unsaved.food_measure_unit or measure_name(measure_ord)
                 msg = (
                     f"{selected.name!r} is measured in {native_name!r}; "
                     f"the CLI doesn't have a {native_name}→{chosen_name} "
@@ -631,9 +613,6 @@ def log(
                     f"native unit is {chosen_name}, or use --servings to "
                     f"log in the food's native unit."
                 )
-                # TODO(serving-unit-spec.md Phase 3): suggest alternatives —
-                # probe the remaining search results for ones whose native
-                # ord converts to ``chosen_ord`` and show a 5-row table.
                 if fmt is OutputFormat.json:
                     _emit_json(
                         {
@@ -647,8 +626,15 @@ def log(
                 else:
                     typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
                 raise typer.Exit(code=2)
-            # canonical_servings = quantity_in_chosen_unit / factor
-            servings = serving_amount / conv_factor
+            # The food's per-serving qty in its native unit (f4/f3).
+            # Default to 1.0 if the food's record didn't carry these —
+            # matches the legacy assumption for foods where f4 was absent.
+            f3 = unsaved.canonical_per_serving or 1.0
+            f4 = unsaved.native_qty_per_serving or 1.0
+            native_qty_per_serving = f4 / f3 if f3 else 1.0
+            chosen_qty_per_serving = native_qty_per_serving * cf_native_to_chosen
+            servings = serving_amount / chosen_qty_per_serving
+            conv_factor = chosen_qty_per_serving
             measure_ord_override = chosen_ord
             quantity_in_chosen_unit = serving_amount
 
@@ -659,22 +645,16 @@ def log(
 
         # ── Display: what we'll tell the user we're logging ─────────────
         if measure_ord_override is not None and quantity_in_chosen_unit is not None:
-            # Override mode: render in the user's chosen unit.
             unit = CANONICAL_UNIT_NAMES.get(
                 measure_ord_override, serving_unit or measure_name(measure_ord_override)
             )
             portion_size = quantity_in_chosen_unit
             portion_str = f"{quantity_in_chosen_unit:g} {unit}"
         else:
-            # Legacy: same logic as before — gram-measured shows grams,
-            # everything else shows servings.
-            unit = measure_name(measure_ord)
-            if measure_ord == GRAMS_MEASURE_ORDINAL:
-                portion_size = servings * DEFAULT_SERVING_SIZE_GRAMS
-                portion_str = f"{portion_size:g} {unit}"
-            else:
-                portion_size = servings
-                portion_str = f"{servings:g} {unit}"
+            # --servings mode: render in the food's native unit (with label).
+            unit = unsaved.food_measure_unit or measure_name(measure_ord)
+            portion_size = servings
+            portion_str = f"{servings:g} {unit}"
 
         if not dry_run:
             # The day_key lookup is only needed to construct an actual log payload;

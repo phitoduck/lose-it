@@ -10,11 +10,7 @@ from __future__ import annotations
 import uuid
 
 from .._logging import logger
-from ._config import (
-    DEFAULT_SERVING_SIZE_GRAMS,
-    GRAMS_MEASURE_ORDINAL,
-    Config,
-)
+from ._config import Config
 from ._gwt import build_envelope, fmt_num
 from ._http import HttpClient
 from ._models import FoodLogEntry, UnsavedFoodLogEntry
@@ -127,26 +123,25 @@ def _build_log_payload(
     # native ord.
     measure_ord = measure_ord_override if override_set else native_measure_ord
 
-    # FoodServingSize.quantity (f0) is the literal portion size the
-    # official Lose It! UI renders next to the measure-unit name. Convention:
-    #   • Legacy (no override): for grams (ord=8) the food's "default
-    #     serving" is 100 g, so ``servings=1.2`` (1.2 servings) serializes
-    #     as quantity=120 grams. For every other measure unit the default
-    #     serving is 1 unit, so quantity = servings.
-    #   • Override mode: the caller has already computed
-    #     ``servings = canonical_servings = quantity_in_chosen_unit / factor``
-    #     so we just send ``servings`` straight through. The gram
-    #     special-case does not apply (it's mutually exclusive with the
-    #     override path — ``--grams`` is rewritten into the override form
-    #     with ``unit=g, factor=100, qty=N``).
+    # FoodServingSize.f0/f5 carry the *display* portion size; the
+    # server-side calorie math uses FoodServing.f1 (= ``servings``).
+    #
+    #   • Override mode: caller already computed canonical_servings; f5
+    #     gets the user's raw input in the chosen unit and f4 gets the
+    #     chosen-unit qty per serving (see docstring wire shape).
+    #   • Default mode: render in the food's native unit, scaled by the
+    #     food's stored per-serving qty (``f4/f3`` from the unsaved
+    #     response). E.g. for a Built Bar (40 g/serving) at servings=2,
+    #     portion_size = 80 g; for a cup-stored soup at servings=2,
+    #     portion_size = 2 cups. Falls back to ``servings × 1`` if the
+    #     food didn't carry f4 (unusual; matches old behavior).
     if override_set:
         portion_size = servings
     else:
-        portion_size = (
-            servings * DEFAULT_SERVING_SIZE_GRAMS
-            if native_measure_ord == GRAMS_MEASURE_ORDINAL
-            else servings
-        )
+        f3 = unsaved.canonical_per_serving or 1.0
+        f4 = unsaved.native_qty_per_serving or 1.0
+        per_serving_native = f4 / f3 if f3 else 1.0
+        portion_size = servings * per_serving_native
     servings_str = fmt_num(servings)
     portion_size_str = fmt_num(portion_size)
 

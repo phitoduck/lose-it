@@ -298,13 +298,16 @@ def _extract_unsaved_from_decoded(
                     out.nutrients[int(key["ordinal"])] = float(val)
 
         # FoodServingSize sits at f1 of FoodServing.
+        #
+        # Schema [DOUBLE, BOOLEAN, OBJECT(FoodMeasure), DOUBLE, DOUBLE, DOUBLE].
+        # f0 → suggested-log canonical_servings
+        # f1 → isPrimary
+        # f2 → FoodMeasure (carries the unit ordinal + the unit label)
+        # f3 → food's per-serving canonical denominator (usually 1.0)
+        # f4 → food's per-serving raw quantity in native unit  ← the key field
+        # f5 → suggested-log raw quantity in native unit
         serving_size = food_serving.get("f1")
         if isinstance(serving_size, dict):
-            # FoodServingSize schema [DOUBLE, BOOLEAN, OBJECT, DOUBLE, DOUBLE, DOUBLE].
-            # f0 → serving_qty in the food's native units (1 cup = 1, etc.)
-            # f1 → isPrimary flag (bool)
-            # f2 → FoodMeasure enum (unit ord)
-            # f3, f4, f5 → quantity / multiplier slots (interpretation TBD)
             qty = serving_size.get("f0")
             if isinstance(qty, (int, float)):
                 out.serving_qty = float(qty)
@@ -313,6 +316,15 @@ def _extract_unsaved_from_decoded(
                 ord_ = measure.get("ordinal")
                 if isinstance(ord_, (int, float)):
                     out.food_measure_ordinal = int(ord_)
+                unit = measure.get("unit")
+                if isinstance(unit, str):
+                    out.food_measure_unit = unit
+            f3 = serving_size.get("f3")
+            f4 = serving_size.get("f4")
+            if isinstance(f3, (int, float)):
+                out.canonical_per_serving = float(f3)
+            if isinstance(f4, (int, float)):
+                out.native_qty_per_serving = float(f4)
 
     # day_key: scan all strings in the FLE subtree for a GWT short-key.
     # FoodLogEntryContext carries it as a polymorphic field whose exact

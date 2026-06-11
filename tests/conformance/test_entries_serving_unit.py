@@ -226,9 +226,14 @@ def test_legacy_no_override_unchanged_for_soup() -> None:
     assert "|27|2.07|1|28|3|1|1|2.07|" in body, body[body.find("|27|") : body.find("|27|") + 40]
 
 
-def test_legacy_grams_path_still_gram_special_case() -> None:
-    """Legacy ``--grams`` path: when caller passes servings=1.2 on ord=8
-    food (no override), portion_size should be 120 (= 1.2 × 100)."""
+def test_legacy_servings_path_uses_food_per_serving_qty() -> None:
+    """``--servings 1.2`` on a 100-g-per-serving food emits portion=120 g.
+
+    The portion_size slot (FoodServingSize.f0/f5 on the wire) reflects
+    the food's *own* stored per-serving quantity, not a hardcoded 100 g
+    convention. This food's f4/f3 = 100/1 = 100 g/serving, so 1.2
+    servings = 120 g.
+    """
     config = _test_config()
     chicken = UnsavedFoodLogEntry(
         name="Chicken Strips",
@@ -239,6 +244,8 @@ def test_legacy_grams_path_still_gram_special_case() -> None:
         nutrients={0: 130.0},
         serving_qty=1.0,
         food_measure_ordinal=8,  # grams
+        canonical_per_serving=1.0,
+        native_qty_per_serving=100.0,
     )
 
     body = entries._build_log_payload(
@@ -251,6 +258,39 @@ def test_legacy_grams_path_still_gram_special_case() -> None:
     )
     # FoodServingSize: |27|120|1|28|8|1|1|120|
     assert "|27|120|1|28|8|1|1|120|" in body
+
+
+def test_legacy_servings_path_built_bar_40g_per_serving() -> None:
+    """Smoking-gun regression: a 40-g-per-serving food doesn't fall
+    back to the old 100-g convention.
+
+    Pre-fix: ``--servings 2`` on a Built-Bar-shaped food (40 g/serving)
+    would have shipped portion=200 g — wrong both as a display value and
+    as the raw qty the official UI multiplies for daily totals. Post-fix:
+    portion=80 g, matching the food's own stored f4/f3.
+    """
+    config = _test_config()
+    bar = UnsavedFoodLogEntry(
+        name="Puff Protein Bar",
+        brand="Built",
+        category="Bars",
+        food_pk_bytes=[2] * 16,
+        day_key="Z6mB_lo",
+        nutrients={0: 175.0},
+        serving_qty=1.0,
+        food_measure_ordinal=8,
+        canonical_per_serving=1.0,
+        native_qty_per_serving=40.0,
+    )
+    body = entries._build_log_payload(
+        config,
+        bar,
+        meal_ordinal=3,
+        day_key="Z6mB_lo",
+        day_num=9290,
+        servings=2.0,
+    )
+    assert "|27|80|1|28|8|1|1|80|" in body
 
 
 # ── Defensive checks on the API ─────────────────────────────────────────────

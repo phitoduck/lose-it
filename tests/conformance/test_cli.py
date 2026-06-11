@@ -168,16 +168,12 @@ def test_log_dry_run_does_not_post_update(env, runner: CliRunner, httpx_mock) ->
 
 
 def test_log_grams_rejected_on_non_gram_measured_food(env, runner: CliRunner, httpx_mock) -> None:
-    """--grams errors when the picked food's measure unit isn't grams.
+    """``--serving-unit g`` errors when the food's native unit isn't grams.
 
-    The captured tortilla fixture has ``food_measure_ordinal=27`` (Serving),
-    so trying to use --grams on it should bail out with a helpful message
-    and exit code 2 (config-style failure).
-
-    After the serving-unit refactor, ``--grams N`` is rewritten internally
-    to ``--serving-amount N --serving-unit g``, so the rejection error
-    now flows through the generic ``unit_not_supported`` code path rather
-    than the legacy ``not_gram_measured`` one.
+    The captured tortilla fixture has ``food_measure_ordinal=27`` (Serving).
+    Cross-class conversions (serving↔grams) aren't supported without per-food
+    density data, so the request should bail with ``unit_not_supported``
+    and exit code 2.
     """
     httpx_mock.add_response(
         url=SERVICE_URL,
@@ -198,8 +194,10 @@ def test_log_grams_rejected_on_non_gram_measured_food(env, runner: CliRunner, ht
             "snacks",
             "--pick",
             "1",
-            "--grams",
+            "--serving-amount",
             "100",
+            "--serving-unit",
+            "g",
         ],
     )
     assert result.exit_code == 2, result.output

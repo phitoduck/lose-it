@@ -15,12 +15,17 @@ flag-validation errors instead of silent regex failures.
 
 from __future__ import annotations
 
-# (canonical_ord, chosen_ord) → factor such that
-#   quantity_in_chosen_unit = canonical_servings × factor
-# A diagonal entry (ord, ord) is always 1.0 — included so callers can do
-# the lookup unconditionally.
+# (native_ord, chosen_ord) → factor such that
+#   quantity_in_chosen_unit = quantity_in_native_unit × factor
+#
+# These are unit-only constants (e.g. 1 cup = 236.588 mL). The food's
+# per-serving quantity in its native unit comes from the food's own
+# ``FoodServingSize.f4 / f3`` and is multiplied in by the caller.
+# Same-class (volume↔volume, count↔count) cross-converts; mixed-class
+# (e.g. cup→g) is intentionally absent — without per-food density data
+# the answer is meaningless.
 CONVERSIONS: dict[tuple[int, int], float] = {
-    # cup (3) ↔ volumetric units. 1 US cup = 236.5882365 mL = 8 fl oz = 16 tbsp.
+    # cup (3) ↔ volumetric. 1 US cup = 236.5882365 mL = 8 fl oz = 16 tbsp.
     (3, 3): 1.0,
     (3, 11): 236.5882365,
     (3, 10): 8.0,
@@ -40,10 +45,13 @@ CONVERSIONS: dict[tuple[int, int], float] = {
     (11, 3): 1.0 / 236.5882365,
     (11, 10): 1.0 / 29.5735296875,
     (11, 2): 1.0 / 14.78676478125,
-    # grams (8) — kept as-is to mirror the existing `--grams` flag's
-    # convention that "1 serving = 100 g". This is a *special* case in
-    # the existing CLI (entries.py:103-105); we preserve it intentionally.
-    (8, 8): 100.0,
+    # Discrete units: identity only. Conversions between these (e.g. cup→each
+    # or g→scoop) need per-food data, which we get from FoodServingSize.f4/f3.
+    (8, 8): 1.0,
+    (5, 5): 1.0,
+    (26, 26): 1.0,
+    (27, 27): 1.0,
+    (33, 33): 1.0,
 }
 
 # Case-insensitive aliases that map a user-supplied ``--serving-unit``
@@ -67,6 +75,14 @@ UNIT_ALIASES: dict[str, int] = {
     "g": 8,
     "gram": 8,
     "grams": 8,
+    "each": 5,
+    "ea": 5,
+    "slice": 26,
+    "slices": 26,
+    "serving": 27,
+    "servings": 27,
+    "scoop": 33,
+    "scoops": 33,
     # Deliberately omitted: bare "oz". In cooking it can mean weight ounce
     # (~28.35 g) or fluid ounce (~29.57 mL). The CLI requires the user to
     # spell out "fl_oz" for volume or "g" for weight.
@@ -76,11 +92,15 @@ UNIT_ALIASES: dict[str, int] = {
 # to the user. Used in dry-run output and error messages where we want a
 # stable, lowercase form rather than the verbose ``measure_name`` output.
 CANONICAL_UNIT_NAMES: dict[int, str] = {
-    3: "cup",
-    11: "mL",
-    10: "fl_oz",
     2: "tbsp",
+    3: "cup",
+    5: "each",
     8: "g",
+    10: "fl_oz",
+    11: "mL",
+    26: "slice",
+    27: "serving",
+    33: "scoop",
 }
 
 

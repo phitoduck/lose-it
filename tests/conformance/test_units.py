@@ -95,20 +95,26 @@ def test_conversion_factor_mL_to_cup_reciprocal() -> None:
 
 
 def test_conversion_factor_diagonal_is_one() -> None:
-    """Every (ord, ord) diagonal entry exists and equals 1.0 — except grams,
-    which is the special case described in ``_units.py`` (1 serving = 100 g)."""
-    for ord_ in (3, 11, 10, 2):
+    """Every (ord, ord) diagonal entry exists and equals 1.0.
+
+    Post-fix all units (grams included) are 1.0 on the diagonal —
+    cross-unit conversions are derived by combining these generic
+    factors with the food's stored per-serving qty.
+    """
+    for ord_ in (2, 3, 5, 8, 10, 11, 26, 27, 33):
         assert conversion_factor(ord_, ord_) == 1.0
-    # The grams special case lives in the same table; it's 100.0 by design
-    # (mirrors the existing ``--grams`` flag's "1 serving = 100 g" convention).
-    assert conversion_factor(8, 8) == 100.0
 
 
 def test_conversion_factor_unsupported_pair_is_none() -> None:
-    """Combinations not in the table (e.g. ``serving`` → ``mL``) return None."""
-    # Serving ord (27) has no entries at all.
+    """Cross-class conversions (e.g. ``serving`` → ``mL``) return None.
+
+    No physical answer is possible without per-food density data; the
+    caller exits with ``unit_not_supported`` in this case.
+    """
     assert conversion_factor(27, 11) is None
     assert conversion_factor(5, 8) is None
+    assert conversion_factor(3, 8) is None
+    assert conversion_factor(8, 11) is None
 
 
 # ── Sanity checks on the data tables ────────────────────────────────────────
