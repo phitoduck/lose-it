@@ -842,9 +842,9 @@ The high-level `LoseIt` class wraps the lower-level RPC modules under `lose_it.c
 git clone https://github.com/phitoduck/lose-it
 cd lose-it
 uv sync
-prek install                           # set up pre-commit hooks
-uv run pytest                          # mocked unit tests
-LOSEIT_RUN_FUNCTIONAL=1 uv run pytest  # incl. real-API CRUD
+prek install                       # set up pre-commit hooks
+uv run pytest                      # mocked unit tests (default)
+uv run pytest --run-auth           # incl. real-API CRUD (needs liauth + config)
 ```
 
 ### Package layout
@@ -885,13 +885,13 @@ The `core/` modules mirror the underlying GWT-RPC resources: one module per back
 # Unit tests (mocked httpx, replay captured fixtures) + coverage
 uv run pytest --cov=lose_it --cov-report=term-missing
 
-# Real-API CRUD (requires LOSEIT_RUN_FUNCTIONAL=1 + valid token + config)
-LOSEIT_RUN_FUNCTIONAL=1 uv run pytest tests/functional
+# Real-API CRUD (needs a valid `liauth` JWT + LOSEIT_* config on disk)
+uv run pytest --run-auth tests/functional
 ```
 
-GitHub Actions runs the unit suite + coverage on every push/PR to `main` (Python 3.12, ubuntu-latest); the functional suite is gated on `LOSEIT_RUN_FUNCTIONAL=1` and is **not** run in CI because it needs a real `liauth` JWT on disk.
+Tests that hit the live Lose It! API are marked `@pytest.mark.requires_auth`. They are **skipped by default** — pass `pytest --run-auth` to opt in. GitHub Actions runs the unit suite + coverage on every push/PR to `main` (Python 3.12, ubuntu-latest); the `requires_auth` suite is **not** run in CI because it needs a real `liauth` JWT on disk.
 
-The functional suite is the *source of truth* for the mock fixtures: each CRUD step writes the raw response body to `tests/conformance/fixtures/` (after redacting user_id / username). The unit tests then replay those fixtures through `pytest-httpx` mocks, so the mocked request/response shapes are guaranteed to match what the real Lose It! servers actually emit.
+The `requires_auth` suite is the *source of truth* for the mock fixtures: each CRUD step writes the raw response body to `tests/conformance/fixtures/` (after redacting user_id / username). The unit tests then replay those fixtures through `pytest-httpx` mocks, so the mocked request/response shapes are guaranteed to match what the real Lose It! servers actually emit.
 
 ### Lint, format, secret-scan (prek)
 

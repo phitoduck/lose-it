@@ -14,14 +14,14 @@ along the way; the conformance/unit tests read them back as mock responses.
 The fixtures are sanitized via ``tests/_sanitize.py`` so checking them into a
 public repo doesn't leak the real account's user id / username.
 
-Skipped unless ``LOSEIT_RUN_FUNCTIONAL=1``. Required env: ``LOSEIT_USER_ID``,
-``LOSEIT_USER_NAME``, ``LOSEIT_POLICY_HASH``, ``LOSEIT_STRONG_NAME``,
-``LOSEIT_HOURS_FROM_GMT``, plus a valid token in ``~/.config/loseit/token``.
+Marked ``requires_auth`` — skipped by default; pass ``pytest --run-auth`` to opt in.
+Required env: ``LOSEIT_USER_ID``, ``LOSEIT_USER_NAME``, ``LOSEIT_POLICY_HASH``,
+``LOSEIT_STRONG_NAME``, ``LOSEIT_HOURS_FROM_GMT``, plus a valid token in
+``~/.config/loseit/token``.
 """
 
 from __future__ import annotations
 
-import os
 from datetime import date
 from pathlib import Path
 
@@ -34,7 +34,7 @@ from lose_it.core.init import get_daydate_key
 
 from .._sanitize import sanitize
 
-pytestmark = pytest.mark.functional
+pytestmark = pytest.mark.requires_auth
 
 
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "conformance" / "fixtures"
@@ -43,12 +43,6 @@ FIXTURE_DIR = Path(__file__).resolve().parents[1] / "conformance" / "fixtures"
 def _write_fixture(name: str, payload: str) -> None:
     FIXTURE_DIR.mkdir(parents=True, exist_ok=True)
     (FIXTURE_DIR / name).write_text(sanitize(payload))
-
-
-@pytest.fixture(autouse=True)
-def _gate():
-    if os.environ.get("LOSEIT_RUN_FUNCTIONAL") != "1":
-        pytest.skip("functional test gated on LOSEIT_RUN_FUNCTIONAL=1")
 
 
 def test_full_crud_round_trip(tmp_path: Path) -> None:

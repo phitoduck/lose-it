@@ -1,4 +1,4 @@
-"""Shared pytest fixtures.
+"""Shared pytest fixtures + ``requires_auth`` gating.
 
 Provides:
 
@@ -10,6 +10,13 @@ Provides:
 - ``test_client`` — a :class:`Client` whose httpx transport is mocked via the
   ``pytest-httpx`` ``httpx_mock`` fixture; tests register canned responses to
   ``/web/service`` and assert on what the SDK sends + parses.
+
+Marker gate
+-----------
+Tests that need a live Lose It! account (real ``liauth`` JWT + LOSEIT_* config)
+are marked ``@pytest.mark.requires_auth``. They are skipped by default so the
+default ``pytest`` invocation is hermetic; pass ``--run-auth`` to opt in.
+This replaces the older ``LOSEIT_RUN_FUNCTIONAL=1`` env-var gate.
 """
 
 from __future__ import annotations
@@ -22,6 +29,27 @@ from lose_it import Client
 from lose_it.core._config import Config
 
 FIXTURE_DIR = Path(__file__).parent / "conformance" / "fixtures"
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--run-auth",
+        action="store_true",
+        default=False,
+        help=(
+            "Run tests marked `requires_auth` — these hit the real Lose It! API "
+            "and need a valid `liauth` JWT plus the LOSEIT_* config. Off by default."
+        ),
+    )
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    if config.getoption("--run-auth"):
+        return
+    skip = pytest.mark.skip(reason="needs --run-auth (real Lose It! credentials)")
+    for item in items:
+        if "requires_auth" in item.keywords:
+            item.add_marker(skip)
 
 
 @pytest.fixture

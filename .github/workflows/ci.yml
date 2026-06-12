@@ -1,8 +1,9 @@
 # CI: lint, format-check, secret-scan, unit tests, version check, tag-on-merge.
 #
-# Functional tests under tests/functional/ are NOT run in CI — they hit the
-# real Lose It! API and require a valid `liauth` JWT on disk. They are
-# self-skipping unless `LOSEIT_RUN_FUNCTIONAL=1` is set, which CI never does.
+# Tests under tests/functional/ marked ``@pytest.mark.requires_auth`` are NOT
+# run in CI — they hit the real Lose It! API and need a valid ``liauth`` JWT
+# plus the LOSEIT_* config on disk. They are skipped automatically unless
+# ``pytest --run-auth`` is passed, which CI never does.
 #
 # Version policy: ``version.txt`` is the single source of truth (read by
 # hatchling at build time via ``[tool.hatch.version]`` in pyproject.toml).
@@ -118,7 +119,10 @@ jobs:
               - 'uv.lock'
               - '.github/workflows/ci.yml'
 
-      - name: pytest (unit tests + coverage, no functional)
+      # ``requires_auth`` tests self-skip without ``--run-auth`` (see
+      # tests/conftest.py). CI never passes ``--run-auth``, so the live-API
+      # suite is skipped without any explicit flag here.
+      - name: pytest (unit tests + coverage)
         if: github.event_name == 'push' || steps.paths.outputs.code == 'true'
         run: |
           uv run pytest \

@@ -4,7 +4,7 @@ These tests invoke the actual ``loseit`` Typer app via :class:`CliRunner`
 and confirm that the resolved config (printed by ``whoami``) matches the
 expected layering. No real API is touched — ``whoami`` only reads
 config; it does not hit the backend — so these tests run unconditionally,
-unlike the GWT-RPC functional tests gated on ``LOSEIT_RUN_FUNCTIONAL=1``.
+unlike the GWT-RPC tests marked ``requires_auth`` (skipped without ``--run-auth``).
 """
 
 from __future__ import annotations

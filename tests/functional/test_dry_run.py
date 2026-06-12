@@ -7,13 +7,12 @@ Confirms that:
 2. Running ``delete --dry-run`` against the real API does NOT remove
    anything from the diary, even when there's a real entry to target.
 
-Skipped unless ``LOSEIT_RUN_FUNCTIONAL=1``. Requires the same env vars +
-token as the rest of the functional suite.
+Marked ``requires_auth`` — skipped by default; pass ``pytest --run-auth`` to opt in.
+Requires the same env vars + token as the rest of the requires_auth suite.
 """
 
 from __future__ import annotations
 
-import os
 from datetime import date
 
 import pytest
@@ -23,13 +22,7 @@ from lose_it import Client
 from lose_it.cli import app
 from lose_it.core import daily
 
-pytestmark = pytest.mark.functional
-
-
-@pytest.fixture(autouse=True)
-def _gate() -> None:
-    if os.environ.get("LOSEIT_RUN_FUNCTIONAL") != "1":
-        pytest.skip("functional test gated on LOSEIT_RUN_FUNCTIONAL=1")
+pytestmark = pytest.mark.requires_auth
 
 
 def _diary_size(when: date) -> int:

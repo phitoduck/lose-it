@@ -49,7 +49,7 @@ dev = [
 
 [tool.pytest.ini_options]
 markers = [
-    "functional: hits the real Lose It! API; requires LOSEIT_RUN_FUNCTIONAL=1 + valid token",
+    "requires_auth: hits the real Lose It! API; needs a valid `liauth` JWT and the LOSEIT_* config. Skipped unless `pytest --run-auth` is passed.",
 ]
 testpaths = ["tests"]
 
