@@ -286,7 +286,7 @@ The levels, from loudest to quietest:
 
 | Level | What you get |
 |---|---|
-| `trace` | Full HTTP request + response dumps: URL, every header, both auth cookies, full GWT-RPC body for each direction. |
+| `trace` | Full HTTP request + response dumps: URL, full GWT-RPC body for each direction. Headers + auth cookies are **suppressed by default** — pass `--log-headers` to include them. |
 | `debug` | One-liner per RPC (`rpc <method>: POST <url> → <status> in Xms`), payload sizes, parser intermediates. |
 | `info` | High-level events: CLI command + args, search queries, food lookups, log/delete intent, resolved user. |
 | `success` | Mutating RPCs that returned `//OK`. |
