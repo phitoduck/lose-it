@@ -49,8 +49,8 @@ def _decode_toon(output: str) -> dict:
 
 def test_whoami_toon_output(env, runner: CliRunner) -> None:
     """``-o toon whoami`` decodes back to the same payload as ``-o json``."""
-    json_result = runner.invoke(app, ["-o", "json", "whoami"])
-    toon_result = runner.invoke(app, ["-o", "toon", "whoami"])
+    json_result = runner.invoke(app, ["whoami", "-o", "json"])
+    toon_result = runner.invoke(app, ["whoami", "-o", "toon"])
     assert toon_result.exit_code == 0, toon_result.output
     assert _decode_toon(toon_result.output) == json.loads(json_result.output)
 
@@ -62,7 +62,7 @@ def test_whoami_toon_is_not_json(env, runner: CliRunner) -> None:
     to ``json.dumps`` (which would still parse cleanly but defeats the
     purpose of the flag).
     """
-    result = runner.invoke(app, ["-o", "toon", "whoami"])
+    result = runner.invoke(app, ["whoami", "-o", "toon"])
     assert result.exit_code == 0
     # TOON does not wrap top-level objects in braces.
     assert not result.output.lstrip().startswith("{")
@@ -83,8 +83,8 @@ def test_search_toon_output(env, runner: CliRunner, httpx_mock) -> None:
         url=SERVICE_URL,
         text=(FIXTURES / "search_foods_tortilla.txt").read_text(),
     )
-    json_result = runner.invoke(app, ["-o", "json", "search", "tortilla"])
-    toon_result = runner.invoke(app, ["-o", "toon", "search", "tortilla"])
+    json_result = runner.invoke(app, ["search", "tortilla", "-o", "json"])
+    toon_result = runner.invoke(app, ["search", "tortilla", "-o", "toon"])
     assert toon_result.exit_code == 0, toon_result.output
     decoded = _decode_toon(toon_result.output)
     assert decoded == json.loads(json_result.output)
@@ -109,8 +109,8 @@ def test_search_toon_is_more_compact_than_json(env, runner: CliRunner, httpx_moc
         url=SERVICE_URL,
         text=(FIXTURES / "search_foods_tortilla.txt").read_text(),
     )
-    json_result = runner.invoke(app, ["-o", "json", "search", "tortilla"])
-    toon_result = runner.invoke(app, ["-o", "toon", "search", "tortilla"])
+    json_result = runner.invoke(app, ["search", "tortilla", "-o", "json"])
+    toon_result = runner.invoke(app, ["search", "tortilla", "-o", "toon"])
     assert json_result.exit_code == 0 and toon_result.exit_code == 0
     j, t = len(json_result.output), len(toon_result.output)
     assert t < j * 0.75, f"TOON ({t} chars) is not <75% of JSON ({j} chars)"
@@ -131,8 +131,8 @@ def test_diary_toon_output(env, runner: CliRunner, httpx_mock) -> None:
             url=SERVICE_URL,
             text=(FIXTURES / "get_daily_details_with_tortilla.txt").read_text(),
         )
-    json_result = runner.invoke(app, ["-o", "json", "diary", "--date", "2026-06-08"])
-    toon_result = runner.invoke(app, ["-o", "toon", "diary", "--date", "2026-06-08"])
+    json_result = runner.invoke(app, ["diary", "--date", "2026-06-08", "-o", "json"])
+    toon_result = runner.invoke(app, ["diary", "--date", "2026-06-08", "-o", "toon"])
     assert toon_result.exit_code == 0, toon_result.output
     assert _decode_toon(toon_result.output) == json.loads(json_result.output)
 
@@ -153,8 +153,6 @@ def test_log_dry_run_toon_does_not_post_update(env, runner: CliRunner, httpx_moc
     result = runner.invoke(
         app,
         [
-            "-o",
-            "toon",
             "log",
             "tortilla",
             "--meal",
@@ -164,6 +162,8 @@ def test_log_dry_run_toon_does_not_post_update(env, runner: CliRunner, httpx_moc
             "--servings",
             "1",
             "--dry-run",
+            "-o",
+            "toon",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -182,7 +182,7 @@ def test_log_missing_food_id_and_query_toon_exits_2(env, runner: CliRunner) -> N
     """Error payloads render as TOON on validation failures."""
     result = runner.invoke(
         app,
-        ["-o", "toon", "log", "--meal", "snacks", "--servings", "1"],
+        ["log", "--meal", "snacks", "--servings", "1", "-o", "toon"],
     )
     assert result.exit_code == 2, result.output
     payload = _decode_toon(result.output)
@@ -205,14 +205,14 @@ def test_delete_dry_run_toon_does_not_post_delete(env, runner: CliRunner, httpx_
     result = runner.invoke(
         app,
         [
-            "-o",
-            "toon",
             "delete",
             "--meal",
             "snacks",
             "--pick",
             "1",
             "--dry-run",
+            "-o",
+            "toon",
         ],
     )
     assert result.exit_code == 0, result.output

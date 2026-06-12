@@ -58,7 +58,7 @@ def test_version_flag_text(runner: CliRunner, expected_version: str) -> None:
 
 def test_version_subcommand_json(runner: CliRunner, expected_version: str) -> None:
     """`--output json version` emits a structured envelope."""
-    result = runner.invoke(app, ["--output", "json", "version"])
+    result = runner.invoke(app, ["version", "--output", "json"])
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     assert payload == {

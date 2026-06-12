@@ -97,7 +97,7 @@ A messier, real-world prompt. Fuzzy quantities, a guessed-at sauce, "a few bites
 
 ```bash
 $ uv tool install --reinstall git+https://github.com/phitoduck/lose-it
-$ loseit -o toon diary
+$ loseit diary -o toon
 ```
 ```text
 date: 2026-06-12
@@ -108,7 +108,7 @@ entries[0]:
 Diary for system-today is empty — but the user said they have duplicates "today". Server-side date (UTC) likely ahead of the user's local "today". Re-checked the day before:
 
 ```bash
-$ loseit -o toon diary --date 2026-06-11
+$ loseit diary --date 2026-06-11 -o toon
 ```
 ```text
 date: 2026-06-11
@@ -157,17 +157,17 @@ $ loseit delete --meal snacks --pick 5 --date 2026-06-11 --yes
 #### 4. Search → describe-food → sanity-check calories
 
 ```bash
-$ loseit -o toon search "edamame"
-$ loseit -o toon search "ahi tuna"
-$ loseit -o toon search "imitation crab"
-$ loseit -o toon search "spicy mayo"
-$ loseit -o toon search "corn"
+$ loseit search "edamame" -o toon
+$ loseit search "ahi tuna" -o toon
+$ loseit search "imitation crab" -o toon
+$ loseit search "spicy mayo" -o toon
+$ loseit search "corn" -o toon
 ```
 
 Picked top 3-4 candidates per food and inspected them in one batched call each (`describe-food` runs concurrent fetches):
 
 ```bash
-$ loseit -o toon describe-food <id1> <id2> <id3>
+$ loseit describe-food <id1> <id2> <id3> -o toon
 ```
 ```text
 foods[3]:
@@ -229,7 +229,7 @@ $ loseit log --food-id e608… -m snacks --date 2026-06-11 --serving-amount 19 -
 ✅ Logged Corn, Sweet, Kernels (id e608…) → snacks 19 g (16 cal)
 ```
 
-Poke bowl total: **520 cal**. Verified via `loseit -o toon diary --date 2026-06-11` — `food_measure_unit` and `nutrients_by_label.calories` matched the dry-run on every entry.
+Poke bowl total: **520 cal**. Verified via `loseit diary --date 2026-06-11 -o toon` — `food_measure_unit` and `nutrients_by_label.calories` matched the dry-run on every entry.
 
 </details>
 
@@ -455,7 +455,7 @@ Inspect one or more foods by ID; emits labeled nutrient + cross-class conversion
 **Bash:**
 
 ```bash
-$ loseit -o json describe-food 4465349443cea79c404de42baac3b73e c5d8f3b75e3045f0a98c7c7f5f4d9d6a
+$ loseit describe-food 4465349443cea79c404de42baac3b73e c5d8f3b75e3045f0a98c7c7f5f4d9d6a -o json
 ```
 
 **Output:**
@@ -527,14 +527,14 @@ strong_name    : 351AE5DC0CA36AD3BA9C7CBA7B0E07B8
 <details>
 <summary>click to view details...</summary>
 
-Every subcommand accepts a global `--output` (alias `-o`) flag. The default is `text`; pass `json` to get a JSON document on stdout suitable for piping into `jq`.
+Every subcommand accepts a global `--output` (alias `-o`) flag, placed *after* the subcommand name (AWS-CLI style). The default is `text`; pass `json` to get a JSON document on stdout suitable for piping into `jq`.
 
 </details>
 
 **Bash:**
 
 ```bash
-$ loseit -o json diary --date 2026-06-08 | jq '.entries[] | .food_name'
+$ loseit diary --date 2026-06-08 -o json | jq '.entries[] | .food_name'
 ```
 
 **Output:**
@@ -555,7 +555,7 @@ Diary entries include a `nutrients_by_label` field that maps the food's nutrient
 **Bash:**
 
 ```bash
-$ loseit -o json diary | jq '.entries[0] | {food_name, food_measure_unit, servings, nutrients_by_label}'
+$ loseit diary -o json | jq '.entries[0] | {food_name, food_measure_unit, servings, nutrients_by_label}'
 ```
 
 **Output:**
@@ -585,7 +585,7 @@ Pass `toon` to render the same payload as [Token-Oriented Object Notation](https
 **Bash:**
 
 ```bash
-$ lose-it -o toon search "tortilla"
+$ lose-it search "tortilla" -o toon
 ```
 
 **Output:**
@@ -669,7 +669,7 @@ The levels, from loudest to quietest:
 **Bash:**
 
 ```bash
-$ loseit --log-level info search "tortilla" 1>/dev/null
+$ loseit search "tortilla" --log-level info 1>/dev/null
 ```
 
 **Output:**
@@ -691,7 +691,7 @@ $ loseit --log-level info search "tortilla" 1>/dev/null
 **Bash:**
 
 ```bash
-$ loseit --log-level trace search "avocado" 1>/dev/null
+$ loseit search "avocado" --log-level trace 1>/dev/null
 ```
 
 **Output:**
@@ -718,7 +718,7 @@ HTTP/1.1 200 (188.4 ms)
 **Bash:**
 
 ```bash
-$ loseit --log-file ~/loseit-session.log diary
+$ loseit diary --log-file ~/loseit-session.log
 $ grep -E "rpc.*OK" ~/loseit-session.log
 ```
 
@@ -742,7 +742,7 @@ The Quickstart used env vars because they're the fastest path. For anything more
 
 ### Priority (highest wins)
 
-1. **CLI flag** — e.g. `loseit --user-id 12345678 whoami`
+1. **CLI flag** — e.g. `loseit whoami --user-id 12345678` (global flags go *after* the subcommand)
 2. **`LOSEIT_*` env var** — e.g. `LOSEIT_USER_ID=…`
 3. **YAML file** — default path `~/.config/loseit/config.yaml`
    (override with `--config-file` or `LOSEIT_CONFIG_FILE`)

@@ -51,7 +51,7 @@ def test_whoami_text_default(env, runner: CliRunner) -> None:
 
 
 def test_whoami_json_output(env, runner: CliRunner) -> None:
-    result = runner.invoke(app, ["--output", "json", "whoami"])
+    result = runner.invoke(app, ["whoami", "--output", "json"])
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     assert payload == {
@@ -65,7 +65,7 @@ def test_whoami_json_output(env, runner: CliRunner) -> None:
 
 def test_whoami_short_o_alias(env, runner: CliRunner) -> None:
     """``-o`` is an alias for ``--output``."""
-    result = runner.invoke(app, ["-o", "json", "whoami"])
+    result = runner.invoke(app, ["whoami", "-o", "json"])
     assert result.exit_code == 0
     json.loads(result.output)  # raises if malformed
 
@@ -78,7 +78,7 @@ def test_search_json_output(env, runner: CliRunner, httpx_mock) -> None:
         url=SERVICE_URL,
         text=(FIXTURES / "search_foods_tortilla.txt").read_text(),
     )
-    result = runner.invoke(app, ["-o", "json", "search", "tortilla"])
+    result = runner.invoke(app, ["search", "tortilla", "-o", "json"])
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     assert payload["query"] == "tortilla"
@@ -101,7 +101,7 @@ def test_search_json_output_verbose_includes_pk_bytes(env, runner: CliRunner, ht
         url=SERVICE_URL,
         text=(FIXTURES / "search_foods_tortilla.txt").read_text(),
     )
-    result = runner.invoke(app, ["-o", "json", "search", "tortilla", "-v"])
+    result = runner.invoke(app, ["search", "tortilla", "-v", "-o", "json"])
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     for r in payload["results"]:
@@ -122,7 +122,7 @@ def test_diary_json_output(env, runner: CliRunner, httpx_mock) -> None:
         url=SERVICE_URL,
         text=(FIXTURES / "get_daily_details_with_tortilla.txt").read_text(),
     )
-    result = runner.invoke(app, ["-o", "json", "diary", "--date", "2026-06-08"])
+    result = runner.invoke(app, ["diary", "--date", "2026-06-08", "-o", "json"])
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     assert payload["date"] == "2026-06-08"
@@ -151,8 +151,6 @@ def test_log_dry_run_does_not_post_update(env, runner: CliRunner, httpx_mock) ->
     result = runner.invoke(
         app,
         [
-            "-o",
-            "json",
             "log",
             "tortilla",
             "--meal",
@@ -162,6 +160,8 @@ def test_log_dry_run_does_not_post_update(env, runner: CliRunner, httpx_mock) ->
             "--servings",
             "1",
             "--dry-run",
+            "-o",
+            "json",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -193,8 +193,6 @@ def test_log_serving_amount_requires_serving_unit(env, runner: CliRunner) -> Non
     result = runner.invoke(
         app,
         [
-            "-o",
-            "json",
             "log",
             "tortilla",
             "--meal",
@@ -204,6 +202,8 @@ def test_log_serving_amount_requires_serving_unit(env, runner: CliRunner) -> Non
             "--serving-amount",
             "100",
             # NOTE: no --serving-unit
+            "-o",
+            "json",
         ],
     )
     assert result.exit_code == 2, result.output
@@ -230,8 +230,6 @@ def test_log_grams_rejected_on_non_gram_measured_food(env, runner: CliRunner, ht
     result = runner.invoke(
         app,
         [
-            "-o",
-            "json",
             "log",
             "tortilla",
             "--meal",
@@ -242,6 +240,8 @@ def test_log_grams_rejected_on_non_gram_measured_food(env, runner: CliRunner, ht
             "100",
             "--serving-unit",
             "g",
+            "-o",
+            "json",
         ],
     )
     assert result.exit_code == 2, result.output
@@ -275,7 +275,7 @@ def test_log_real_run_does_post_update(env, runner: CliRunner, httpx_mock) -> No
     )
     result = runner.invoke(
         app,
-        ["-o", "json", "log", "tortilla", "--meal", "lunch", "--pick", "1"],
+        ["log", "tortilla", "--meal", "lunch", "--pick", "1", "-o", "json"],
     )
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
@@ -300,14 +300,14 @@ def test_delete_dry_run_does_not_post_delete(env, runner: CliRunner, httpx_mock)
     result = runner.invoke(
         app,
         [
-            "-o",
-            "json",
             "delete",
             "--meal",
             "snacks",
             "--pick",
             "1",
             "--dry-run",
+            "-o",
+            "json",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -341,7 +341,7 @@ def test_delete_real_run_does_post_delete(env, runner: CliRunner, httpx_mock) ->
     )
     result = runner.invoke(
         app,
-        ["-o", "json", "delete", "--meal", "snacks", "--pick", "1", "--yes"],
+        ["delete", "--meal", "snacks", "--pick", "1", "--yes", "-o", "json"],
     )
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
@@ -373,8 +373,6 @@ def test_log_with_food_id_dry_run(env, runner: CliRunner, httpx_mock) -> None:
     result = runner.invoke(
         app,
         [
-            "-o",
-            "json",
             "log",
             "--food-id",
             _VALID_FOOD_ID,
@@ -383,6 +381,8 @@ def test_log_with_food_id_dry_run(env, runner: CliRunner, httpx_mock) -> None:
             "--servings",
             "1",
             "--dry-run",
+            "-o",
+            "json",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -436,13 +436,13 @@ def test_log_food_id_invalid_hex_exits_2(env, runner: CliRunner) -> None:
     result = runner.invoke(
         app,
         [
-            "-o",
-            "json",
             "log",
             "--food-id",
             "NOTHEXNOTHEXNOTHEXNOTHEXNOTHEX!!",
             "--meal",
             "snacks",
+            "-o",
+            "json",
         ],
     )
     assert result.exit_code == 2, result.output
@@ -454,7 +454,7 @@ def test_log_food_id_wrong_length_exits_2(env, runner: CliRunner) -> None:
     """Hex strings of the wrong length are rejected with exit code 2."""
     result = runner.invoke(
         app,
-        ["-o", "json", "log", "--food-id", "9eba", "--meal", "snacks"],
+        ["log", "--food-id", "9eba", "--meal", "snacks", "-o", "json"],
     )
     assert result.exit_code == 2, result.output
     payload = json.loads(result.output)
@@ -465,7 +465,7 @@ def test_log_food_id_mutually_exclusive_with_query(env, runner: CliRunner) -> No
     """Passing both --food-id and a positional query exits 2."""
     result = runner.invoke(
         app,
-        ["-o", "json", "log", "tortilla", "--food-id", _VALID_FOOD_ID, "--meal", "snacks"],
+        ["log", "tortilla", "--food-id", _VALID_FOOD_ID, "--meal", "snacks", "-o", "json"],
     )
     assert result.exit_code == 2, result.output
     payload = json.loads(result.output)
@@ -477,8 +477,6 @@ def test_log_food_id_mutually_exclusive_with_pick(env, runner: CliRunner) -> Non
     result = runner.invoke(
         app,
         [
-            "-o",
-            "json",
             "log",
             "--food-id",
             _VALID_FOOD_ID,
@@ -486,6 +484,8 @@ def test_log_food_id_mutually_exclusive_with_pick(env, runner: CliRunner) -> Non
             "1",
             "--meal",
             "snacks",
+            "-o",
+            "json",
         ],
     )
     assert result.exit_code == 2, result.output
@@ -497,7 +497,7 @@ def test_log_missing_food_id_and_query_exits_2(env, runner: CliRunner) -> None:
     """Passing neither --food-id nor a positional query exits 2."""
     result = runner.invoke(
         app,
-        ["-o", "json", "log", "--meal", "snacks", "--servings", "1"],
+        ["log", "--meal", "snacks", "--servings", "1", "-o", "json"],
     )
     assert result.exit_code == 2, result.output
     payload = json.loads(result.output)
@@ -528,7 +528,7 @@ def test_log_food_id_real_run_posts_update(env, runner: CliRunner, httpx_mock) -
     )
     result = runner.invoke(
         app,
-        ["-o", "json", "log", "--food-id", _VALID_FOOD_ID, "--meal", "snacks"],
+        ["log", "--food-id", _VALID_FOOD_ID, "--meal", "snacks", "-o", "json"],
     )
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)

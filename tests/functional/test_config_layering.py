@@ -66,7 +66,7 @@ strong_name: YAML_STRONG_NAME_PADDING_ABCDEFGH
     )
     result = runner.invoke(
         app,
-        ["--config-file", str(yaml_file), "-o", "json", "whoami"],
+        ["whoami", "--config-file", str(yaml_file), "-o", "json"],
     )
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
@@ -96,7 +96,7 @@ hours_from_gmt: 0
     monkeypatch.setenv("LOSEIT_USER_NAME", "env-user")
     result = runner.invoke(
         app,
-        ["--config-file", str(yaml_file), "-o", "json", "whoami"],
+        ["whoami", "--config-file", str(yaml_file), "-o", "json"],
     )
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
@@ -127,6 +127,7 @@ policy_hash: YAML_POLICY
     result = runner.invoke(
         app,
         [
+            "whoami",
             "--config-file",
             str(yaml_file),
             "--user-name",
@@ -135,7 +136,6 @@ policy_hash: YAML_POLICY
             "CLI_POLICY",
             "-o",
             "json",
-            "whoami",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -163,7 +163,7 @@ hours_from_gmt: -2
 """,
     )
     monkeypatch.setenv("LOSEIT_CONFIG_FILE", str(yaml_file))
-    result = runner.invoke(app, ["-o", "json", "whoami"])
+    result = runner.invoke(app, ["whoami", "-o", "json"])
     assert result.exit_code == 0, result.output
     payload = json.loads(result.output)
     assert payload["user_id"] == "via-env"
@@ -202,6 +202,7 @@ def test_all_required_via_cli_flags_only(
     result = runner.invoke(
         app,
         [
+            "whoami",
             "--user-id",
             "cli-only",
             "--user-name",
@@ -210,7 +211,6 @@ def test_all_required_via_cli_flags_only(
             "-1",
             "-o",
             "json",
-            "whoami",
         ],
     )
     assert result.exit_code == 0, result.output

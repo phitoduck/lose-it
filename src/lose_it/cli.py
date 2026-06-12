@@ -21,7 +21,11 @@ Subcommands::
     loseit login                                          Import liauth from browser cookies
     loseit whoami                                         Print resolved config
 
-Two global options are honored by every subcommand:
+Global options are honored by every subcommand and — AWS-CLI style —
+must appear *after* the subcommand name (e.g. ``loseit search "foo" -o json``,
+not ``loseit -o json search "foo"``). They're injected via the
+``_global_options`` decorator below so the per-flag definitions live in
+one place rather than being duplicated on every subcommand:
 
 - ``--output text|json|toon`` (alias ``-o``) — emit either the default
   human-friendly text, a JSON document suitable for piping into ``jq``, or a
@@ -41,12 +45,14 @@ from __future__ import annotations
 
 import asyncio
 import enum
+import functools
+import inspect
 import json
 import webbrowser
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Callable, TypeVar
 
 import toon_format
 import typer
@@ -188,133 +194,194 @@ def _root(
             is_eager=True,
         ),
     ] = False,
-    output: Annotated[
-        OutputFormat,
-        typer.Option(
-            "--output",
-            "-o",
-            help="Output format. `text` (default) is human-friendly; "
-            "`json` emits a script-friendly JSON document on stdout; "
-            "`toon` emits the same data as Token-Oriented Object Notation, "
-            "a compact JSON-equivalent that uses ~40-60% fewer LLM tokens.",
-        ),
-    ] = OutputFormat.text,
-    config_file: Annotated[
-        Path | None,
-        typer.Option(
-            "--config-file",
-            help=(
-                "Path to the YAML config file. Default: "
-                "~/.config/loseit/config.yaml. Also overridable via "
-                "LOSEIT_CONFIG_FILE."
-            ),
-        ),
-    ] = None,
-    user_id: Annotated[
-        str | None,
-        typer.Option(
-            "--user-id",
-            help='Override LOSEIT_USER_ID / YAML "user_id".',
-        ),
-    ] = None,
-    user_name: Annotated[
-        str | None,
-        typer.Option(
-            "--user-name",
-            help='Override LOSEIT_USER_NAME / YAML "user_name".',
-        ),
-    ] = None,
-    hours_from_gmt: Annotated[
-        int | None,
-        typer.Option(
-            "--hours-from-gmt",
-            help='Override LOSEIT_HOURS_FROM_GMT / YAML "hours_from_gmt".',
-        ),
-    ] = None,
-    policy_hash: Annotated[
-        str | None,
-        typer.Option(
-            "--policy-hash",
-            help='Override LOSEIT_POLICY_HASH / YAML "policy_hash".',
-        ),
-    ] = None,
-    strong_name: Annotated[
-        str | None,
-        typer.Option(
-            "--strong-name",
-            help='Override LOSEIT_STRONG_NAME / YAML "strong_name".',
-        ),
-    ] = None,
-    log_level: Annotated[
-        LogLevel | None,
-        typer.Option(
-            "--log-level",
-            help=(
-                "Verbosity for logs emitted on stderr. Default: muted. "
-                "`trace` dumps every GWT-RPC request + response, including "
-                "headers, cookies, and full payloads — useful for mapping "
-                "the API surface. `debug` keeps one-liners per call; `info` "
-                "logs high-level CLI events only."
-            ),
-            envvar="LOSEIT_LOG_LEVEL",
-        ),
-    ] = None,
-    log_file: Annotated[
-        Path | None,
-        typer.Option(
-            "--log-file",
-            help=(
-                "Write a full TRACE-level log of the session to this file. "
-                "Captures every request and response payload regardless of "
-                "the console --log-level — designed for offline analysis "
-                "and reverse-engineering."
-            ),
-            envvar="LOSEIT_LOG_FILE",
-        ),
-    ] = None,
-    log_headers: Annotated[
-        bool,
-        typer.Option(
-            "--log-headers/--no-log-headers",
-            help=(
-                "Include the request/response header + cookie sections in "
-                "TRACE-level HTTP dumps. Off by default to save space — the "
-                "JWT cookie alone is ~600 bytes per call. Turn on when "
-                "investigating a header-/cookie-specific issue."
-            ),
-            envvar="LOSEIT_LOG_HEADERS",
-        ),
-    ] = False,
 ) -> None:
     """Set up the per-invocation context.
 
-    The global config flags here form the highest-priority layer
-    (CLI > env > YAML > defaults). Only flags the user explicitly passes
-    are forwarded to ``Config.from_env`` so that unset flags do not shadow
-    lower-priority sources.
+    Shared flags (``--output``, ``--user-id``, ``--log-level``, …) used to
+    live here but were moved to every subcommand via the
+    :func:`_global_options` decorator so users can put them *after* the
+    subcommand name (AWS-CLI style). The root callback now only holds the
+    eager ``--version`` flag.
     """
-    _configure_logging(
-        level=log_level.value if log_level is not None else None,
-        log_file=log_file,
-        log_headers=log_headers,
-    )
-    if log_level is not None or log_file is not None:
-        logger.debug(
-            "cli invoked: command={cmd!r} log_level={lvl} log_file={lf}",
-            cmd=ctx.invoked_subcommand,
-            lvl=log_level.value if log_level else None,
-            lf=str(log_file) if log_file else None,
-        )
     ctx.ensure_object(dict)
-    ctx.obj["output"] = output
-    ctx.obj["config_overrides"] = {
-        "config_file": config_file,
-        "user_id": user_id,
-        "user_name": user_name,
-        "hours_from_gmt": hours_from_gmt,
-        "policy_hash": policy_hash,
-        "strong_name": strong_name,
-    }
+
+
+# ── Shared global options (one source of truth) ─────────────────────────────
+
+
+_OutputOpt = Annotated[
+    OutputFormat,
+    typer.Option(
+        "--output",
+        "-o",
+        help=(
+            "Output format. `text` (default) is human-friendly; "
+            "`json` emits a script-friendly JSON document on stdout; "
+            "`toon` emits the same data as Token-Oriented Object Notation, "
+            "a compact JSON-equivalent that uses ~40-60% fewer LLM tokens."
+        ),
+    ),
+]
+_ConfigFileOpt = Annotated[
+    Path | None,
+    typer.Option(
+        "--config-file",
+        help=(
+            "Path to the YAML config file. Default: "
+            "~/.config/loseit/config.yaml. Also overridable via "
+            "LOSEIT_CONFIG_FILE."
+        ),
+    ),
+]
+_UserIdOpt = Annotated[
+    str | None,
+    typer.Option("--user-id", help='Override LOSEIT_USER_ID / YAML "user_id".'),
+]
+_UserNameOpt = Annotated[
+    str | None,
+    typer.Option("--user-name", help='Override LOSEIT_USER_NAME / YAML "user_name".'),
+]
+_HoursFromGmtOpt = Annotated[
+    int | None,
+    typer.Option(
+        "--hours-from-gmt",
+        help='Override LOSEIT_HOURS_FROM_GMT / YAML "hours_from_gmt".',
+    ),
+]
+_PolicyHashOpt = Annotated[
+    str | None,
+    typer.Option("--policy-hash", help='Override LOSEIT_POLICY_HASH / YAML "policy_hash".'),
+]
+_StrongNameOpt = Annotated[
+    str | None,
+    typer.Option("--strong-name", help='Override LOSEIT_STRONG_NAME / YAML "strong_name".'),
+]
+_LogLevelOpt = Annotated[
+    LogLevel | None,
+    typer.Option(
+        "--log-level",
+        help=(
+            "Verbosity for logs emitted on stderr. Default: muted. "
+            "`trace` dumps every GWT-RPC request + response, including "
+            "headers, cookies, and full payloads — useful for mapping "
+            "the API surface. `debug` keeps one-liners per call; `info` "
+            "logs high-level CLI events only."
+        ),
+        envvar="LOSEIT_LOG_LEVEL",
+    ),
+]
+_LogFileOpt = Annotated[
+    Path | None,
+    typer.Option(
+        "--log-file",
+        help=(
+            "Write a full TRACE-level log of the session to this file. "
+            "Captures every request and response payload regardless of "
+            "the console --log-level — designed for offline analysis "
+            "and reverse-engineering."
+        ),
+        envvar="LOSEIT_LOG_FILE",
+    ),
+]
+_LogHeadersOpt = Annotated[
+    bool,
+    typer.Option(
+        "--log-headers/--no-log-headers",
+        help=(
+            "Include the request/response header + cookie sections in "
+            "TRACE-level HTTP dumps. Off by default to save space — the "
+            "JWT cookie alone is ~600 bytes per call. Turn on when "
+            "investigating a header-/cookie-specific issue."
+        ),
+        envvar="LOSEIT_LOG_HEADERS",
+    ),
+]
+
+
+# (name, default, annotated-type) — fed to inspect.Parameter at decoration time.
+_GLOBAL_OPT_SPECS: list[tuple[str, Any, Any]] = [
+    ("output", OutputFormat.text, _OutputOpt),
+    ("config_file", None, _ConfigFileOpt),
+    ("user_id", None, _UserIdOpt),
+    ("user_name", None, _UserNameOpt),
+    ("hours_from_gmt", None, _HoursFromGmtOpt),
+    ("policy_hash", None, _PolicyHashOpt),
+    ("strong_name", None, _StrongNameOpt),
+    ("log_level", None, _LogLevelOpt),
+    ("log_file", None, _LogFileOpt),
+    ("log_headers", False, _LogHeadersOpt),
+]
+
+
+_F = TypeVar("_F", bound=Callable[..., Any])
+
+
+def _global_options(func: _F) -> _F:
+    """Inject the shared global options into a Typer command's signature.
+
+    Typer reads each command's signature via :func:`inspect.signature` when
+    registering the Click command. We append the same set of
+    ``typer.Option`` parameters to every wrapped function's signature so
+    each subcommand surfaces the same global flags — ``--output``,
+    ``--log-level``, ``--user-id``, … — *after* the subcommand name
+    (AWS-CLI style) without duplicating the declarations.
+
+    The wrapper extracts those values out of kwargs, configures logging,
+    stashes the rest on ``ctx.obj`` in the shape ``_open_loseit`` already
+    expects, and then delegates to the original function — so each
+    subcommand body stays unchanged.
+    """
+    extra_params = [
+        inspect.Parameter(
+            name,
+            inspect.Parameter.KEYWORD_ONLY,
+            default=default,
+            annotation=annot,
+        )
+        for name, default, annot in _GLOBAL_OPT_SPECS
+    ]
+    # ``eval_str=True`` is critical: this module uses ``from __future__ import
+    # annotations`` so each parameter's annotation arrives as a string
+    # (``"Annotated[str | None, typer.Argument(...)]"``). Typer's command
+    # registration only recognizes the ``typer.Argument`` / ``typer.Option``
+    # metadata when the Annotated value is a real object — without eval_str
+    # every positional argument silently degrades into a ``--query`` style
+    # option, which breaks every command.
+    orig_sig = inspect.signature(func, eval_str=True)
+    new_sig = orig_sig.replace(parameters=list(orig_sig.parameters.values()) + extra_params)
+
+    @functools.wraps(func)
+    def wrapper(**kwargs: Any) -> Any:
+        log_level = kwargs.pop("log_level")
+        log_file = kwargs.pop("log_file")
+        log_headers = kwargs.pop("log_headers")
+        _configure_logging(
+            level=log_level.value if log_level is not None else None,
+            log_file=log_file,
+            log_headers=log_headers,
+        )
+        ctx: typer.Context = kwargs["ctx"]
+        ctx.ensure_object(dict)
+        ctx.obj["output"] = kwargs.pop("output")
+        ctx.obj["config_overrides"] = {
+            "config_file": kwargs.pop("config_file"),
+            "user_id": kwargs.pop("user_id"),
+            "user_name": kwargs.pop("user_name"),
+            "hours_from_gmt": kwargs.pop("hours_from_gmt"),
+            "policy_hash": kwargs.pop("policy_hash"),
+            "strong_name": kwargs.pop("strong_name"),
+        }
+        if log_level is not None or log_file is not None:
+            logger.debug(
+                "cli invoked: command={cmd!r} log_level={lvl} log_file={lf}",
+                cmd=ctx.info_name,
+                lvl=log_level.value if log_level else None,
+                lf=str(log_file) if log_file else None,
+            )
+        return func(**kwargs)
+
+    wrapper.__signature__ = new_sig  # type: ignore[attr-defined]
+    return wrapper  # type: ignore[return-value]
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -479,6 +546,7 @@ def _open_in_browser(url: str, browser: str) -> bool:
 
 
 @app.command()
+@_global_options
 def search(
     ctx: typer.Context,
     query: Annotated[str, typer.Argument(help="Free-text search query")],
@@ -516,6 +584,7 @@ def search(
 
 
 @app.command()
+@_global_options
 def log(
     ctx: typer.Context,
     query: Annotated[
@@ -690,6 +759,7 @@ def log(
 
 
 @app.command()
+@_global_options
 def diary(
     ctx: typer.Context,
     on_date: Annotated[
@@ -716,6 +786,7 @@ def diary(
 
 
 @app.command(name="describe-food")
+@_global_options
 def describe_food(
     ctx: typer.Context,
     food_ids: Annotated[
@@ -785,6 +856,7 @@ def describe_food(
 
 
 @app.command()
+@_global_options
 def delete(
     ctx: typer.Context,
     meal: Annotated[str, typer.Option("--meal", "-m", help="Meal to delete from")],
@@ -906,6 +978,7 @@ def delete(
 
 
 @app.command()
+@_global_options
 def login(
     ctx: typer.Context,
     browser: Annotated[
@@ -924,7 +997,7 @@ def login(
             envvar="LOSEIT_TOKEN_FILE",
         ),
     ] = DEFAULT_TOKEN_FILE,
-    config_file: Annotated[
+    write_config_to: Annotated[
         Path,
         typer.Option(
             "--write-config-to",
@@ -932,13 +1005,6 @@ def login(
             envvar="LOSEIT_CONFIG_FILE",
         ),
     ] = DEFAULT_CONFIG_FILE,
-    user_name_override: Annotated[
-        str | None,
-        typer.Option(
-            "--user-name",
-            help="Override the loseit.com username instead of prompting / sniffing cookies.",
-        ),
-    ] = None,
     write_config: Annotated[
         bool,
         typer.Option(
@@ -977,11 +1043,15 @@ def login(
     ``--no-write-config`` to import only the token.
     """
     fmt = _output_format(ctx)
+    # The shared --user-name flag (added by @_global_options) doubles as the
+    # login override — same value, same intent, just routed through the
+    # standard config-override channel rather than a login-specific param.
+    user_name_override = ctx.obj.get("config_overrides", {}).get("user_name")
     logger.info(
-        "cli.login: browser={b} token_file={tf} config_file={cf} write_config={wc}",
+        "cli.login: browser={b} token_file={tf} write_config_to={cf} write_config={wc}",
         b=browser.value,
         tf=str(token_file),
-        cf=str(config_file),
+        cf=str(write_config_to),
         wc=write_config,
     )
 
@@ -996,7 +1066,7 @@ def login(
     result = LoseIt.login_from_browser(
         browser.value,
         token_file=token_file,
-        config_file=config_file,
+        config_file=write_config_to,
         user_name=user_name_override,
         write_config=write_config,
         prompt_for_username=_prompt_for_username if fmt is OutputFormat.text else None,
@@ -1043,6 +1113,7 @@ def login(
 
 
 @app.command()
+@_global_options
 def whoami(ctx: typer.Context) -> None:
     """Print the resolved client configuration."""
     fmt = _output_format(ctx)
@@ -1069,6 +1140,7 @@ def whoami(ctx: typer.Context) -> None:
 
 
 @app.command()
+@_global_options
 def version(ctx: typer.Context) -> None:
     """Print the CLI version, release URL, license, and disclaimer."""
     fmt = _output_format(ctx)

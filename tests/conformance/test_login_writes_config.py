@@ -112,8 +112,6 @@ def test_login_writes_config_from_jwt_email(
     result = runner.invoke(
         app,
         [
-            "-o",
-            "json",
             "login",
             "--browser",
             "chrome",
@@ -121,6 +119,8 @@ def test_login_writes_config_from_jwt_email(
             str(token_file),
             "--write-config-to",
             str(config_file),
+            "-o",
+            "json",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -161,8 +161,6 @@ def test_login_uses_cookie_when_jwt_has_no_email(
     result = runner.invoke(
         app,
         [
-            "-o",
-            "json",
             "login",
             "--browser",
             "chrome",
@@ -170,6 +168,8 @@ def test_login_uses_cookie_when_jwt_has_no_email(
             str(token_file),
             "--write-config-to",
             str(config_file),
+            "-o",
+            "json",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -204,8 +204,6 @@ def test_user_name_flag_beats_jwt_and_cookies(
     result = runner.invoke(
         app,
         [
-            "-o",
-            "json",
             "login",
             "--browser",
             "chrome",
@@ -215,6 +213,8 @@ def test_user_name_flag_beats_jwt_and_cookies(
             str(token_file),
             "--write-config-to",
             str(config_file),
+            "-o",
+            "json",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -244,8 +244,6 @@ def test_no_write_config_skips_yaml(
     result = runner.invoke(
         app,
         [
-            "-o",
-            "json",
             "login",
             "--browser",
             "chrome",
@@ -254,6 +252,8 @@ def test_no_write_config_skips_yaml(
             "--write-config-to",
             str(config_file),
             "--no-write-config",
+            "-o",
+            "json",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -281,8 +281,6 @@ def test_json_mode_with_unresolvable_user_name_skips_yaml(
     result = runner.invoke(
         app,
         [
-            "-o",
-            "json",
             "login",
             "--browser",
             "chrome",
@@ -290,6 +288,8 @@ def test_json_mode_with_unresolvable_user_name_skips_yaml(
             str(token_file),
             "--write-config-to",
             str(config_file),
+            "-o",
+            "json",
         ],
     )
     assert result.exit_code == 0, result.output
@@ -325,8 +325,6 @@ def test_login_preserves_unrelated_yaml_keys(
     result = runner.invoke(
         app,
         [
-            "-o",
-            "json",
             "login",
             "--browser",
             "chrome",
@@ -334,6 +332,8 @@ def test_login_preserves_unrelated_yaml_keys(
             str(tmp_path / "token"),
             "--write-config-to",
             str(config_file),
+            "-o",
+            "json",
         ],
     )
     assert result.exit_code == 0, result.output
