@@ -134,9 +134,7 @@ def test_chicken_log_nutrients_scale_by_canonical_servings() -> None:
     canonical_servings = 152.0 / unsaved.per_serving_g  # 1.357
 
     # Per-serving (from wire) × canonical_servings = total-as-logged
-    scaled = {
-        label: val * canonical_servings for label, val in unsaved.nutrients_by_label.items()
-    }
+    scaled = {label: val * canonical_servings for label, val in unsaved.nutrients_by_label.items()}
     # Real 152 g chicken: ~163 cal, ~516 mg sodium, ~28.5 g protein
     assert abs(scaled["calories"] - 163.0) < 1.0
     assert abs(scaled["sodium_mg"] - 515.0) < 2.0
@@ -148,9 +146,7 @@ def test_tj_soup_log_nutrients_scale_by_canonical_servings() -> None:
     unsaved = _fake_tj_soup()
     canonical_servings = 490.0 / unsaved.per_serving_ml  # 2.0712
 
-    scaled = {
-        label: val * canonical_servings for label, val in unsaved.nutrients_by_label.items()
-    }
+    scaled = {label: val * canonical_servings for label, val in unsaved.nutrients_by_label.items()}
     assert abs(scaled["calories"] - 207.0) < 1.0
     assert abs(scaled["sodium_mg"] - 290.0) < 2.0
     assert abs(scaled["carb_g"] - 31.07) < 0.5
