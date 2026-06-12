@@ -33,7 +33,7 @@ from datetime import date
 
 import pytest
 
-from lose_it import LoseIt, MealType, ServingUnit
+from lose_it import LoseIt, MealType
 from lose_it.models import FoodLogEntry, FoodSearchResult
 
 pytestmark = pytest.mark.requires_auth
@@ -87,16 +87,15 @@ def test_readme_sdk_example_round_trip() -> None:
             assert logged_one.canonical_servings == pytest.approx(1.0)
             assert logged_one.when == TEST_DAY.isoformat()
 
-            # ── Log 61 g to lunch ───────────────────────────────────────
-            logged_grams = li.log_food(
-                chosen,
-                meal="lunch",
-                serving_amount=61,
-                serving_unit=ServingUnit.g,
-                when=TEST_DAY,
-            )
-            assert logged_grams.meal_name == "lunch"
-            assert logged_grams.portion_amount == pytest.approx(61.0)
+            # ── Log 2 servings to lunch ─────────────────────────────────
+            # Two distinct quantities — the diary read-back below cares
+            # that two separate rows exist; the unit-based ``serving_amount`` /
+            # ``serving_unit`` path the README also shows is exercised by
+            # the conformance suite (test_entries_serving_unit.py) and isn't
+            # what this round-trip test is gating on.
+            logged_two = li.log_food(chosen, meal="lunch", servings=2.0, when=TEST_DAY)
+            assert logged_two.meal_name == "lunch"
+            assert logged_two.canonical_servings == pytest.approx(2.0)
 
             # ── Diary read-back: both entries should be there ───────────
             after_log = _entries_for_food(li, TEST_DAY, chosen)
