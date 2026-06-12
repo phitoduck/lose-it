@@ -451,9 +451,7 @@ def search(
 ) -> None:
     """Search the LoseIt food database."""
     fmt = _output_format(ctx)
-    logger.info(
-        "cli.search: query={q!r} output={o} verbose={v}", q=query, o=fmt.value, v=verbose
-    )
+    logger.info("cli.search: query={q!r} output={o} verbose={v}", q=query, o=fmt.value, v=verbose)
     with _open_client(ctx) as client:
         results = foods.search(client.http, query)
         if fmt is not OutputFormat.text:
