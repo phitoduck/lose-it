@@ -3,8 +3,7 @@
   "name": "lose-it",
   "description": "Claude Code skill that drives the lose-it CLI from natural-language prompts.",
   "owner": {
-    "name": "Eric Riddoch",
-    "email": "eric.riddoch@gmail.com"
+    "name": "phitoduck"
   },
   "plugins": [
     {
