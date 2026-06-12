@@ -55,12 +55,13 @@ $ loseit --help
  Unofficial Lose It! food logger / diary CLI.
 
 ╭─ Commands ──────────────────────────────────────────────────────╮
-│ login   Import the liauth JWT from Chrome or Brave.             │
-│ search  Search the LoseIt food database.                        │
-│ log     Search for a food and log it to a meal.                 │
-│ diary   List the diary for a given date (default: today).       │
-│ delete  Delete a diary entry by meal + index.                   │
-│ whoami  Print the resolved client configuration.                │
+│ login         Import the liauth JWT from Chrome or Brave.       │
+│ search        Search the LoseIt food database.                  │
+│ log           Search for a food and log it to a meal.           │
+│ diary         List the diary for a given date (default: today). │
+│ describe-food Inspect one or more foods by ID; fetch concurrent.│
+│ delete        Delete a diary entry by meal + index.             │
+│ whoami        Print the resolved client configuration.          │
 ╰─────────────────────────────────────────────────────────────────╯
 ```
 
@@ -110,7 +111,7 @@ $ loseit log "x-treme carb balance tortilla" --meal lunch --pick 2 --servings 1
 ✅ Logged Tortilla Wraps, High Fiber, Low Carb, Xtreme Wellness (id 0d5f…) → lunch 1 serving (70 cal)
 ```
 
-For unit-based logging, pass `--serving-amount N --serving-unit X` where `X` is one of `g`, `ml`, `cup`, `fl_oz`, `tbsp`, `each`, `slice`, `serving`, `scoop` (plus common aliases):
+For unit-based logging, pass `--serving-amount N --serving-unit X` where `X` is one of `tsp`, `tbsp`, `cup`, `piece`, `each`, `g`, `fl_oz`, `mL`, `bottle`, `can`, `slice`, `serving`, `scoop`, `container`, `pie` (plus common aliases):
 
 ```text
 $ loseit log "tj tomato soup" --pick 3 -m snacks --serving-amount 490 --serving-unit ml
