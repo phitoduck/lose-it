@@ -80,6 +80,38 @@ class OutputFormat(enum.StrEnum):
     toon = "toon"
 
 
+class ServingUnit(enum.StrEnum):
+    """Choices for ``--serving-unit``.
+
+    Typed as a Typer :class:`StrEnum` so ``--help`` auto-renders the
+    bracket-style enumeration ``[tbsp|cup|each|g|fl_oz|mL|slice|serving|scoop]``.
+    Adding a new label here automatically updates the help text.
+
+    Members are the canonical lowercase names from ``CANONICAL_UNIT_NAMES``;
+    the resolver in ``_units.resolve_unit`` still handles aliases (``cups``,
+    ``tablespoons``, ``milliliter``) for callers that hit it from Python,
+    but the CLI surface is restricted to these canonical values.
+    """
+
+    tbsp = "tbsp"
+    cup = "cup"
+    each = "each"
+    g = "g"
+    fl_oz = "fl_oz"
+    mL = "mL"
+    slice = "slice"
+    serving = "serving"
+    scoop = "scoop"
+
+
+# When the user passes ``--serving-amount N`` without ``--serving-unit``,
+# we default to grams. Empirically the most common case ("log 61 g of
+# protein powder", "log 152 g of chicken strips") — and grams works for
+# any food whose nutrient HashMap carries the cross-class per-serving-g
+# slot (most do).
+_DEFAULT_SERVING_UNIT = ServingUnit.g
+
+
 class Browser(enum.StrEnum):
     """Browsers we can import the ``liauth`` cookie from."""
 
@@ -463,24 +495,21 @@ def log(
             "--serving-amount",
             help=(
                 "Quantity in the unit specified by --serving-unit (e.g. 490 "
-                "paired with --serving-unit mL, or 61 with --serving-unit g). "
-                "Mutually exclusive with --servings; must be passed together "
-                "with --serving-unit."
+                "paired with --serving-unit mL). --serving-unit defaults to "
+                f"'{_DEFAULT_SERVING_UNIT.value}' when omitted. Mutually "
+                "exclusive with --servings."
             ),
         ),
     ] = None,
     serving_unit: Annotated[
-        str | None,
+        ServingUnit | None,
         typer.Option(
             "--serving-unit",
+            case_sensitive=False,
             help=(
-                "Display unit for --serving-amount. Known values: "
-                "tablespoon (tbsp), cup, each, grams (g), fluid_ounce (fl_oz), "
-                "mL, slice, serving, scoop. Aliases like 'cups', 'tablespoons' "
-                "are also accepted (case-insensitive). For units we don't yet "
-                "label, pass the raw FoodMeasurement ordinal as an integer "
-                "(escape hatch — requires knowing the Lose It! API's internal "
-                "enum, e.g. '--serving-unit 46' for PIE)."
+                "Unit for --serving-amount. When omitted, defaults to "
+                f"{_DEFAULT_SERVING_UNIT.value!r} — pass explicitly if "
+                "you mean something else."
             ),
         ),
     ] = None,
@@ -553,22 +582,11 @@ def log(
     #
     # Two mutually-exclusive ways to express portion size:
     #   • --servings N                       (raw canonical multiplier)
-    #   • --serving-amount + --serving-unit  (unit-based; computes servings
-    #                                        from the food's stored per-serving qty)
+    #   • --serving-amount [--serving-unit]  (unit-based; --serving-unit
+    #                                        defaults to grams when omitted)
     sa_set = serving_amount is not None
-    su_set = serving_unit is not None
-    if sa_set != su_set:
-        msg = (
-            "--serving-amount and --serving-unit must be passed together "
-            "(neither is meaningful alone)."
-        )
-        if fmt is not OutputFormat.text:
-            _emit_structured(fmt, {"error": "serving_pair_incomplete", "message": msg})
-        else:
-            typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2)
     if sa_set and servings != 1.0:
-        msg = "--serving-amount / --serving-unit are mutually exclusive with --servings."
+        msg = "--serving-amount is mutually exclusive with --servings."
         if fmt is not OutputFormat.text:
             _emit_structured(fmt, {"error": "mutually_exclusive_flags", "message": msg})
         else:
@@ -581,10 +599,15 @@ def log(
         else:
             typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2)
+    # Apply the default ``--serving-unit`` when the user omitted it.
+    # ``ServingUnit`` is a StrEnum so its members route through
+    # ``resolve_unit`` cleanly via their ``.value`` (which is the
+    # canonical lowercase name in ``CANONICAL_UNIT_NAMES``).
     chosen_ord: int | None = None
-    if sa_set and serving_unit is not None:
+    if sa_set:
+        effective_unit = serving_unit if serving_unit is not None else _DEFAULT_SERVING_UNIT
         try:
-            chosen_ord = resolve_unit(serving_unit)
+            chosen_ord = resolve_unit(effective_unit.value)
         except ValueError as exc:
             msg = str(exc)
             if fmt is not OutputFormat.text:
@@ -677,7 +700,9 @@ def log(
                     if cf_ml_to_chosen is not None:
                         chosen_qty_per_serving = unsaved.per_serving_ml * cf_ml_to_chosen
             if chosen_qty_per_serving is None:
-                chosen_name = CANONICAL_UNIT_NAMES.get(chosen_ord, serving_unit or "?")
+                chosen_name = CANONICAL_UNIT_NAMES.get(
+                    chosen_ord, (serving_unit.value if serving_unit else "?")
+                )
                 native_name = unsaved.food_measure_unit or measure_name(measure_ord)
                 msg = (
                     f"{selected.name!r} is measured in {native_name!r}; "
@@ -715,7 +740,9 @@ def log(
         # ── Display: what we'll tell the user we're logging ─────────────
         if measure_ord_override is not None and quantity_in_chosen_unit is not None:
             unit = CANONICAL_UNIT_NAMES.get(
-                measure_ord_override, serving_unit or measure_name(measure_ord_override)
+                measure_ord_override,
+                (serving_unit.value if serving_unit else None)
+                or measure_name(measure_ord_override),
             )
             portion_size = quantity_in_chosen_unit
             portion_str = f"{quantity_in_chosen_unit:g} {unit}"

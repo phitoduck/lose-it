@@ -118,6 +118,50 @@ def known_unit_names() -> list[str]:
     return [CANONICAL_UNIT_NAMES[ord_] for ord_ in sorted(CANONICAL_UNIT_NAMES)]
 
 
+def aliases_by_canonical() -> dict[str, list[str]]:
+    """``{canonical_name: [alias, alias, ...]}`` for each known unit.
+
+    Built by inverting :data:`UNIT_ALIASES` and grouping by ordinal.
+    Aliases are sorted; the canonical name itself is excluded from the
+    alias list so the ``--help`` output looks like
+    ``"cup (cups, c)"`` rather than ``"cup (cup, cups, c)"``.
+    """
+    by_ord: dict[int, list[str]] = {}
+    for alias, ord_ in UNIT_ALIASES.items():
+        by_ord.setdefault(ord_, []).append(alias)
+    result: dict[str, list[str]] = {}
+    for ord_ in sorted(by_ord):
+        canonical = CANONICAL_UNIT_NAMES.get(ord_)
+        if canonical is None:
+            continue
+        aliases = sorted(a for a in by_ord[ord_] if a.lower() != canonical.lower())
+        result[canonical] = aliases
+    return result
+
+
+def format_known_units_for_help() -> str:
+    """Render the known units + their aliases as a human-readable string.
+
+    Output looks like:
+
+        tbsp (tablespoon, tablespoons, t), cup (cups, c),
+        each (ea), g (gram, grams), fl_oz (floz, fl-oz, fluid_oz),
+        mL (ml, milliliter, milliliters), slice (slices),
+        serving (servings), scoop (scoops)
+
+    Built from the source-of-truth tables in this module so adding a new
+    FoodMeasurement ordinal + alias automatically updates the ``log``
+    command's ``--help`` output.
+    """
+    parts: list[str] = []
+    for canonical, aliases in aliases_by_canonical().items():
+        if aliases:
+            parts.append(f"{canonical} ({', '.join(aliases)})")
+        else:
+            parts.append(canonical)
+    return ", ".join(parts)
+
+
 def resolve_unit(raw: str) -> int:
     """Resolve a user-supplied ``--serving-unit`` value to its ordinal.
 

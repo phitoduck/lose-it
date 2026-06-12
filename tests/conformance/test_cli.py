@@ -167,6 +167,52 @@ def test_log_dry_run_does_not_post_update(env, runner: CliRunner, httpx_mock) ->
     assert any("getUnsavedFoodLogEntry" in b for b in sent_bodies)
 
 
+def test_log_serving_amount_defaults_to_grams_when_unit_omitted(
+    env, runner: CliRunner, httpx_mock
+) -> None:
+    """When ``--serving-unit`` is omitted, the CLI applies the default (g).
+
+    Verifies the nullable + default-unit behavior: ``--serving-amount N`` alone
+    is valid and is treated as if ``--serving-unit g`` had been passed.
+
+    Uses the tortilla fixture (ord=27 serving) — since the food doesn't
+    carry per_serving_g and there's no serving→g conversion, the request
+    should hit the ``unit_not_supported`` error code. That's enough to
+    prove the default was applied (otherwise we'd hit the old
+    ``serving_pair_incomplete`` error code, which was removed).
+    """
+    httpx_mock.add_response(
+        url=SERVICE_URL,
+        text=(FIXTURES / "search_foods_tortilla.txt").read_text(),
+    )
+    httpx_mock.add_response(
+        url=SERVICE_URL,
+        text=(FIXTURES / "get_unsaved_tortilla.txt").read_text(),
+    )
+    result = runner.invoke(
+        app,
+        [
+            "-o",
+            "json",
+            "log",
+            "tortilla",
+            "--meal",
+            "snacks",
+            "--pick",
+            "1",
+            "--serving-amount",
+            "100",
+            # NOTE: no --serving-unit — should default to "g"
+        ],
+    )
+    assert result.exit_code == 2, result.output
+    payload = json.loads(result.output)
+    assert payload["error"] == "unit_not_supported"
+    assert payload["requested_unit"] == "g"  # ← the default was applied
+    sent_bodies = [req.content.decode() for req in httpx_mock.get_requests()]
+    assert not any("updateFoodLogEntry" in b for b in sent_bodies)
+
+
 def test_log_grams_rejected_on_non_gram_measured_food(env, runner: CliRunner, httpx_mock) -> None:
     """``--serving-unit g`` errors when the food's native unit isn't grams.
 
