@@ -18,7 +18,7 @@
 ## Table of contents
 
 - [Quickstart](#quickstart)
-- [Claude Code skill](#claude-code-skill)
+- [Claude Code SKILL.md](#claude-code-skillmd)
 - [Subcommands](#subcommands)
   - [`login`](#login--import-the-auth-token-and-populate-the-config)
   - [`search`](#search)
@@ -61,7 +61,7 @@ Prompt for, e.g. Claude Code:
   <img src="docs/mobile-app-demo.jpeg" alt="Lose It! mobile app — Mon, Jun 8: Snacks (451 cal): Tortilla Wraps 1 Serving (70 cal), Real good Lightly Breaded Chicken 120 Grams (187 cal), Avocado (USDA Website Per 100g) 110 Grams (194 cal)" width="320"/>
 </p>
 
-## Claude Code skill
+## Claude Code [SKILL.md](skills/log-food/SKILL.md)
 
 ### Install
 
