@@ -3,8 +3,7 @@
   "description": "Drive the lose-it CLI from a natural-language prompt: search → describe → dry-run → log → verify. Unit-aware (grams, cup, tsp, can, container, …), prefers `describe-food` for candidate inspection, uses TOON for token-efficient context.",
   "version": "0.2.0",
   "author": {
-    "name": "Eric Riddoch",
-    "email": "eric.riddoch@gmail.com"
+    "name": "phitoduck"
   },
   "homepage": "https://github.com/phitoduck/lose-it"
 }
