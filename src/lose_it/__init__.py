@@ -19,6 +19,7 @@ typical SDK use needs only one import line::
 """
 
 from .client import Client, LoseIt
+from .enums import MealType, ServingUnit
 from .models import (
     CrossClassConversion,
     FoodDescription,
@@ -39,6 +40,8 @@ __all__ = [
     "LoggedFood",
     "LoginResult",
     "LoseIt",
+    "MealType",
     "PrimaryServing",
+    "ServingUnit",
     "UnsavedFoodLogEntry",
 ]

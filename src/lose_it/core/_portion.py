@@ -27,6 +27,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from ..enums import ServingUnit
 from ..models import UnsavedFoodLogEntry
 
 __all__ = ["PortionError", "ResolvedPortion", "resolve_portion", "scaled_calories"]
@@ -86,7 +87,7 @@ def resolve_portion(
     unsaved: UnsavedFoodLogEntry,
     servings: float = 1.0,
     serving_amount: float | None = None,
-    serving_unit: str | None = None,
+    serving_unit: ServingUnit | str | None = None,
 ) -> ResolvedPortion:
     """Validate the portion knobs and resolve them to wire + display values.
 

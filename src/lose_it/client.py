@@ -40,6 +40,7 @@ from ._logging import logger
 from .core import auth as _auth
 from .core._config import Config, MissingConfigError
 from .core._http import HttpClient
+from .enums import MealType, ServingUnit
 from .models import (
     FoodDescription,
     FoodLogEntry,
@@ -233,11 +234,11 @@ class LoseIt:
     def log_food(
         self,
         food: FoodSearchResult | str,
-        meal: str | int = "snacks",
+        meal: MealType | str | int = MealType.snacks,
         servings: float = 1.0,
         *,
         serving_amount: float | None = None,
-        serving_unit: str | None = None,
+        serving_unit: ServingUnit | str | None = None,
         when: date | None = None,
         dry_run: bool = False,
     ) -> LoggedFood:
@@ -247,15 +248,16 @@ class LoseIt:
             food: Either a :class:`FoodSearchResult` (e.g. from
                 :meth:`search`) or a 32-char hex food ID. Hex IDs trigger
                 a ``getFood`` round-trip to resolve the food name.
-            meal: ``"breakfast"`` / ``"lunch"`` / ``"dinner"`` /
-                ``"snacks"`` (alias ``"snack"`` accepted), or the raw
-                meal ordinal (0..3).
+            meal: A :class:`MealType` member or anything
+                :meth:`MealType.parse` accepts (case-insensitive name,
+                the ``"snack"`` alias, or the raw ordinal ``0..3``).
             servings: Raw canonical multiplier. Mutually exclusive with
                 ``serving_amount``/``serving_unit``.
             serving_amount: Quantity in ``serving_unit`` (e.g. ``490``).
                 Must be passed together with ``serving_unit``.
-            serving_unit: Unit name for ``serving_amount`` (e.g. ``"mL"``,
-                ``"g"``, ``"cup"``).
+            serving_unit: A :class:`ServingUnit` member or its string
+                form (``"mL"``, ``"g"``, ``"cup"``, …). Common aliases
+                like ``"cups"`` / ``"milliliter"`` are also resolved.
             when: Target date. ``None`` → today.
             dry_run: Skip the ``updateFoodLogEntry`` RPC and the
                 day-key lookup; still returns a :class:`LoggedFood` with

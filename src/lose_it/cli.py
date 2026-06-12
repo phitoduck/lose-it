@@ -43,6 +43,7 @@ import typer
 from ._logging import configure as _configure_logging
 from ._logging import logger
 from .client import Client
+from .enums import ServingUnit
 from .core import daily, entries, foods
 from .core._config import (
     MEAL_NAMES,
@@ -75,41 +76,21 @@ from .core.init import get_daydate_key
 
 
 class OutputFormat(enum.StrEnum):
-    """How to render a command's result."""
+    """How to render a command's result.
+
+    Genuinely CLI-only: the SDK returns model objects, the CLI decides
+    whether to render them as human-friendly text, JSON, or TOON.
+    """
 
     text = "text"
     json = "json"
     toon = "toon"
 
 
-class ServingUnit(enum.StrEnum):
-    """Choices for ``--serving-unit``.
-
-    Typed as a Typer :class:`StrEnum` so ``--help`` auto-renders the
-    bracket-style enumeration. Adding a new label here automatically
-    updates the help text.
-
-    Members are the canonical lowercase names from ``CANONICAL_UNIT_NAMES``;
-    the resolver in ``_units.resolve_unit`` still handles aliases (``cups``,
-    ``tablespoons``, ``milliliter``) for callers that hit it from Python,
-    but the CLI surface is restricted to these canonical values.
-    """
-
-    tsp = "tsp"
-    tbsp = "tbsp"
-    cup = "cup"
-    piece = "piece"
-    each = "each"
-    g = "g"
-    fl_oz = "fl_oz"
-    mL = "mL"
-    bottle = "bottle"
-    can = "can"
-    slice = "slice"
-    serving = "serving"
-    scoop = "scoop"
-    container = "container"
-    pie = "pie"
+# ``ServingUnit`` (the canonical FoodMeasurement names) is an SDK-domain
+# enum, not a CLI artifact — it lives in :mod:`lose_it.enums` so SDK
+# callers can write ``LoseIt.log_food(..., serving_unit=ServingUnit.cup)``.
+# The Typer ``--serving-unit`` annotation below uses the same class.
 
 
 class Browser(enum.StrEnum):
