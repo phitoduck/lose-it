@@ -1,6 +1,6 @@
 [project]
 name = "lose-it"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Unofficial Lose It! Python SDK and CLI (reverse-engineered GWT-RPC)"
 readme = "README.md"
 authors = [
@@ -22,8 +22,21 @@ loseit = "lose_it.cli:main"
 lose-it = "lose_it.cli:main"
 
 [build-system]
-requires = ["uv_build>=0.10.7,<0.11.0"]
-build-backend = "uv_build"
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+# Single source of truth for the package version: ``version.txt`` at the repo
+# root. CI tags the repo with ``v{version}`` on merge to main and fails fast if
+# the tag already exists — see ``.github/workflows/ci.yml`` and ``AGENTS.md``.
+[tool.hatch.version]
+path = "version.txt"
+pattern = "^(?P<version>.+)$"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lose_it"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/lose_it", "version.txt", "README.md", "LICENSE"]
 
 [dependency-groups]
 dev = [

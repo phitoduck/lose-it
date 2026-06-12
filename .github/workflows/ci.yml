@@ -1,8 +1,14 @@
-# CI: lint, format-check, secret-scan, and unit tests (with coverage).
+# CI: lint, format-check, secret-scan, unit tests, version check, tag-on-merge.
 #
 # Functional tests under tests/functional/ are NOT run in CI — they hit the
 # real Lose It! API and require a valid `liauth` JWT on disk. They are
 # self-skipping unless `LOSEIT_RUN_FUNCTIONAL=1` is set, which CI never does.
+#
+# Version policy: ``version.txt`` is the single source of truth (read by
+# hatchling at build time via ``[tool.hatch.version]`` in pyproject.toml).
+# Every PR that lands on main must bump it; the ``version-check`` job below
+# fails fast (independent of tests) when the tag ``v{version}`` already exists.
+# On push to main, ``tag-release`` pushes that tag.
 
 name: CI
 
@@ -20,6 +26,47 @@ permissions:
   contents: read
 
 jobs:
+  # ── Fail-fast version gate ────────────────────────────────────────────────
+  #
+  # Independent of the rest of CI: runs in parallel so a missed bump surfaces
+  # immediately while tests/lint still report their own outcome.
+  version-check:
+    name: Version bump check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # need tags
+
+      - name: Read version.txt
+        id: ver
+        run: |
+          set -euo pipefail
+          if [ ! -f version.txt ]; then
+            echo "::error::version.txt is missing"
+            exit 1
+          fi
+          VERSION=$(tr -d '[:space:]' < version.txt)
+          if ! printf '%s' "$VERSION" | grep -Eq '^0\.[0-9]+\.[0-9]+([.-].+)?$'; then
+            echo "::error::version.txt must be 0.x.x (project is alpha); got '$VERSION'"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION"
+
+      - name: Fail if tag v${{ steps.ver.outputs.version }} already exists
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          git fetch --tags --quiet
+          if git rev-parse -q --verify "refs/tags/v${VERSION}" >/dev/null; then
+            echo "::error::Tag v${VERSION} already exists — bump version.txt before merging."
+            exit 1
+          fi
+          echo "OK: v${VERSION} is unreleased."
+
   ci:
     name: Lint, scan, test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
@@ -56,7 +103,23 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_CONFIG: .gitleaks.toml
 
+      # Only run pytest when files in src/ or tests/ changed (PRs), or on any
+      # push to main. Doc-only PRs don't change runtime behavior, so re-running
+      # the suite would just burn CI minutes.
+      - name: Detect source/test changes
+        id: paths
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            code:
+              - 'src/**'
+              - 'tests/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - '.github/workflows/ci.yml'
+
       - name: pytest (unit tests + coverage, no functional)
+        if: github.event_name == 'push' || steps.paths.outputs.code == 'true'
         run: |
           uv run pytest \
             --cov=lose_it \
@@ -65,12 +128,46 @@ jobs:
             --cov-fail-under=70
 
       - name: Upload coverage artifact
-        if: always()
+        if: always() && (github.event_name == 'push' || steps.paths.outputs.code == 'true')
         uses: actions/upload-artifact@v4
         with:
           name: coverage-xml-py${{ matrix.python-version }}
           path: coverage.xml
           if-no-files-found: ignore
+
+  # ── Tag release on merge to main ──────────────────────────────────────────
+  #
+  # Push-only. Waits on ``version-check`` and ``ci`` so we never tag a broken
+  # commit. The tag points at the merge commit on main; the badge job (below)
+  # is unchanged and still depends on ``ci``.
+  tag-release:
+    name: Tag v{version} on main
+    needs: [version-check, ci]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Push tag from version.txt
+        run: |
+          set -euo pipefail
+          VERSION=$(tr -d '[:space:]' < version.txt)
+          TAG="v${VERSION}"
+          git fetch --tags --quiet
+          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+            echo "Tag ${TAG} already exists on remote — nothing to do."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${TAG}" -m "Release ${TAG}"
+          git push origin "${TAG}"
+          echo "Pushed ${TAG}."
 
   # ── Dynamic coverage badge ────────────────────────────────────────────────
   #
