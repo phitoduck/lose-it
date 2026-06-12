@@ -851,33 +851,18 @@ uv run pytest -m requires_auth            # real-API CRUD (needs liauth + config
 
 ```text
 src/lose_it/
-├── __init__.py             # exports `LoseIt`, `Client`, models, enums
 ├── cli.py                  # typer CLI — one method per subcommand on `LoseIt`
 ├── client.py               # `LoseIt` (high-level) + `Client` (low-level)
-├── models.py               # FoodSearchResult, FoodLogEntry, FoodDescription,
-│                           #   LoggedFood, LoginResult, … (each with `.to_dict()`)
-├── enums.py                # MealType, ServingUnit
 └── core/                   # internal plumbing — stable contract is `LoseIt`
-    ├── __init__.py
-    ├── _settings.py        # pydantic-settings layered config (CLI > env > YAML > defaults)
-    ├── _config.py          # backwards-compat `Config` façade over Settings
-    ├── _http.py            # httpx wrapper + error types
-    ├── _gwt.py             # GWT-RPC serialization primitives
-    ├── _decoder.py         # schema-driven response decoder
-    ├── _portion.py         # `resolve_portion` + `validate_portion_args`
-    ├── _login_flow.py      # JWT/cookie → config-values derivation
-    ├── _ids.py             # hex ↔ pk_bytes
-    ├── _units.py           # FoodMeasurement unit conversions
-    ├── _enums.py           # FoodNutrient labels
-    ├── _dates.py           # date ↔ day-number conversion
-    ├── auth.py             # token loading + Chrome/Brave cookie import
-    ├── init.py             # getInitializationData → DayDate key lookup
-    ├── foods.py            # searchFoods + getUnsavedFoodLogEntry + getFood
-    ├── entries.py          # updateFoodLogEntry (log) + deleteFoodLogEntry
-    └── daily.py            # getDailyDetailsIncludingPendingForDate
 ```
 
-The `core/` modules mirror the underlying GWT-RPC resources: one module per backend resource, one function per RPC method. The `LoseIt` class at the top level composes them.
+```mermaid
+flowchart LR
+    cli["cli.py"] --> client["client.py"]
+    client --> core["core/"]
+```
+
+`core/` handles the GWT-RPC wire protocol — encoding requests and decoding responses into typed Python models — so `cli.py` and `client.py` only ever deal with plain objects.
 
 ### Tests
 
