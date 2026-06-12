@@ -2,11 +2,23 @@
 
 These mirror the relevant LoseIt domain objects but keep only the fields
 needed for the round-trip (search → unsaved → log; list → delete).
+
+Two flavors live here:
+
+- *Wire-shape* models (``FoodSearchResult``, ``UnsavedFoodLogEntry``,
+  ``FoodLogEntry``) — direct projections of LoseIt's GWT-RPC payloads;
+  consumed by the low-level ``foods``/``entries``/``daily`` modules.
+- *High-level result* models (``FoodDescription``, ``LoggedFood``,
+  ``LoginResult``) — synthetic dataclasses returned by the
+  :class:`~lose_it.LoseIt` client's convenience methods; composed of
+  wire-shape values plus derived/formatted fields so callers don't
+  have to reach into the lower-level types.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
 
 @dataclass
@@ -98,3 +110,100 @@ class FoodLogEntry:
             if ord_ == 0:
                 return val
         return None
+
+
+# ── High-level result models (LoseIt client method returns) ─────────────────
+
+
+@dataclass(frozen=True)
+class PrimaryServing:
+    """The food's stored "1 serving" definition.
+
+    ``native_qty_per_serving`` is the raw quantity in ``unit`` (e.g. 40.0
+    when ``unit='g'`` for a Built Bar, or 8.0 when ``unit='fl_oz'`` for a
+    cup of soup). ``canonical_per_serving`` is the FoodServingSize
+    denominator — almost always 1.0; needed only for foods that ship
+    fractional serving definitions.
+    """
+
+    ordinal: int | None
+    unit: str | None
+    canonical_per_serving: float | None
+    native_qty_per_serving: float | None
+
+
+@dataclass(frozen=True)
+class CrossClassConversion:
+    """Per-food gram / mL totals exposed in the FoodNutrients HashMap.
+
+    These let the portion resolver convert e.g. ``152 g`` against a
+    serving-stored food (chicken strips) without a generic
+    serving→g entry in the unit table. ``None`` when the food doesn't
+    carry the conversion (most volume-only or count-only foods).
+    """
+
+    per_serving_g: float | None
+    per_serving_ml: float | None
+
+
+@dataclass(frozen=True)
+class FoodDescription:
+    """Output of ``LoseIt.describe_food`` — full nutrient/serving profile.
+
+    Same data the ``loseit describe-food`` command renders. Fold into
+    JSON with :func:`lose_it.client._formatters.food_description_to_dict`,
+    or pretty-print with :func:`render_food_description`.
+    """
+
+    food_id: str
+    name: str
+    brand: str
+    category: str
+    primary_serving: PrimaryServing
+    cross_class_conversion: CrossClassConversion
+    nutrients_per_serving: dict[str, float]
+    raw_nutrients_by_ord: dict[int, float]
+
+
+@dataclass(frozen=True)
+class LoggedFood:
+    """Result of ``LoseIt.log_food`` (or its dry-run equivalent).
+
+    Bundles the food that was chosen, the portion-size shape that hit the
+    wire, and the scaled calorie total so callers don't have to multiply
+    per-serving cals × servings themselves. ``dry_run=True`` means no
+    ``updateFoodLogEntry`` call was made; everything else is identical.
+    """
+
+    food: FoodSearchResult
+    meal_ordinal: int
+    meal_name: str
+    when: str  # ISO ``YYYY-MM-DD``
+    canonical_servings: float
+    portion_amount: float
+    portion_unit: str
+    calories: float | None
+    dry_run: bool
+
+
+@dataclass(frozen=True)
+class LoginResult:
+    """Result of ``LoseIt.login_from_browser``.
+
+    ``status`` is ``"ok"`` when a fresh token was imported, or one of
+    ``"missing"``/``"expired"`` when the browser cookie couldn't supply a
+    usable JWT. ``config_values`` is populated only when
+    ``write_config=True`` AND user_id/user_name/hours_from_gmt all
+    resolved (else ``None`` — the caller decides whether to prompt or
+    surface the partial result).
+    """
+
+    status: str  # "ok" | "missing" | "expired"
+    browser: str
+    token_file: Path
+    exp: int | None
+    exp_iso: str | None
+    config_file: Path | None
+    config_values: dict[str, object] | None
+    signin_url: str | None = None  # set on status != "ok" so the CLI can offer it
+    message: str | None = None

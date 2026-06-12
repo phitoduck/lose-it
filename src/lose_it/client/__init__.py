@@ -1,19 +1,30 @@
 """Lose It! client SDK.
 
-The :class:`Client` holds account configuration + the httpx session. All
-RPC functions live in submodules and accept a ``Client`` as their first
-argument, so the API surface looks like::
+Two layers of API, same authenticated session under the hood:
 
-    from lose_it import Client
-    from lose_it.client import foods, entries, daily
+- **High-level** — :class:`LoseIt` exposes one method per user-facing
+  capability (``search``, ``log_food``, ``diary``, ``delete_entry``,
+  ``describe_food``, ``login_from_browser``). It composes pure helpers
+  in :mod:`._portion` / :mod:`._login_flow` with the low-level RPC
+  functions below. Use this for application/CLI/skill code::
 
-    with Client.from_env() as c:
-        results = foods.search(c.http, "tortilla")
-        unsaved = foods.get_unsaved_food_log_entry(c.http, results[0])
-        entries.log_food(c.http, unsaved, meal_ordinal=1,
-                         day_key=..., day_num=..., servings=1.0)
-        for e in daily.get_daily_details(c.http, today):
-            print(e.food_name, e.servings)
+      from lose_it import LoseIt
+
+      with LoseIt.from_env() as li:
+          results = li.search("tortilla")
+          li.log_food(results[0], meal="lunch", servings=1.0)
+          for e in li.diary():
+              print(e.food_name, e.servings)
+
+- **Low-level** — :class:`Client` (alias preserved for tests) plus the
+  module-level RPC functions in :mod:`.foods` / :mod:`.entries` /
+  :mod:`.daily` / :mod:`.init`. Use this when you want direct control
+  over individual RPCs or you're writing a fixture::
+
+      from lose_it.client import foods, entries
+      with Client.from_env() as c:
+          results = foods.search(c.http, "tortilla")
+          entries.log_food(c.http, ...)
 """
 
 from __future__ import annotations
@@ -22,6 +33,7 @@ import httpx
 
 from .._logging import logger
 from . import auth as _auth
+from ._client import LoseIt
 from ._config import Config, MissingConfigError
 from ._http import HttpClient, LoseItAuthError, LoseItError
 
@@ -84,6 +96,7 @@ __all__ = [
     "Client",
     "Config",
     "HttpClient",
+    "LoseIt",
     "LoseItAuthError",
     "LoseItError",
     "MissingConfigError",
