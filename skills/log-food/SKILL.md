@@ -154,7 +154,7 @@ This *replaces* the old "14-pick Python probe" workflow. Don't write probe scrip
 ## STEP 3 — Always dry-run first
 
 ```bash
-loseit log "realgood foods chicken strips" --food-id <hex> -m lunch \
+loseit log --food-id <hex> -m lunch \
     --serving-amount 120 --serving-unit g --dry-run
 # 🟡 DRY RUN — would log Lightly Breaded Chicken Strips (id 4465…) → lunch 120 g (143 cal)
 ```
@@ -163,9 +163,18 @@ The dry-run computes calories using the food's stored per-serving data and the u
 
 Prefer `--food-id <hex>` to lock onto a specific entry — search result *order* can drift; `food_id` is stable.
 
+> ⚠️ **`--food-id` is mutually exclusive with the positional `<query>` AND with `--pick`.** Pass exactly one of the three. A common mistake is `loseit log "ahi tuna" --food-id 6cad…` — the CLI rejects it with `❌ --food-id and <query>/--pick are mutually exclusive`. Drop the query string when you're using `--food-id`. Once you've identified a stable `food_id` via search → describe-food, the positional query is just noise.
+
+For non-today logs, pass `--date YYYY-MM-DD` on `log` (and `delete`):
+
+```bash
+loseit log --food-id <hex> -m snacks --date 2026-06-11 \
+    --serving-amount 118 --serving-unit g --dry-run
+```
+
 When the answer looks right, run again without `--dry-run`:
 ```bash
-loseit log ... --serving-amount 120 --serving-unit g
+loseit log --food-id <hex> -m lunch --serving-amount 120 --serving-unit g
 # ✅ Logged Lightly Breaded Chicken Strips (id 4465…) → lunch 120 g (143 cal)
 ```
 
@@ -192,10 +201,24 @@ For the most efficient readback into your context: `loseit -o toon diary | head 
 Delete by 1-based pick within a meal:
 ```bash
 loseit diary                                       # see indices
-loseit delete --meal snacks --pick 1 --yes        # delete entry #1 from snacks
+loseit delete --meal snacks --pick 1 --yes        # delete entry #1 from snacks today
+loseit delete --meal snacks --pick 5 --date 2026-06-11 --yes  # delete from a specific day
 ```
 
+`delete` accepts the same `--date YYYY-MM-DD` flag as `log` / `diary` — use it when cleaning up a day that isn't the server's current "today".
+
 If `loseit delete` returns HTTP 500, treat it as a parser drift; re-run STEP 0 to make sure you have the latest CLI.
+
+### "Today" gotcha — server date vs user's local date
+
+`loseit diary` (no `--date`) defaults to the **server-side** current day, which can lag or lead the user's local calendar by a few hours depending on timezone. Symptom: the user says "I added duplicate entries today" but `loseit diary` returns `count: 0`. Don't assume the user is wrong — re-check the day before:
+
+```bash
+loseit -o toon diary --date $(date -u -v-1d +%Y-%m-%d)   # macOS yesterday
+loseit -o toon diary --date $(date -u -d 'yesterday' +%Y-%m-%d)  # GNU yesterday
+```
+
+If you find the user's "today" entries there, log new entries with `--date <that-date>` so they land on the day the user actually means.
 
 ---
 
@@ -222,6 +245,8 @@ If a food consistently logs at the wrong calorie count, capture the food's `desc
 | `❌ Missing required setting(s)` | `loseit login` |
 | Dry-run cal is way off from real label | Re-run `describe-food` on the chosen `food_id` and verify per-serving cal. Try a different candidate. |
 | `loseit log` errors with `unit_not_supported` | The food's stored unit class doesn't match `--serving-unit`. Use `describe-food` to see `primary_serving.unit` and either match it or fall back to `--servings N` in the native unit. |
+| `❌ --food-id and <query>/--pick are mutually exclusive` | You passed both a positional query and `--food-id`. Drop the query — `--food-id` is the entry's stable key and doesn't need a search. |
+| `loseit diary` returns `count: 0` but the user expects entries | Server-side date may differ from the user's local date by hours. Try `--date <yesterday>`. |
 | Diary shows wrong meal/name/cal | Trust the `loseit log` success line written at log-time; the diary parser can occasionally mis-render display fields. If still wrong in the official app, capture wire via `--log-level trace` and inspect. |
 | `loseit delete` HTTP 500 | STEP 0, then retry. If still failing, delete via the official Lose It! app or webapp. |
 

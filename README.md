@@ -74,6 +74,159 @@ claude plugin install log-food@lose-it
 
 > **/log-food** Log 1 Xtreme carb balance tortilla, 110g of avocado, and 120g of real good brand lightly breaded chicken strips
 
+### Complex example — multi-food meal + diary cleanup
+
+A messier, real-world prompt. Fuzzy quantities, a guessed-at sauce, "a few bites" of corn, *and* an aside asking the skill to clean up duplicate entries — handled in a single turn:
+
+> **/log-food** I ordered some poke today today there was a bowl with a bunch of edamame in it. Probably three quarters cup of edam edamame. And I would guess like three quarter cup of Ahi tuna and three quarter cup of crab imitation meat and there was this white sauce on it I'm not sure what it was uh presumably some sauce that's common to serve with uh poke bowls with imitation crab. And I had a few bites of corn. So that'll need to be converted into whatever unit makes sense for a guess of that. And that's all for that meal. Now, I also erroneously added too many entries to my food log today. So for example, there are multiple logs for Trader Joe's tomato soup. There should only be one. So the redundant ones should be deleted.
+
+<p align="center">
+  <img src="docs/complex-food-log.jpeg" alt="Lose It! mobile app — Thu, Jun 11 Snacks (1,078 cal). Earlier entries: Tortilla Wraps 1 serving (70), Avocado 86g (118), Lightly Breaded Chicken Strips 1.36 servings (163), Trader Joe's Tomato Roasted Red Pepper Soup 490 mL (207) — exactly one, duplicate deleted. Poke bowl just added: Edamame Soybeans 118g (131), Ahi Tuna Raw 180g (194), Imitation Crab 100g (94), Japanese Spicy Mayo 1 tbsp (85), Corn Sweet 19g (16)." width="320"/>
+</p>
+
+<details>
+<summary>Click to expand — full reasoning the skill went through</summary>
+
+#### 1. Refresh CLI + read today's diary
+
+```bash
+$ uv tool install --reinstall git+https://github.com/phitoduck/lose-it
+$ loseit -o toon diary
+```
+```text
+date: 2026-06-12
+count: 0
+entries[0]:
+```
+
+Diary for system-today is empty — but the user said they have duplicates "today". Server-side date (UTC) likely ahead of the user's local "today". Re-checked the day before:
+
+```bash
+$ loseit -o toon diary --date 2026-06-11
+```
+```text
+date: 2026-06-11
+count: 7
+entries[7]:
+  - meal: snacks
+    food_name: "Tortilla Wraps, High Fiber, Low Carb, Xtreme Wellness"
+    ...
+  - meal: snacks
+    food_name: "Soup, Organic Tomato Red Pepper low sodium (TJ: 8 fl oz)"
+    food_brand: "Trader Joe's"
+    servings: 2.07111
+    calories: 207.11
+    food_pk[16]: -99,86,123,115,7,-99,-115,-82,-80,76,-70,-47,32,-79,70,116
+    food_measure_ordinal: 11
+  - meal: snacks
+    food_name: "Soup, Organic Tomato Red Pepper low sodium (TJ: 8 fl oz)"
+    food_brand: "Trader Joe's"
+    servings: 2.07111
+    calories: 207.11
+    food_pk[16]: -99,86,123,115,7,-99,-115,-82,-80,76,-70,-47,32,-79,70,116
+    food_measure_ordinal: 11
+    ...
+```
+
+Found the duplicates: snacks #4 and #5 — identical `food_pk`, identical servings, identical calories. Delete one.
+
+#### 2. Delete the duplicate
+
+```bash
+$ loseit delete --meal snacks --pick 5 --date 2026-06-11 --yes
+🗑️  Deleting from snacks: Soup, Organic Tomato Red Pepper low sodium ... × 2.07111
+✅ Deleted
+```
+
+#### 3. Parse the prompt into entries
+
+| Component | Quantity | Notes |
+|---|---|---|
+| Edamame | "three quarters cup" | restaurant edamame = shelled cooked |
+| Ahi tuna | "three quarter cup" | raw poke cubes |
+| Imitation crab | "three quarter cup" | shredded flakes |
+| White sauce | "presumably some sauce…" | most common with imitation-crab poke = spicy/Japanese mayo, estimate 1 tbsp |
+| Corn | "a few bites" | estimate ≈ 2 tbsp ≈ 19 g sweet kernels |
+
+#### 4. Search → describe-food → sanity-check calories
+
+```bash
+$ loseit -o toon search "edamame"
+$ loseit -o toon search "ahi tuna"
+$ loseit -o toon search "imitation crab"
+$ loseit -o toon search "spicy mayo"
+$ loseit -o toon search "corn"
+```
+
+Picked top 3-4 candidates per food and inspected them in one batched call each (`describe-food` runs concurrent fetches):
+
+```bash
+$ loseit -o toon describe-food <id1> <id2> <id3>
+```
+```text
+foods[3]:
+  - food_id: 6cad82c0a6f432ba0b4fa48be3a7598e
+    name: "Ahi Tuna, Raw"
+    primary_serving: {ordinal: 6, native_qty_per_serving: 1.0}
+    cross_class_conversion: {per_serving_g: 28.3495}
+    nutrients_per_serving: {calories: 30.5, protein_g: 6.6, total_fat_g: 0.3, ...}
+    # = ~108 cal/100g, matches USDA → good pick
+  - food_id: b76c03e3a749bfbfb14d148a8c0ac042
+    name: "Fish, Poke, Ahi Tuna"
+    nutrients_per_serving: {calories: 75.0, ..., serving_weight_g: 85.05}
+    # = ~88 cal/100g, ~20% low vs USDA → skip
+  ...
+```
+
+Final picks (each verified to support gram/tbsp logging via `cross_class_conversion`):
+
+| Component | food_id | Per-serving math sanity |
+|---|---|---|
+| Edamame, Soybeans, Cooked & Shelled | `f227…` | 100 cal / 90 g ≈ 111 cal/100g ✓ |
+| Ahi Tuna, Raw | `6cad…` | 30.5 cal / 28.35 g ≈ 108 cal/100g ✓ (USDA) |
+| Imitation Crab (Crab classic) | `3558…` | 80 cal / 85 g ≈ 94 cal/100g ✓ |
+| Japanese Spicy Mayo | `b460…` | 170 cal / 2 tbsp = 85 cal/tbsp ✓ |
+| Corn, Sweet, Kernels | `e608…` | 86 cal / 100 g ✓ |
+
+#### 5. Dry-run before mutating
+
+First attempt hit a CLI signature error:
+
+```bash
+$ loseit log "edamame" --food-id f227… -m snacks --date 2026-06-11 \
+    --serving-amount 118 --serving-unit g --dry-run
+❌ --food-id and <query>/--pick are mutually exclusive
+```
+
+`--food-id` doesn't take a positional query. Dropped it and retried:
+
+```bash
+$ loseit log --food-id f227… -m snacks --date 2026-06-11 \
+    --serving-amount 118 --serving-unit g --dry-run
+🟡 DRY RUN — would log Edamame, Soybeans, Cooked & Shelled (id f227…) → snacks 118 g (131 cal)
+```
+
+All five dry-runs passed; cal numbers matched the per-serving math above.
+
+#### 6. Log for real
+
+```bash
+$ loseit log --food-id f227… -m snacks --date 2026-06-11 --serving-amount 118 --serving-unit g
+✅ Logged Edamame, Soybeans, Cooked & Shelled (id f227…) → snacks 118 g (131 cal)
+$ loseit log --food-id 6cad… -m snacks --date 2026-06-11 --serving-amount 180 --serving-unit g
+✅ Logged Ahi Tuna, Raw (id 6cad…) → snacks 180 g (194 cal)
+$ loseit log --food-id 3558… -m snacks --date 2026-06-11 --serving-amount 100 --serving-unit g
+✅ Logged Imitation Crab (id 3558…) → snacks 100 g (94 cal)
+$ loseit log --food-id b460… -m snacks --date 2026-06-11 --serving-amount 1 --serving-unit tbsp
+✅ Logged Japanese Spicy Mayo (id b460…) → snacks 1 tbsp (85 cal)
+$ loseit log --food-id e608… -m snacks --date 2026-06-11 --serving-amount 19 --serving-unit g
+✅ Logged Corn, Sweet, Kernels (id e608…) → snacks 19 g (16 cal)
+```
+
+Poke bowl total: **520 cal**. Verified via `loseit -o toon diary --date 2026-06-11` — `food_measure_unit` and `nutrients_by_label.calories` matched the dry-run on every entry.
+
+</details>
+
 ## Subcommands
 
 **Bash:**
