@@ -2,8 +2,9 @@
 #
 # Tests under tests/functional/ marked ``@pytest.mark.requires_auth`` are NOT
 # run in CI — they hit the real Lose It! API and need a valid ``liauth`` JWT
-# plus the LOSEIT_* config on disk. They are skipped automatically unless
-# ``pytest --run-auth`` is passed, which CI never does.
+# plus the LOSEIT_* config on disk. ``pyproject.toml`` sets
+# ``addopts = ["-m", "not requires_auth"]`` so the default ``pytest``
+# invocation below excludes them automatically; CI never overrides that.
 #
 # Version policy: ``version.txt`` is the single source of truth (read by
 # hatchling at build time via ``[tool.hatch.version]`` in pyproject.toml).
@@ -119,9 +120,8 @@ jobs:
               - 'uv.lock'
               - '.github/workflows/ci.yml'
 
-      # ``requires_auth`` tests self-skip without ``--run-auth`` (see
-      # tests/conftest.py). CI never passes ``--run-auth``, so the live-API
-      # suite is skipped without any explicit flag here.
+      # ``requires_auth`` tests are excluded by the default ``addopts``
+      # filter in pyproject.toml; CI doesn't need to do anything extra.
       - name: pytest (unit tests + coverage)
         if: github.event_name == 'push' || steps.paths.outputs.code == 'true'
         run: |
