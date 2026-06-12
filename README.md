@@ -53,16 +53,6 @@ loseit login                       # default: --browser chrome
 loseit diary
 ```
 
-**Claude Code Prompt:**
-
-> Log 1 Xtreme carb balance tortilla, 110g of avocado, and 120g of real good brand lightly breaded chicken strips
-
-**Result:**
-
-<p align="center">
-  <img src="docs/mobile-app-demo.jpeg" alt="Lose It! mobile app — Mon, Jun 8: Snacks (451 cal): Tortilla Wraps 1 Serving (70 cal), Real good Lightly Breaded Chicken 120 Grams (187 cal), Avocado (USDA Website Per 100g) 110 Grams (194 cal)" width="320"/>
-</p>
-
 ## Claude Code [SKILL.md](skills/log-food/SKILL.md)
 
 ### Install
@@ -74,9 +64,21 @@ claude plugin install log-food@lose-it
 
 ### Example
 
+Either invoke the skill explicitly with `/log-food`, or just describe your meal — the skill's triggers fire on natural-language phrases too.
+
+**Claude Code Prompt:**
+
+> Log 1 Xtreme carb balance tortilla, 110g of avocado, and 120g of real good brand lightly breaded chicken strips
+
 **Claude Code Prompt:**
 
 > **/log-food** Log 1 Xtreme carb balance tortilla, 110g of avocado, and 120g of real good brand lightly breaded chicken strips
+
+**Result:**
+
+<p align="center">
+  <img src="docs/mobile-app-demo.jpeg" alt="Lose It! mobile app — Mon, Jun 8: Snacks (451 cal): Tortilla Wraps 1 Serving (70 cal), Real good Lightly Breaded Chicken 120 Grams (187 cal), Avocado (USDA Website Per 100g) 110 Grams (194 cal)" width="320"/>
+</p>
 
 ### Complex example — multi-food meal + diary cleanup
 
