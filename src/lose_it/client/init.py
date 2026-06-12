@@ -40,12 +40,28 @@ def build_payload(config: Config) -> str:
     return build_envelope(strings, data)
 
 
-def get_daydate_key(http: HttpClient, target_day_num: int) -> str | None:
-    """Return the DayDate key associated with ``target_day_num`` (or ``None``).
+# Placeholder used when getInitializationData's day-key window doesn't
+# include the target day. Empirically the server ignores the day_key
+# string entirely — it routes the request using day_num alone — but
+# rejects an *empty* day_key with HTTP 500. Any non-empty alphanumeric
+# string of the right shape is accepted. Verified 2026-06-12 by sending
+# arbitrary "XXXXXX" / "ABCDEFG" alongside historical day_nums and
+# receiving byte-identical responses to the real keys for those days.
+_FALLBACK_DAY_KEY = "ZZZZZZZ"
 
-    The response from ``getInitializationData`` includes a window of recent
-    day numbers paired with their short string keys (e.g. ``Z6mB_lo`` for
-    today). We scan the token stream for ``(day_num, "<key>")`` adjacency.
+
+def get_daydate_key(http: HttpClient, target_day_num: int) -> str:
+    """Return the DayDate key associated with ``target_day_num``.
+
+    The response from ``getInitializationData`` includes a window of
+    recent day numbers paired with their short string keys (e.g.
+    ``Z6mB_lo`` for today). We scan the token stream for adjacency.
+
+    When ``target_day_num`` isn't in the init response's window
+    (the user is fetching a date the server didn't pre-cache), we
+    return ``_FALLBACK_DAY_KEY``: the server accepts any non-empty
+    key and uses ``day_num`` alone to resolve the diary day. This
+    is what unlocks historical diary mining.
     """
     logger.info("get_daydate_key: target_day_num={n}", n=target_day_num)
     text = http.post_rpc(build_payload(http.config))
@@ -65,9 +81,8 @@ def get_daydate_key(http: HttpClient, target_day_num: int) -> str | None:
                 "get_daydate_key: matched (hrs, day_num)→key {n}→{k!r}", n=target_day_num, k=key
             )
             return key
-    logger.warning(
-        "get_daydate_key: no key found for day_num={n} (parsed {t} tokens)",
+    logger.debug(
+        "get_daydate_key: no exact key for day_num={n}; using placeholder (server ignores key)",
         n=target_day_num,
-        t=len(tokens),
     )
-    return None
+    return _FALLBACK_DAY_KEY

@@ -12,6 +12,7 @@ from lose_it.client._enums import (
 
 def test_known_ordinals_label_to_lowercase_enum_names() -> None:
     """Every confirmed FoodMeasurement ordinal labels to its enum name."""
+    assert label_for_ordinal(1) == "teaspoon"
     assert label_for_ordinal(2) == "tablespoon"
     assert label_for_ordinal(3) == "cup"
     assert label_for_ordinal(4) == "piece"
@@ -20,21 +21,26 @@ def test_known_ordinals_label_to_lowercase_enum_names() -> None:
     assert label_for_ordinal(10) == "fluid_ounce"
     assert label_for_ordinal(11) == "milliliter"
     assert label_for_ordinal(19) == "bottle"
+    assert label_for_ordinal(21) == "can"
     assert label_for_ordinal(26) == "slice"
     assert label_for_ordinal(27) == "serving"
     assert label_for_ordinal(33) == "scoop"
+    assert label_for_ordinal(45) == "container"
     assert label_for_ordinal(46) == "pie"
 
 
 def test_unknown_ordinal_falls_back_to_unknown_ord_n() -> None:
     """Not-yet-labelled ordinals surface as ``unknown_ord_<N>``.
 
-    A few observed-but-not-yet-confirmed ords: 6 (ounce-weight?), 16
-    (Orgain protein shake), 21 (Red Bull container).
+    A few observed-but-not-yet-confirmed ords: 6 (per-food display unit
+    that varies; not a stable measurement constant), 16 (Orgain protein
+    shake), 34 (single Quaker dry-oats sample), 35 (inconsistent across
+    SkinnyPop / kale cans).
     """
     assert label_for_ordinal(6) == "unknown_ord_6"
     assert label_for_ordinal(16) == "unknown_ord_16"
-    assert label_for_ordinal(21) == "unknown_ord_21"
+    assert label_for_ordinal(34) == "unknown_ord_34"
+    assert label_for_ordinal(35) == "unknown_ord_35"
 
 
 def test_label_for_none_is_unknown() -> None:

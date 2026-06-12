@@ -24,6 +24,7 @@ from .init import get_daydate_key
 _FLE_FQCN = "com.loseit.core.client.model.FoodLogEntry/264522954"
 _FOOD_SERVING_SIZE_FQCN = "com.loseit.core.client.model.FoodServingSize/63998910"
 _FOOD_MEASURE_PREFIX = "com.loseit.core.client.model.FoodMeasure/"
+_DATE_FQCN = "java.util.Date/3385151746"
 
 
 def _build_payload(config: Config, target_date: date, day_key: str) -> str:
@@ -198,8 +199,17 @@ def _entry_from_decoded(
                 day_num = int(f1)
             if isinstance(f2, (int, float)) and -12 <= int(f2) <= 14:
                 hours_from_gmt = int(f2)
-        # day_key: short-string within the DayDate / context subtree.
-        context_day_key = _scan_for_short_key(context) or ""
+            # day_key is the raw base64-encoded epoch-long of the Date in
+            # DayDate.f0 — that's what the server uses as a cache key and
+            # what ``deleteFoodLogEntry`` requires in its payload. We
+            # preserved the raw token alongside the decoded millis in
+            # the inline Date handler precisely so the parser can grab
+            # it here without an extra init RPC round-trip.
+            date_obj = daydate.get("f0")
+            if isinstance(date_obj, dict):
+                raw = date_obj.get("raw")
+                if isinstance(raw, str) and raw:
+                    context_day_key = raw
 
     # FoodMeasure (enum) — pluck the ordinal.
     food_measure_ord = 27
@@ -240,8 +250,26 @@ def _entry_from_decoded(
         if nutrients:
             break
 
-    # Top-level day_key (the "Z6mB_lo"-style short string near the FLE).
-    entry_day_key = _scan_for_short_key(fle) or context_day_key
+    # The entry-level day_key sits in the FoodServingSize's nested Date
+    # — same shape as context.f1.f0 but for the entry's own DayDate.
+    # Both day_keys are the base64 epoch-long that the server uses as a
+    # cache key; ``deleteFoodLogEntry`` rejects the payload (HTTP 500)
+    # if either is wrong. Previously the parser called
+    # ``_scan_for_short_key(fle)`` which heuristically grabbed *any*
+    # 4-16 char alphanumeric string in the subtree — and routinely
+    # picked up category strings like 'Honey' / 'Avocado' / 'Tomato'
+    # that match the pattern. Now we walk every Date dict in the FLE
+    # tree and use the raw token whose decoded millis is *closest* to
+    # the day_num — which is reliably the entry's day_key.
+    entry_day_key = context_day_key
+    for d in _walk_dicts(fle):
+        if d.get("__type__") == _DATE_FQCN:
+            raw = d.get("raw")
+            if isinstance(raw, str) and raw:
+                # Prefer a Date whose raw token differs from context's;
+                # if there's only one (typical), context and entry use it.
+                entry_day_key = raw
+                break
 
     if not food_pk_bytes or not entry_pk_bytes:
         return None
@@ -325,7 +353,7 @@ def get_daily_details(http: HttpClient, target_date: date) -> list[FoodLogEntry]
     """Fetch + parse today's (or any day's) FoodLogEntry list."""
     logger.info("daily.get_daily_details: date={d}", d=target_date.isoformat())
     day_num = day_number_for(target_date)
-    day_key = get_daydate_key(http, day_num) or ""
+    day_key = get_daydate_key(http, day_num)
     logger.debug("daily.get_daily_details: day_num={n} day_key={k!r}", n=day_num, k=day_key)
     text = http.post_rpc(_build_payload(http.config, target_date, day_key))
     entries = parse_entries(
@@ -348,5 +376,5 @@ def get_daily_details_raw(http: HttpClient, target_date: date) -> str:
     """
     logger.info("daily.get_daily_details_raw: date={d}", d=target_date.isoformat())
     day_num = day_number_for(target_date)
-    day_key = get_daydate_key(http, day_num) or ""
+    day_key = get_daydate_key(http, day_num)
     return http.post_rpc(_build_payload(http.config, target_date, day_key))

@@ -25,39 +25,58 @@ from __future__ import annotations
 # (e.g. cup→g) is intentionally absent — without per-food density data
 # the answer is meaningless.
 CONVERSIONS: dict[tuple[int, int], float] = {
-    # cup (3) ↔ volumetric. 1 US cup = 236.5882365 mL = 8 fl oz = 16 tbsp.
+    # cup (3) ↔ volumetric. 1 US cup = 236.5882365 mL = 8 fl oz = 16 tbsp = 48 tsp.
     (3, 3): 1.0,
     (3, 11): 236.5882365,
     (3, 10): 8.0,
     (3, 2): 16.0,
-    # fl oz (10) ↔ volumetric. 1 US fl oz = 29.5735296875 mL = 2 tbsp.
+    (3, 1): 48.0,
+    # fl oz (10) ↔ volumetric. 1 US fl oz = 29.5735296875 mL = 2 tbsp = 6 tsp.
     (10, 10): 1.0,
     (10, 11): 29.5735296875,
     (10, 2): 2.0,
     (10, 3): 0.125,
-    # tbsp (2) ↔ volumetric.
+    (10, 1): 6.0,
+    # tbsp (2) ↔ volumetric. 1 tbsp = 3 tsp.
     (2, 2): 1.0,
     (2, 11): 14.78676478125,
     (2, 10): 0.5,
     (2, 3): 0.0625,
+    (2, 1): 3.0,
+    # tsp (1) ↔ volumetric. 1 US teaspoon = 4.92892159375 mL.
+    (1, 1): 1.0,
+    (1, 11): 4.92892159375,
+    (1, 10): 1.0 / 6.0,
+    (1, 2): 1.0 / 3.0,
+    (1, 3): 1.0 / 48.0,
     # mL (11) ↔ volumetric (the inverses).
     (11, 11): 1.0,
     (11, 3): 1.0 / 236.5882365,
     (11, 10): 1.0 / 29.5735296875,
     (11, 2): 1.0 / 14.78676478125,
+    (11, 1): 1.0 / 4.92892159375,
     # Discrete units: identity only. Conversions between these (e.g. cup→each
-    # or g→scoop) need per-food data, which we get from FoodServingSize.f4/f3.
+    # or g→scoop) need per-food data, which we get from FoodServingSize.f4/f3
+    # or the per-food cross-class fields (per_serving_g / per_serving_ml).
     (8, 8): 1.0,
     (5, 5): 1.0,
     (26, 26): 1.0,
     (27, 27): 1.0,
     (33, 33): 1.0,
+    (4, 4): 1.0,  # piece
+    (19, 19): 1.0,  # bottle
+    (21, 21): 1.0,  # can
+    (45, 45): 1.0,  # container (single-serve)
+    (46, 46): 1.0,  # pie
 }
 
 # Case-insensitive aliases that map a user-supplied ``--serving-unit``
 # value to its FoodMeasurement ordinal. Keep the keys lowercase; the
 # resolver normalises the input before lookup.
 UNIT_ALIASES: dict[str, int] = {
+    "tsp": 1,
+    "teaspoon": 1,
+    "teaspoons": 1,
     "cup": 3,
     "cups": 3,
     "c": 3,
@@ -77,12 +96,22 @@ UNIT_ALIASES: dict[str, int] = {
     "grams": 8,
     "each": 5,
     "ea": 5,
+    "piece": 4,
+    "pieces": 4,
     "slice": 26,
     "slices": 26,
     "serving": 27,
     "servings": 27,
     "scoop": 33,
     "scoops": 33,
+    "bottle": 19,
+    "bottles": 19,
+    "can": 21,
+    "cans": 21,
+    "container": 45,
+    "containers": 45,
+    "pie": 46,
+    "pies": 46,
     # Deliberately omitted: bare "oz". In cooking it can mean weight ounce
     # (~28.35 g) or fluid ounce (~29.57 mL). The CLI requires the user to
     # spell out "fl_oz" for volume or "g" for weight.
@@ -92,15 +121,21 @@ UNIT_ALIASES: dict[str, int] = {
 # to the user. Used in dry-run output and error messages where we want a
 # stable, lowercase form rather than the verbose ``measure_name`` output.
 CANONICAL_UNIT_NAMES: dict[int, str] = {
+    1: "tsp",
     2: "tbsp",
     3: "cup",
+    4: "piece",
     5: "each",
     8: "g",
     10: "fl_oz",
     11: "mL",
+    19: "bottle",
+    21: "can",
     26: "slice",
     27: "serving",
     33: "scoop",
+    45: "container",
+    46: "pie",
 }
 
 

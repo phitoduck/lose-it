@@ -32,6 +32,7 @@ class FoodMeasurement(IntEnum):
     slot (see :class:`FoodNutrient`).
     """
 
+    TEASPOON = 1  # confirmed: Raw Honey "1 Teaspoon" per_serving_ml=4.92892 (= exactly 1 US tsp)
     TABLESPOON = 2
     CUP = 3
     PIECE = 4  # confirmed: Reese's PB Eggs (f4=4, f5=3 = 3 candies), gum sticks
@@ -40,17 +41,27 @@ class FoodMeasurement(IntEnum):
     FLUID_OUNCE = 10
     MILLILITER = 11
     BOTTLE = 19  # confirmed: Slimfast shake bottle, Diet Coke can (f0=1.666 = 12oz/7.2oz)
+    CAN = 21  # confirmed: Pepsi/Mountain Dew/Dr Pepper per_serving_ml=355 (= 12 fl oz US can)
     SLICE = 26
     SERVING = 27
     SCOOP = 33
+    CONTAINER = 45  # confirmed: Chobani/Fage "Indiv. Container" / "Single Serve" yogurts
     PIE = 46  # confirmed: Milton's cauliflower pizza (f4=0.25 = 1/4 pie per serving)
 
-    # Observed but not yet confirmed across enough foods to label:
-    #   6   — possibly "ounce_weight" (Chicken Breast Raw)
-    #   16  — observed on Orgain protein shake
-    #   21  — possibly "container" (Red Bull 8.3 oz)
-    # When seen on the wire these surface as ``unit="unknown_ord_<N>"``
-    # in JSON output; promote them here once their meaning is confirmed.
+    # Observed but per-food semantics inconsistent — needs more probing
+    # before labeling. Each surfaces as ``unit="unknown_ord_<N>"`` in JSON
+    # output so consumers can still see something informative:
+    #   6   — appears on cooked meat / steak / pasta. Per-food g/unit ratio
+    #         varies (44g for chicken skinless cooked, 59g for grilled,
+    #         100g for steak qty=1) — likely a per-food display unit, not
+    #         a stable measurement constant.
+    #   16  — observed on Orgain protein shake (RTD).
+    #   34  — only one sample (Quaker Old Fashioned Oats Dry, 40g per
+    #         "1 unit" = 150 cal = standard ½-cup dry). Could be "½ cup"
+    #         but a single sample isn't enough.
+    #   35  — inconsistent: SkinnyPop 1 unit = 28g (= 1 oz, looks like
+    #         "ounce") but Bush's kale 1 unit = ~115g (not an ounce).
+    #         Likely "package" / "bag" / "ounce" depending on the food.
 
 
 class FoodNutrient(IntEnum):

@@ -84,8 +84,8 @@ class ServingUnit(enum.StrEnum):
     """Choices for ``--serving-unit``.
 
     Typed as a Typer :class:`StrEnum` so ``--help`` auto-renders the
-    bracket-style enumeration ``[tbsp|cup|each|g|fl_oz|mL|slice|serving|scoop]``.
-    Adding a new label here automatically updates the help text.
+    bracket-style enumeration. Adding a new label here automatically
+    updates the help text.
 
     Members are the canonical lowercase names from ``CANONICAL_UNIT_NAMES``;
     the resolver in ``_units.resolve_unit`` still handles aliases (``cups``,
@@ -93,15 +93,21 @@ class ServingUnit(enum.StrEnum):
     but the CLI surface is restricted to these canonical values.
     """
 
+    tsp = "tsp"
     tbsp = "tbsp"
     cup = "cup"
+    piece = "piece"
     each = "each"
     g = "g"
     fl_oz = "fl_oz"
     mL = "mL"
+    bottle = "bottle"
+    can = "can"
     slice = "slice"
     serving = "serving"
     scoop = "scoop"
+    container = "container"
+    pie = "pie"
 
 
 class Browser(enum.StrEnum):
