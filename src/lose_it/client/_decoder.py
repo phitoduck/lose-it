@@ -142,6 +142,7 @@ _FLOAT = "java.lang.Float/1718559123"
 _BOOLEAN = "java.lang.Boolean/476441737"
 _STRING = "java.lang.String/2004016611"
 _DATE = "java.util.Date/3385151746"
+_TIMESTAMP = "java.sql.Timestamp/3040052672"
 _BYTE_ARRAY = "[B/3308590456"
 
 
@@ -300,7 +301,26 @@ def _read_typed(reader: _Reader, fqcn: str) -> Any:
         reader.backrefs.append(s)
         return s
     if fqcn == _DATE:
-        v = _decode_long(str(reader.pop_raw()))  # epoch millis as raw int
+        # Preserve the raw base64-long token alongside the decoded millis.
+        # The raw token IS the day_key that the server expects in
+        # ``deleteFoodLogEntry`` payloads. Decoding it to int loses the
+        # original string, and re-encoding round-trip isn't trivial
+        # (sign-extension on the first char). Stash both.
+        raw = str(reader.pop_raw())
+        v = {"__type__": fqcn, "millis": _decode_long(raw), "raw": raw}
+        reader.backrefs.append(v)
+        return v
+    if fqcn == _TIMESTAMP:
+        # java.sql.Timestamp pops TWO tokens, not one: the constructor
+        # (``qEd`` / instantiate) reads the epoch-millis long, then the
+        # deserialize body (``pEd``) reads the nanos raw int. We mirror
+        # both pops here so the cursor stays aligned. Without this,
+        # FoodLogEntryContexts that carry a Timestamp in field 0
+        # desync — every entry past the first Timestamp-bearing one in
+        # a daily-details response gets silently dropped.
+        millis = _decode_long(str(reader.pop_raw()))
+        nanos = reader.pop_raw()
+        v = {"__type__": fqcn, "millis": millis, "nanos": nanos}
         reader.backrefs.append(v)
         return v
 
