@@ -434,29 +434,43 @@ def _resolve_pick(picked: int | None, prompt: str, n: int) -> int:
 def search(
     ctx: typer.Context,
     query: Annotated[str, typer.Argument(help="Free-text search query")],
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "--verbose",
+            "-v",
+            help=(
+                "Include the raw 16-int ``pk_bytes`` array in JSON/TOON output. "
+                "Off by default because ``food_id`` (the lowercase-hex form) is "
+                "the only identifier the CLI itself accepts — ``--food-id`` and "
+                "``describe-food`` both take hex. ``pk_bytes`` only matters when "
+                "writing Python code against the SDK."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Search the LoseIt food database."""
     fmt = _output_format(ctx)
-    logger.info("cli.search: query={q!r} output={o}", q=query, o=fmt.value)
+    logger.info(
+        "cli.search: query={q!r} output={o} verbose={v}", q=query, o=fmt.value, v=verbose
+    )
     with _open_client(ctx) as client:
         results = foods.search(client.http, query)
         if fmt is not OutputFormat.text:
+            rows: list[dict[str, Any]] = []
+            for r in results:
+                row: dict[str, Any] = {
+                    "name": r.name,
+                    "brand": r.brand,
+                    "category": r.category,
+                    "food_id": pk_to_hex(r.pk_bytes),
+                }
+                if verbose:
+                    row["pk_bytes"] = list(r.pk_bytes)
+                rows.append(row)
             _emit_structured(
                 fmt,
-                {
-                    "query": query,
-                    "count": len(results),
-                    "results": [
-                        {
-                            "name": r.name,
-                            "brand": r.brand,
-                            "category": r.category,
-                            "food_id": pk_to_hex(r.pk_bytes),
-                            "pk_bytes": list(r.pk_bytes),
-                        }
-                        for r in results
-                    ],
-                },
+                {"query": query, "count": len(results), "results": rows},
             )
         else:
             _print_search_results(results)

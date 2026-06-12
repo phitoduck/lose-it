@@ -246,11 +246,12 @@ results[3]:
     brand: Mission
     category: Bread
     food_id: 9eba9129b8494967c8cb3385acf0f614
-    pk_bytes[16]: 158,186,145,41,184,73,73,103,200,203,51,133,172,240,246,20
   ...
 ```
 
-On a typical 3-row search payload, the JSON view is 1,224 chars and the TOON view is 622 chars — a ~49% reduction. Round-tripping the TOON output through a decoder produces the same Python dict as `json.loads` of the JSON output, so anything downstream that wants real JSON can recover it on demand:
+`food_id` is the only identifier the CLI itself accepts (`--food-id`, `describe-food`). Pass `--verbose` / `-v` to also include the raw 16-int `pk_bytes` array — useful when driving the SDK from Python code, just noise otherwise.
+
+On a typical 3-row search payload, the JSON view is ~900 chars and the TOON view ~470 chars — about a ~48% reduction. Round-tripping the TOON output through a decoder produces the same Python dict as `json.loads` of the JSON output, so anything downstream that wants real JSON can recover it on demand:
 
 ```python
 import toon_format
@@ -301,25 +302,11 @@ $ loseit --log-level info search "tortilla" 1>/dev/null
 $ loseit --log-level trace search "avocado" 1>/dev/null
 12:00:00.123 TRACE    lose_it.client._http:post_rpc:121 HTTP REQUEST → searchFoods
 POST https://www.loseit.com/web/service
-── headers ──
-  content-type: text/x-gwt-rpc; charset=UTF-8
-  x-gwt-module-base: https://d3hsih69yn4d89.cloudfront.net/web/
-  x-gwt-permutation: 351AE5DC0CA36AD3BA9C7CBA7B0E07B8
-  x-loseit-gwtversion: devmode
-  x-loseit-hoursfromgmt: -6
-  origin: https://www.loseit.com
-  referer: https://www.loseit.com/
-── cookies ──
-  liauth=<REDACTED-JWT>
-  fn_auth=<REDACTED-JWT>
+(headers + cookies suppressed — re-run with --log-headers to include)
 ── body (380 bytes) ──
 7|0|12|https://d3hsih69yn4d89.cloudfront.net/web/|8F87EC8969F17AE77B6283D3A83F6D4C|com.loseit.core.client.service.LoseItRemoteService|searchFoods|com.loseit.core.client.service.ServiceRequestToken/1076571655|java.lang.String/2004016611|I|Z|com.loseit.core.client.model.UserId/4281239478|you@example.com|avocado|en-US|1|2|3|4|6|5|6|6|7|8|8|5|0|9|12345678|10|-6|11|12|15|1|1|
 12:00:00.310 TRACE    lose_it.client._http:post_rpc:150 HTTP RESPONSE ← searchFoods
 HTTP/1.1 200 (188.4 ms)
-── headers ──
-  content-type: application/json;charset=utf-8
-  content-length: 1235
-  ...
 ── body (2764 bytes) ──
 //OK[0,17,2,42,40,13,-51,-6,9290,"Z6mB_lo",...]
 ```
@@ -333,7 +320,7 @@ $ grep -E "rpc.*OK" ~/loseit-session.log
 2026-06-11 12:00:00.672 | SUCCESS  | lose_it.client._http:post_rpc:205 | rpc getDailyDetailsIncludingPendingForDate OK in 92.7 ms (7610 bytes)
 ```
 
-> ⚠️ **Heads up:** at TRACE level the `liauth` and `fn_auth` cookies are dumped **verbatim** — the JWT is a bearer credential for your Lose It! account. Treat any file written via `--log-file` as sensitive: don't paste sessions into bug reports without scrubbing them. The repo's gitleaks config (see [Lint, format, secret-scan (prek)](#lint-format-secret-scan-prek)) blocks any commit containing a real `liauth`/`fn_auth` JWT exactly to prevent accidental disclosure.
+> ⚠️ **Heads up:** by default the `── headers ──` / `── cookies ──` sections are **omitted** from the TRACE dump even at `--log-level trace`. Pass `--log-headers` to opt in — and only when you're actually debugging an auth/header issue, because the `liauth` and `fn_auth` cookies are bearer JWTs for your Lose It! account. If you do enable headers, treat any `--log-file` output as sensitive and scrub before sharing. The repo's gitleaks config (see [Lint, format, secret-scan (prek)](#lint-format-secret-scan-prek)) blocks any commit containing a real `liauth`/`fn_auth` JWT exactly to prevent accidental disclosure.
 
 ## Configuration
 
