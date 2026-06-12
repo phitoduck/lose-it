@@ -474,9 +474,13 @@ def log(
         typer.Option(
             "--serving-unit",
             help=(
-                "Display unit for --serving-amount. One of: cup, mL, fl_oz, "
-                "tbsp, g, scoop, slice, each, serving (plus common aliases — "
-                "see _units.UNIT_ALIASES)."
+                "Display unit for --serving-amount. Known values: "
+                "tablespoon (tbsp), cup, each, grams (g), fluid_ounce (fl_oz), "
+                "mL, slice, serving, scoop. Aliases like 'cups', 'tablespoons' "
+                "are also accepted (case-insensitive). For units we don't yet "
+                "label, pass the raw FoodMeasurement ordinal as an integer "
+                "(escape hatch — requires knowing the Lose It! API's internal "
+                "enum, e.g. '--serving-unit 46' for PIE)."
             ),
         ),
     ] = None,
