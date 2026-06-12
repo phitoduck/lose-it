@@ -62,10 +62,12 @@ def test_full_crud_round_trip(tmp_path: Path) -> None:
             foods._build_search_payload(client.config, query)
         )
         _write_fixture("search_foods_tortilla.txt", search_payload_resp)
-        from lose_it.core._gwt import parse_response
+        from lose_it.core._decoder import decode_response
 
-        tokens, strings = parse_response(search_payload_resp)
-        results = foods._extract_search_results(tokens, strings)
+        decoded = decode_response(search_payload_resp)
+        results = foods._extract_search_results_from_decoded(
+            decoded, user_name=client.config.user_name
+        )
         assert results, "search returned no candidates"
 
         # Find the Mission Carb Balance tortilla (heuristic match on brand+name).
@@ -77,8 +79,10 @@ def test_full_crud_round_trip(tmp_path: Path) -> None:
         # 2. get_unsaved
         unsaved_resp = client.http.post_rpc(foods._build_unsaved_payload(client.config, target))
         _write_fixture("get_unsaved_tortilla.txt", unsaved_resp)
-        t, s = parse_response(unsaved_resp)
-        unsaved = foods._parse_unsaved_response(t, s)
+        unsaved_decoded = decode_response(unsaved_resp)
+        unsaved = foods._extract_unsaved_from_decoded(
+            unsaved_decoded, user_name=client.config.user_name
+        )
         assert unsaved.food_pk_bytes, "unsaved entry missing food PK"
 
         # 3. log to snacks (so we don't pollute a "real" meal)
