@@ -1,4 +1,4 @@
-"""Shared pytest fixtures.
+"""Shared pytest fixtures + ``requires_auth`` gating.
 
 Provides:
 
@@ -10,6 +10,18 @@ Provides:
 - ``test_client`` — a :class:`Client` whose httpx transport is mocked via the
   ``pytest-httpx`` ``httpx_mock`` fixture; tests register canned responses to
   ``/web/service`` and assert on what the SDK sends + parses.
+
+Marker gate
+-----------
+Tests that need a live Lose It! account (real ``liauth`` JWT + LOSEIT_* config)
+are marked ``@pytest.mark.requires_auth``. They are excluded from the default
+``pytest`` run via ``addopts = ["-m", "not requires_auth"]`` in pyproject.toml,
+so a bare ``pytest`` is hermetic. To run them, override the filter::
+
+    pytest -m requires_auth                         # only the live-API suite
+    pytest -m "requires_auth or not requires_auth"  # everything
+
+This replaces the older ``LOSEIT_RUN_FUNCTIONAL=1`` env-var gate.
 """
 
 from __future__ import annotations

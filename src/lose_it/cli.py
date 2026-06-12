@@ -43,6 +43,8 @@ import asyncio
 import enum
 import json
 import webbrowser
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -62,6 +64,52 @@ from .models import FoodLogEntry, FoodSearchResult
 
 # Lose It! signin URL — surfaced when login fails so the user can re-auth.
 _SIGNIN_URL = "https://www.loseit.com/"
+
+# Project identity — surfaced by ``loseit version`` / ``loseit --version``.
+_PROJECT_REPO = "https://github.com/phitoduck/lose-it"
+_PROJECT_LICENSE = "MIT"
+
+
+def _resolve_version() -> str:
+    """Return the installed package version, or ``"unknown"`` as a last resort.
+
+    Reads from the package's distribution metadata (populated by hatchling
+    from ``version.txt`` at build time). Falls back to reading ``version.txt``
+    directly only when the package is being run from a source tree that
+    somehow isn't installed — this keeps ``python -m lose_it.cli version``
+    informative during local hacking.
+    """
+    try:
+        return _pkg_version("lose-it")
+    except PackageNotFoundError:
+        pass
+    version_txt = Path(__file__).resolve().parents[2] / "version.txt"
+    if version_txt.is_file():
+        return version_txt.read_text().strip()
+    return "unknown"
+
+
+def _format_version_text(ver: str) -> str:
+    """Human-readable ``version`` output. Single source of truth for the layout."""
+    return (
+        f"loseit {ver}\n"
+        f"Release: {_PROJECT_REPO}/releases/tag/v{ver}\n"
+        f"License: {_PROJECT_LICENSE}\n"
+        "\n"
+        "This project is unaffiliated with Lose It! / FitNow, Inc.\n"
+        "Thank you for using it!"
+    )
+
+
+def _version_payload(ver: str) -> dict[str, str]:
+    """Structured (`json`/`toon`) payload for the ``version`` subcommand."""
+    return {
+        "version": ver,
+        "release_url": f"{_PROJECT_REPO}/releases/tag/v{ver}",
+        "license": _PROJECT_LICENSE,
+        "disclaimer": "This project is unaffiliated with Lose It! / FitNow, Inc.",
+        "thanks": "Thank you for using it!",
+    }
 
 
 class OutputFormat(enum.StrEnum):
@@ -116,9 +164,30 @@ app = typer.Typer(
 # ── Top-level callback: global config + output options ──────────────────────
 
 
+def _version_callback(value: bool) -> None:
+    """Eager ``--version`` handler — prints + exits before subcommand dispatch.
+
+    Mirrors the ``version`` subcommand but always emits the human-readable
+    block. Use ``loseit version --output json`` for structured output.
+    """
+    if not value:
+        return
+    typer.echo(_format_version_text(_resolve_version()))
+    raise typer.Exit()
+
+
 @app.callback()
 def _root(
     ctx: typer.Context,
+    version_flag: Annotated[
+        bool,
+        typer.Option(
+            "--version",
+            help="Show version, repo URL, license, and disclaimer; then exit.",
+            callback=_version_callback,
+            is_eager=True,
+        ),
+    ] = False,
     output: Annotated[
         OutputFormat,
         typer.Option(
@@ -997,6 +1066,17 @@ def whoami(ctx: typer.Context) -> None:
         typer.echo(f"hours_from_gmt : {cfg.hours_from_gmt}")
         typer.echo(f"policy_hash    : {cfg.policy_hash}")
         typer.echo(f"strong_name    : {cfg.strong_name}")
+
+
+@app.command()
+def version(ctx: typer.Context) -> None:
+    """Print the CLI version, release URL, license, and disclaimer."""
+    fmt = _output_format(ctx)
+    ver = _resolve_version()
+    if fmt is OutputFormat.text:
+        typer.echo(_format_version_text(ver))
+    else:
+        _emit_structured(fmt, _version_payload(ver))
 
 
 # ── Entrypoint ───────────────────────────────────────────────────────────────

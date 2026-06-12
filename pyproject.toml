@@ -49,9 +49,13 @@ dev = [
 
 [tool.pytest.ini_options]
 markers = [
-    "functional: hits the real Lose It! API; requires LOSEIT_RUN_FUNCTIONAL=1 + valid token",
+    "requires_auth: hits the real Lose It! API; needs a valid `liauth` JWT and the LOSEIT_* config. Excluded by default — run `pytest -m requires_auth` to include them.",
 ]
 testpaths = ["tests"]
+# Default to excluding the live-API suite so a bare `pytest` is hermetic.
+# Override with `pytest -m requires_auth` (only auth) or
+# `pytest -m "requires_auth or not requires_auth"` (both).
+addopts = ["-m", "not requires_auth"]
 
 [tool.ruff]
 line-length = 100

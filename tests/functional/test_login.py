@@ -13,14 +13,13 @@ The test parametrizes over ``("chrome", "brave")`` and uses ``pytest.skip``
 (not failure) when a particular browser isn't installed or isn't logged in,
 so contributors who only use one of the two still see the other one run.
 
-Skipped entirely unless ``LOSEIT_RUN_FUNCTIONAL=1`` is set, since reading the
-cookie store on macOS triggers a Keychain prompt and we don't want CI or
-unrelated test runs poking at the user's keychain.
+Marked ``requires_auth`` — skipped by default; pass ``pytest --run-auth`` to opt in,
+since reading the cookie store on macOS triggers a Keychain prompt and we don't
+want CI or unrelated test runs poking at the user's keychain.
 """
 
 from __future__ import annotations
 
-import os
 import time
 from typing import Literal
 
@@ -35,13 +34,7 @@ from lose_it.core.auth import (
     refresh_token_from_browser,
 )
 
-pytestmark = pytest.mark.functional
-
-
-@pytest.fixture(autouse=True)
-def _gate() -> None:
-    if os.environ.get("LOSEIT_RUN_FUNCTIONAL") != "1":
-        pytest.skip("functional test gated on LOSEIT_RUN_FUNCTIONAL=1")
+pytestmark = pytest.mark.requires_auth
 
 
 @pytest.mark.parametrize("browser", ["chrome", "brave"])
