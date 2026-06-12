@@ -12,12 +12,12 @@ from datetime import date
 from typing import Any
 
 from .._logging import logger
+from ..models import FoodLogEntry
 from ._config import Config
 from ._dates import day_number_for
 from ._decoder import decode_response
 from ._gwt import build_envelope, parse_response
 from ._http import HttpClient
-from ..models import FoodLogEntry
 from .init import get_daydate_key
 
 # Type hashes used to walk the decoder's output.

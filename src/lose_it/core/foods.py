@@ -20,12 +20,12 @@ from __future__ import annotations
 from typing import Any
 
 from .._logging import logger
+from ..models import FoodSearchResult, UnsavedFoodLogEntry
 from ._config import Config
 from ._decoder import decode_response
 from ._gwt import build_envelope
 from ._http import HttpClient, LoseItError
 from ._ids import pk_to_hex
-from ..models import FoodSearchResult, UnsavedFoodLogEntry
 
 # ── Schema field positions ───────────────────────────────────────────────────
 #

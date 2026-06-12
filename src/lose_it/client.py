@@ -31,9 +31,10 @@ first argument. Kept here unchanged so existing code keeps working; once
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import httpx
 

@@ -10,10 +10,10 @@ from __future__ import annotations
 import uuid
 
 from .._logging import logger
+from ..models import FoodLogEntry, UnsavedFoodLogEntry
 from ._config import Config
 from ._gwt import build_envelope, fmt_num
 from ._http import HttpClient
-from ..models import FoodLogEntry, UnsavedFoodLogEntry
 
 # Of the FoodMeasurement enum, only these 9 ordinals are accepted by the
 # server inside the FoodNutrients HashMap when logging an entry.

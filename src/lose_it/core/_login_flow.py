@@ -16,9 +16,9 @@ Lifted from the ``_detect_hours_from_gmt`` and
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Callable
 
 from .auth import (
     extract_user_info_from_jwt,
@@ -26,7 +26,7 @@ from .auth import (
     load_cookies_from_browser,
 )
 
-__all__ = ["DerivedConfigValues", "detect_hours_from_gmt", "derive_config_values"]
+__all__ = ["DerivedConfigValues", "derive_config_values", "detect_hours_from_gmt"]
 
 
 @dataclass(frozen=True)

@@ -675,7 +675,7 @@ def describe_food(
             desc = li.describe_food(fid)
         except ValueError as exc:
             return {"food_id": fid, "error": "invalid_food_id", "message": str(exc)}
-        except Exception as exc:  # noqa: BLE001 — any RPC failure surfaces as fetch_failed
+        except Exception as exc:
             return {"food_id": fid, "error": "fetch_failed", "message": str(exc)}
         return desc.to_dict()
 
