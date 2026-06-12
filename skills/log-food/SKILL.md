@@ -91,6 +91,19 @@ Decompose the request into one entry per food. Extract:
 | **quantity + unit** | yes — see below | `120 g`, `1 each`, `0.5 cup`, `2 tsp`, `1 can`, `1 container` |
 | **date** | optional (default today) | "yesterday" → `--date YYYY-MM-DD` |
 
+### Meal selection — do not prompt for this
+
+Resolve the meal in this order, **without ever asking the user** which meal it is:
+
+1. **Explicit meal in the prompt** ("for lunch I had …", "log my dinner …") → use that meal.
+2. **Time-of-day language that implies a meal** → infer it. Map cues like these:
+   - "this morning", "breakfast", "with my coffee" → `breakfast`
+   - "at lunch", "around noon", "midday" → `lunch`
+   - "tonight", "this evening", "for dinner", "after work" → `dinner`
+3. **Neither given** → silently default to `snacks`. Do **not** ask "which meal?" — just log to snacks and move on.
+
+The point of this rule is to keep the skill low-friction. The user can correct the meal afterward with `loseit delete` + re-log if they meant something else; an unprompted snack-default is cheaper than a clarifying question every time.
+
 ### Unit selection
 
 The CLI accepts these `--serving-unit` values: `tsp`, `tbsp`, `cup`, `piece`, `each`, `g`, `fl_oz`, `mL`, `bottle`, `can`, `slice`, `serving`, `scoop`, `container`, `pie`. Plus common aliases (`cups`, `grams`, `tablespoon`, `floz`, `milliliter`, …).
