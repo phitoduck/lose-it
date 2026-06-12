@@ -1,15 +1,24 @@
 """Typer-based CLI for the Lose It! SDK.
 
-The CLI is a thin wrapper around :class:`lose_it.Client` and the
-``lose_it.core.*`` modules. Subcommands::
+A thin wrapper around :class:`lose_it.LoseIt`. Each subcommand:
+
+1. Parses + CLI-validates flags (mutual exclusion, format choices).
+2. Calls a single :class:`LoseIt` method that does all the orchestration
+   (search → unsaved → log; diary fetch; describe-food fan-out; login flow).
+3. Renders the result — either pretty text via the ``_print_*`` helpers
+   or a structured envelope via ``model.to_dict()``.
+
+Subcommands::
 
     loseit search "tortilla"                              List candidate foods
     loseit log "tortilla" --meal lunch --servings 1.0     Search + log
     loseit log "tortilla" --meal lunch --pick 2           Skip the interactive prompt
     loseit diary                                          Show today's diary
     loseit diary --date 2026-06-08                        Show another day's diary
+    loseit describe-food <hex>                            Inspect a food's full profile
     loseit delete --meal lunch --pick 1                   Delete an entry by index
     loseit delete --meal lunch --pick 1 --yes             Skip the confirmation prompt
+    loseit login                                          Import liauth from browser cookies
     loseit whoami                                         Print resolved config
 
 Two global options are honored by every subcommand:
@@ -30,10 +39,10 @@ All commands honor the ``LOSEIT_*`` env vars for configuration (see
 
 from __future__ import annotations
 
+import asyncio
 import enum
 import json
 import webbrowser
-from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -42,37 +51,17 @@ import typer
 
 from ._logging import configure as _configure_logging
 from ._logging import logger
-from .client import Client
-from .enums import ServingUnit
-from .core import daily, entries, foods
-from .core._config import (
-    MEAL_NAMES,
-    MEAL_TYPES,
-    MissingConfigError,
-    measure_name,
-)
-from .core._dates import day_number_for, parse_date_arg
-from .core._ids import hex_to_pk, pk_to_hex
-from .core._settings import DEFAULT_CONFIG_FILE, write_yaml_config
-from .core._units import (
-    CANONICAL_UNIT_NAMES,
-    resolve_unit,
-)
-from .core._units import (
-    conversion_factor as _conversion_factor,
-)
-from .core.auth import (
-    DEFAULT_TOKEN_FILE,
-    SIGNIN_URL,
-    decode_jwt_exp,
-    extract_user_info_from_jwt,
-    extract_user_name_from_cookies,
-    is_token_expired,
-    load_cookies_from_browser,
-    refresh_token_from_browser,
-    save_token,
-)
-from .core.init import get_daydate_key
+from .client import LoseIt
+from .core._config import MEAL_NAMES, MissingConfigError
+from .core._dates import parse_date_arg
+from .core._portion import PortionError, validate_portion_args
+from .core._settings import DEFAULT_CONFIG_FILE
+from .core.auth import DEFAULT_TOKEN_FILE
+from .enums import MealType, ServingUnit
+from .models import FoodLogEntry, FoodSearchResult
+
+# Lose It! signin URL — surfaced when login fails so the user can re-auth.
+_SIGNIN_URL = "https://www.loseit.com/"
 
 
 class OutputFormat(enum.StrEnum):
@@ -87,14 +76,13 @@ class OutputFormat(enum.StrEnum):
     toon = "toon"
 
 
-# ``ServingUnit`` (the canonical FoodMeasurement names) is an SDK-domain
-# enum, not a CLI artifact — it lives in :mod:`lose_it.enums` so SDK
-# callers can write ``LoseIt.log_food(..., serving_unit=ServingUnit.cup)``.
-# The Typer ``--serving-unit`` annotation below uses the same class.
-
-
 class Browser(enum.StrEnum):
-    """Browsers we can import the ``liauth`` cookie from."""
+    """Browsers we can import the ``liauth`` cookie from.
+
+    CLI-only — Lose It! itself doesn't care which browser sourced the
+    cookie; this enum exists so ``--browser`` shows a typed choice list
+    in ``--help``.
+    """
 
     chrome = "chrome"
     brave = "brave"
@@ -306,18 +294,20 @@ def _jsonable(obj: Any) -> Any:
     raise TypeError(f"Unserializable type {type(obj).__name__}")
 
 
-def _open_client(ctx: typer.Context | None = None) -> Client:
-    """Build a Client from the layered sources; print a friendly error if missing.
+def _open_loseit(ctx: typer.Context | None = None) -> LoseIt:
+    """Build a :class:`LoseIt` client from the layered sources.
 
     When called with a Typer context, any ``--user-id``/``--user-name``/…
     CLI flags stashed in ``ctx.obj["config_overrides"]`` are forwarded as
-    the highest-priority config layer.
+    the highest-priority config layer. Maps ``FileNotFoundError`` /
+    :class:`MissingConfigError` to a coloured error + ``Exit(2)`` so the
+    user gets actionable feedback instead of a Python traceback.
     """
     overrides: dict[str, object] = {}
     if ctx is not None and ctx.obj:
         overrides = ctx.obj.get("config_overrides") or {}
     try:
-        return Client.from_env(**overrides)
+        return LoseIt.from_env(**overrides)
     except FileNotFoundError as e:
         typer.secho(f"❌ {e}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=2) from e
@@ -326,7 +316,8 @@ def _open_client(ctx: typer.Context | None = None) -> Client:
         raise typer.Exit(code=2) from e
 
 
-def _print_search_results(results) -> None:
+def _print_search_results(results: list[FoodSearchResult]) -> None:
+    """Render the search-results table for ``--output text``."""
     if not results:
         typer.echo("  No results.")
         return
@@ -335,17 +326,17 @@ def _print_search_results(results) -> None:
     for i, f in enumerate(results[:15]):
         name = (f.name or "")[:50]
         brand = (f.brand or "")[:20]
-        food_id = pk_to_hex(f.pk_bytes) if len(f.pk_bytes) == 16 else ""
-        food_id_short = f"{food_id[:10]}…" if food_id else ""
+        food_id_short = f"{f.food_id[:10]}…" if f.food_id else ""
         typer.echo(f"{i + 1:>3}  {name:50} {brand:20} {food_id_short}")
 
 
-def _print_diary(entries_, when: date) -> None:
-    if not entries_:
+def _print_diary(entries: list[FoodLogEntry], when: Any) -> None:
+    """Render the diary block (per-meal grouping) for ``--output text``."""
+    if not entries:
         typer.echo(f"  (no entries for {when.isoformat()})")
         return
-    by_meal: dict[int, list] = {0: [], 1: [], 2: [], 3: []}
-    for e in entries_:
+    by_meal: dict[int, list[FoodLogEntry]] = {0: [], 1: [], 2: [], 3: []}
+    for e in entries:
         by_meal.setdefault(e.meal_ordinal, []).append(e)
     typer.echo(f"\n📅 Diary for {when.isoformat()}:")
     for m_ord in sorted(by_meal):
@@ -358,38 +349,6 @@ def _print_diary(entries_, when: date) -> None:
             cal = e.calories
             cal_str = f"  [{cal:.0f} cal]" if cal is not None else ""
             typer.echo(f"    {i + 1}. {e.food_name}{brand}  × {e.servings}{cal_str}")
-
-
-def _entry_to_dict(e) -> dict[str, Any]:
-    """Project a FoodLogEntry into a JSON-safe dict.
-
-    Includes both raw-ordinal nutrients (``nutrients``) and labeled
-    nutrients (``nutrients_by_label``) so the JSON output is both
-    human-readable and machine-parseable for downstream verification.
-    """
-    from .core._enums import label_for_nutrient, label_for_ordinal
-
-    raw_nutrients = {int(ord_): float(val) for ord_, val in (e.nutrients_ordered or [])}
-    labeled_nutrients = {label_for_nutrient(o): v for o, v in raw_nutrients.items()}
-    return {
-        "meal": MEAL_NAMES.get(e.meal_ordinal, f"meal{e.meal_ordinal}"),
-        "meal_ordinal": e.meal_ordinal,
-        "food_name": e.food_name,
-        "food_brand": e.food_brand,
-        "food_category": e.food_category,
-        "food_identifier_code": e.food_identifier_code,
-        "servings": e.servings,
-        "calories": e.calories,
-        "nutrients": raw_nutrients,
-        "nutrients_by_label": labeled_nutrients,
-        "entry_pk": list(e.entry_pk_response),
-        "food_pk": list(e.food_pk_response),
-        "entry_day_key": e.entry_day_key,
-        "context_day_key": e.context_day_key,
-        "day_num": e.day_num,
-        "food_measure_ordinal": e.food_measure_ordinal,
-        "food_measure_unit": label_for_ordinal(e.food_measure_ordinal),
-    }
 
 
 def _resolve_pick(picked: int | None, prompt: str, n: int) -> int:
@@ -408,6 +367,43 @@ def _resolve_pick(picked: int | None, prompt: str, n: int) -> int:
         typer.secho(f"--pick must be 1..{n}", fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1)
     return idx
+
+
+def _emit_error(fmt: OutputFormat, code: str, message: str, **context: Any) -> None:
+    """Emit a structured error envelope (json/toon) or a coloured red line (text).
+
+    Used at the CLI boundary to turn validation failures into the
+    ``{"error": code, ...}`` shape today's tests pin.
+    """
+    if fmt is not OutputFormat.text:
+        payload: dict[str, Any] = {"error": code, "message": message}
+        payload.update(context)
+        _emit_structured(fmt, payload)
+    else:
+        typer.secho(f"❌ {message}", fg=typer.colors.RED, err=True)
+
+
+def _open_in_browser(url: str, browser: str) -> bool:
+    """Open ``url`` in the named browser; fall back to the system default."""
+    import shutil
+    import subprocess
+    import sys
+
+    if sys.platform == "darwin":
+        app_name = {"chrome": "Google Chrome", "brave": "Brave Browser"}.get(browser)
+        if app_name:
+            try:
+                subprocess.run(["open", "-a", app_name, url], check=True)
+                return True
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                pass
+    elif shutil.which(browser):
+        try:
+            subprocess.Popen([browser, url])
+            return True
+        except OSError:
+            pass
+    return webbrowser.open(url)
 
 
 # ── Commands ─────────────────────────────────────────────────────────────────
@@ -435,26 +431,19 @@ def search(
     """Search the LoseIt food database."""
     fmt = _output_format(ctx)
     logger.info("cli.search: query={q!r} output={o} verbose={v}", q=query, o=fmt.value, v=verbose)
-    with _open_client(ctx) as client:
-        results = foods.search(client.http, query)
-        if fmt is not OutputFormat.text:
-            rows: list[dict[str, Any]] = []
-            for r in results:
-                row: dict[str, Any] = {
-                    "name": r.name,
-                    "brand": r.brand,
-                    "category": r.category,
-                    "food_id": pk_to_hex(r.pk_bytes),
-                }
-                if verbose:
-                    row["pk_bytes"] = list(r.pk_bytes)
-                rows.append(row)
-            _emit_structured(
-                fmt,
-                {"query": query, "count": len(results), "results": rows},
-            )
-        else:
-            _print_search_results(results)
+    with _open_loseit(ctx) as li:
+        results = li.search(query)
+    if fmt is not OutputFormat.text:
+        _emit_structured(
+            fmt,
+            {
+                "query": query,
+                "count": len(results),
+                "results": [r.to_dict(verbose=verbose) for r in results],
+            },
+        )
+    else:
+        _print_search_results(results)
 
 
 @app.command()
@@ -548,96 +537,51 @@ def log(
         d=on_date,
         dr=dry_run,
     )
-    if meal not in MEAL_TYPES:
-        typer.secho(
-            f"meal must be one of {sorted(MEAL_TYPES)}",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
 
-    # ── Food-selection validation: --food-id vs query/--pick ────────────
+    # ── Meal validation ─────────────────────────────────────────────────
+    try:
+        meal_type = MealType.parse(meal)
+    except ValueError as exc:
+        _emit_error(fmt, "invalid_meal", str(exc))
+        raise typer.Exit(code=2) from exc
+
+    # ── Food-selection validation: --food-id vs query/--pick ───────────
     if food_id is not None and (query is not None or pick is not None):
-        msg = "--food-id and <query>/--pick are mutually exclusive"
-        if fmt is not OutputFormat.text:
-            _emit_structured(fmt, {"error": "mutually_exclusive", "message": msg})
-        else:
-            typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
+        _emit_error(
+            fmt,
+            "mutually_exclusive",
+            "--food-id and <query>/--pick are mutually exclusive",
+        )
         raise typer.Exit(code=2)
     if food_id is None and query is None:
-        msg = "must pass either --food-id or a search query"
-        if fmt is not OutputFormat.text:
-            _emit_structured(fmt, {"error": "missing_food", "message": msg})
-        else:
-            typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
+        _emit_error(fmt, "missing_food", "must pass either --food-id or a search query")
         raise typer.Exit(code=2)
 
-    # ── Portion-size validation ──────────────────────────────────────────
-    #
-    # Two mutually-exclusive ways to express portion size:
-    #   • --servings N                       (raw canonical multiplier)
-    #   • --serving-amount + --serving-unit  (unit-based, both required)
-    sa_set = serving_amount is not None
-    su_set = serving_unit is not None
-    if sa_set != su_set:
-        msg = (
-            "--serving-amount and --serving-unit must be passed together "
-            "(neither is meaningful alone)."
-        )
-        if fmt is not OutputFormat.text:
-            _emit_structured(fmt, {"error": "serving_pair_incomplete", "message": msg})
-        else:
-            typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2)
-    if sa_set and servings != 1.0:
-        msg = "--serving-amount / --serving-unit are mutually exclusive with --servings."
-        if fmt is not OutputFormat.text:
-            _emit_structured(fmt, {"error": "mutually_exclusive_flags", "message": msg})
-        else:
-            typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2)
-    if sa_set and serving_amount is not None and serving_amount <= 0:
-        msg = f"--serving-amount must be positive (got {serving_amount})."
-        if fmt is not OutputFormat.text:
-            _emit_structured(fmt, {"error": "non_positive_serving_amount", "message": msg})
-        else:
-            typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=2)
-    chosen_ord: int | None = None
-    if sa_set and serving_unit is not None:
-        try:
-            chosen_ord = resolve_unit(serving_unit.value)
-        except ValueError as exc:
-            msg = str(exc)
-            if fmt is not OutputFormat.text:
-                _emit_structured(fmt, {"error": "unknown_serving_unit", "message": msg})
-            else:
-                typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(code=2) from exc
+    # ── Portion-arg validation ──────────────────────────────────────────
+    # Cheap arg-only check; fails before any HTTP. The full check (which
+    # needs the food's native unit) runs inside li.log_food.
+    try:
+        validate_portion_args(servings, serving_amount, serving_unit)
+    except PortionError as exc:
+        _emit_error(fmt, exc.code, str(exc), **exc.context)
+        raise typer.Exit(code=2) from exc
 
     when = parse_date_arg(on_date)
-    with _open_client(ctx) as client:
+
+    with _open_loseit(ctx) as li:
+        # ── Resolve the food ────────────────────────────────────────────
         if food_id is not None:
             try:
-                pk_bytes = hex_to_pk(food_id)
+                selected = li.get_food(food_id)
             except ValueError as exc:
-                if fmt is not OutputFormat.text:
-                    _emit_structured(fmt, {"error": "invalid_food_id", "message": str(exc)})
-                else:
-                    typer.secho(f"❌ {exc}", fg=typer.colors.RED, err=True)
+                _emit_error(fmt, "invalid_food_id", str(exc))
                 raise typer.Exit(code=2) from exc
-            try:
-                selected = foods.get_food(client.http, pk_bytes)
             except Exception as exc:
-                if fmt is not OutputFormat.text:
-                    _emit_structured(fmt, {"error": "food_not_found", "message": str(exc)})
-                else:
-                    typer.secho(f"❌ {exc}", fg=typer.colors.RED, err=True)
+                _emit_error(fmt, "food_not_found", str(exc))
                 raise typer.Exit(code=1) from exc
         else:
-            # query is guaranteed non-None here by the validation above.
-            assert query is not None
-            results = foods.search(client.http, query)
+            assert query is not None  # mutex check above guarantees this
+            results = li.search(query)
             if fmt is OutputFormat.text:
                 _print_search_results(results)
             if not results:
@@ -646,157 +590,34 @@ def log(
                 raise typer.Exit(code=1)
             idx = _resolve_pick(pick, "Select food #", len(results))
             selected = results[idx]
-        unsaved = foods.get_unsaved_food_log_entry(client.http, selected)
 
-        # ── Resolve the portion-size knob into wire-payload parameters ──
-        #
-        # The food's getUnsavedFoodLogEntry response carries the per-serving
-        # quantity in its native unit at FoodServingSize.f4 / f3 (verified
-        # across >30 foods). Examples:
-        #   • TJ "8 fl oz" tomato soup: native=fl_oz, f4/f3 = 8.0
-        #   • Built Bar puff:           native=g,     f4/f3 = 40.0
-        #   • Orgain protein scoop:     native=g,     f4/f3 = ~28.0
-        #   • Generic 1-cup soup:       native=cup,   f4/f3 = 1.0
-        #
-        # canonical_servings (sent as f0, what the server multiplies
-        # nutrients by) =
-        #     user_amount_in_chosen_unit
-        #   / ( native_qty_per_serving × cf(native → chosen) )
-        #
-        # The wire's f4 is the chosen-unit qty per canonical serving
-        # (e.g. 236.588 mL per serving when chosen=mL and the food's
-        # per-serving qty in cups is 1 cup). f5 is the user's raw input.
-        measure_ord = unsaved.food_measure_ordinal
-        measure_ord_override: int | None = None
-        quantity_in_chosen_unit: float | None = None
-        conv_factor: float | None = None
-
-        if sa_set and chosen_ord is not None and serving_amount is not None:
-            native_ord = measure_ord if measure_ord is not None else 0
-            cf_native_to_chosen = _conversion_factor(native_ord, chosen_ord)
-            chosen_qty_per_serving: float | None = None
-            if cf_native_to_chosen is not None:
-                # Same-class conversion: apply the generic factor.
-                f3 = unsaved.canonical_per_serving or 1.0
-                f4 = unsaved.native_qty_per_serving or 1.0
-                native_qty_per_serving = f4 / f3 if f3 else 1.0
-                chosen_qty_per_serving = native_qty_per_serving * cf_native_to_chosen
-            else:
-                # Cross-class fallback: the food's own nutrient HashMap may
-                # carry a per-serving qty in mass (ord=2, ``per_serving_g``)
-                # or volume (ord=1, ``per_serving_ml``) units that the
-                # generic CONVERSIONS table can't supply without per-food
-                # density data. Example: chicken strips natively measured
-                # in "serving" but the user asks ``--serving-unit g`` —
-                # ``per_serving_g=112`` lets us compute canonical_servings
-                # = 152 / 112 = 1.357 directly.
-                _GRAMS = 8
-                _ML = 11
-                if chosen_ord == _GRAMS and unsaved.per_serving_g:
-                    chosen_qty_per_serving = unsaved.per_serving_g
-                elif chosen_ord in {2, 3, 10, 11} and unsaved.per_serving_ml:
-                    cf_ml_to_chosen = _conversion_factor(_ML, chosen_ord)
-                    if cf_ml_to_chosen is not None:
-                        chosen_qty_per_serving = unsaved.per_serving_ml * cf_ml_to_chosen
-            if chosen_qty_per_serving is None:
-                chosen_name = CANONICAL_UNIT_NAMES.get(
-                    chosen_ord, (serving_unit.value if serving_unit else "?")
-                )
-                native_name = unsaved.food_measure_unit or measure_name(measure_ord)
-                msg = (
-                    f"{selected.name!r} is measured in {native_name!r}; "
-                    f"the CLI doesn't have a {native_name}→{chosen_name} "
-                    f"conversion factor, and the food doesn't carry the "
-                    f"per-serving {chosen_name} value in its nutrients. "
-                    f"Pick a different food entry whose native unit is "
-                    f"{chosen_name}, or use --servings to log in the food's "
-                    f"native unit."
-                )
-                if fmt is not OutputFormat.text:
-                    _emit_structured(
-                        fmt,
-                        {
-                            "error": "unit_not_supported",
-                            "food": selected.name,
-                            "native_unit": native_name,
-                            "requested_unit": chosen_name,
-                            "message": msg,
-                        },
-                    )
-                else:
-                    typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
-                raise typer.Exit(code=2)
-            servings = serving_amount / chosen_qty_per_serving
-            conv_factor = chosen_qty_per_serving
-            measure_ord_override = chosen_ord
-            quantity_in_chosen_unit = serving_amount
-
-        day_num = day_number_for(when)
-        meal_ord = MEAL_TYPES[meal]
-        per_serving_cal = (unsaved.nutrients or {}).get(0)
-        scaled_cal = (per_serving_cal * servings) if per_serving_cal is not None else None
-
-        # ── Display: what we'll tell the user we're logging ─────────────
-        if measure_ord_override is not None and quantity_in_chosen_unit is not None:
-            unit = CANONICAL_UNIT_NAMES.get(
-                measure_ord_override,
-                (serving_unit.value if serving_unit else None)
-                or measure_name(measure_ord_override),
+        # ── Delegate everything else to LoseIt.log_food ─────────────────
+        try:
+            logged = li.log_food(
+                selected,
+                meal=meal_type,
+                servings=servings,
+                serving_amount=serving_amount,
+                serving_unit=serving_unit,
+                when=when,
+                dry_run=dry_run,
             )
-            portion_size = quantity_in_chosen_unit
-            portion_str = f"{quantity_in_chosen_unit:g} {unit}"
-        else:
-            # --servings mode: render in the food's native unit (with label).
-            unit = unsaved.food_measure_unit or measure_name(measure_ord)
-            portion_size = servings
-            portion_str = f"{servings:g} {unit}"
+        except PortionError as exc:
+            _emit_error(fmt, exc.code, str(exc), **exc.context)
+            raise typer.Exit(code=2) from exc
 
-        if not dry_run:
-            # The day_key lookup is only needed to construct an actual log payload;
-            # skip it in dry-run mode so we don't make an unnecessary network call.
-            day_key = get_daydate_key(client.http, day_num) or ""
-            entries.log_food(
-                client.http,
-                unsaved,
-                meal_ord,
-                day_key,
-                day_num,
-                servings,
-                measure_ord_override=measure_ord_override,
-                quantity_in_chosen_unit=quantity_in_chosen_unit,
-                conversion_factor=conv_factor,
-            )
-
-        selected_food_id = pk_to_hex(selected.pk_bytes) if len(selected.pk_bytes) == 16 else ""
-        if fmt is not OutputFormat.text:
-            _emit_structured(
-                fmt,
-                {
-                    "action": "log",
-                    "dry_run": dry_run,
-                    "date": when.isoformat(),
-                    "meal": MEAL_NAMES[meal_ord],
-                    "meal_ordinal": meal_ord,
-                    "servings": servings,
-                    "portion_size": portion_size,
-                    "measure_unit": unit,
-                    "food": {
-                        "name": selected.name,
-                        "brand": selected.brand,
-                        "category": selected.category,
-                        "food_id": selected_food_id,
-                    },
-                    "calories": scaled_cal,
-                },
-            )
-        else:
-            prefix = "🟡 DRY RUN — would log" if dry_run else "✅ Logged"
-            cal_str = f" ({scaled_cal:.0f} cal)" if scaled_cal is not None else ""
-            id_str = f" (id {selected_food_id[:4]}…)" if selected_food_id else ""
-            typer.secho(
-                f"{prefix} {selected.name}{id_str} → {MEAL_NAMES[meal_ord]} {portion_str}{cal_str}",
-                fg=typer.colors.YELLOW if dry_run else typer.colors.GREEN,
-            )
+    # ── Render result ──────────────────────────────────────────────────
+    if fmt is not OutputFormat.text:
+        _emit_structured(fmt, logged.to_dict())
+    else:
+        prefix = "🟡 DRY RUN — would log" if dry_run else "✅ Logged"
+        cal_str = f" ({logged.calories:.0f} cal)" if logged.calories is not None else ""
+        id_str = f" (id {logged.food.food_id[:4]}…)" if logged.food.food_id else ""
+        portion_str = f"{logged.portion_amount:g} {logged.portion_unit}"
+        typer.secho(
+            f"{prefix} {logged.food.name}{id_str} → {logged.meal_name} {portion_str}{cal_str}",
+            fg=typer.colors.YELLOW if dry_run else typer.colors.GREEN,
+        )
 
 
 @app.command()
@@ -810,19 +631,19 @@ def diary(
     fmt = _output_format(ctx)
     when = parse_date_arg(on_date)
     logger.info("cli.diary: date={d}", d=when.isoformat())
-    with _open_client(ctx) as client:
-        es = daily.get_daily_details(client.http, when)
-        if fmt is not OutputFormat.text:
-            _emit_structured(
-                fmt,
-                {
-                    "date": when.isoformat(),
-                    "count": len(es),
-                    "entries": [_entry_to_dict(e) for e in es],
-                },
-            )
-        else:
-            _print_diary(es, when)
+    with _open_loseit(ctx) as li:
+        es = li.diary(when)
+    if fmt is not OutputFormat.text:
+        _emit_structured(
+            fmt,
+            {
+                "date": when.isoformat(),
+                "count": len(es),
+                "entries": [e.to_dict() for e in es],
+            },
+        )
+    else:
+        _print_diary(es, when)
 
 
 @app.command(name="describe-food")
@@ -841,59 +662,30 @@ def describe_food(
 ) -> None:
     """Inspect one or more foods by ID; fetch concurrently.
 
-    For each food, returns the food's stored per-serving data:
-    calories, macros (fat/sat-fat/cholesterol/sodium/carb/fiber/sugar/protein),
-    plus cross-class conversion values (``per_serving_g`` for solid foods,
-    ``per_serving_ml`` for liquids). Useful for understanding what units
-    a food supports and for verifying log payloads before sending.
-
-    Foods are fetched in parallel using ``asyncio.to_thread`` over the
-    sync HTTP client — N foods take ~max(per-request-latency) instead
-    of sum.
+    Each ID is described via :meth:`LoseIt.describe_food` in a thread, so
+    N foods take ~max(per-request-latency) rather than sum. Invalid IDs
+    or fetch failures surface as ``{"food_id", "error", "message"}`` rows
+    rather than killing the whole batch.
     """
-    import asyncio
-
-    from .core._ids import hex_to_pk
-
     fmt = _output_format(ctx)
     logger.info("cli.describe_food: n={n}", n=len(food_ids))
 
-    def _describe_one(http, food_id: str) -> dict[str, Any]:
+    def _safe_describe(li: LoseIt, fid: str) -> dict[str, Any]:
         try:
-            pk_bytes = hex_to_pk(food_id)
+            desc = li.describe_food(fid)
         except ValueError as exc:
-            return {"food_id": food_id, "error": "invalid_food_id", "message": str(exc)}
-        try:
-            selected = foods.get_food(http, pk_bytes)
-            unsaved = foods.get_unsaved_food_log_entry(http, selected)
-        except Exception as exc:
-            return {"food_id": food_id, "error": "fetch_failed", "message": str(exc)}
-        return {
-            "food_id": food_id,
-            "name": unsaved.name,
-            "brand": unsaved.brand,
-            "category": unsaved.category,
-            "primary_serving": {
-                "ordinal": unsaved.food_measure_ordinal,
-                "unit": unsaved.food_measure_unit,
-                "canonical_per_serving": unsaved.canonical_per_serving,
-                "native_qty_per_serving": unsaved.native_qty_per_serving,
-            },
-            "cross_class_conversion": {
-                "per_serving_g": unsaved.per_serving_g,
-                "per_serving_ml": unsaved.per_serving_ml,
-            },
-            "nutrients_per_serving": unsaved.nutrients_by_label,
-            "raw_nutrients_by_ord": unsaved.nutrients,
-        }
+            return {"food_id": fid, "error": "invalid_food_id", "message": str(exc)}
+        except Exception as exc:  # noqa: BLE001 — any RPC failure surfaces as fetch_failed
+            return {"food_id": fid, "error": "fetch_failed", "message": str(exc)}
+        return desc.to_dict()
 
-    async def _describe_many(http) -> list[dict[str, Any]]:
+    async def _describe_many(li: LoseIt) -> list[dict[str, Any]]:
         return await asyncio.gather(
-            *(asyncio.to_thread(_describe_one, http, fid) for fid in food_ids)
+            *(asyncio.to_thread(_safe_describe, li, fid) for fid in food_ids)
         )
 
-    with _open_client(ctx) as client:
-        results = asyncio.run(_describe_many(client.http))
+    with _open_loseit(ctx) as li:
+        results = asyncio.run(_describe_many(li))
 
     if fmt is not OutputFormat.text:
         _emit_structured(fmt, {"count": len(results), "foods": results})
@@ -956,23 +748,25 @@ def delete(
         y=yes,
         dr=dry_run,
     )
-    if meal not in MEAL_TYPES:
-        typer.secho(
-            f"meal must be one of {sorted(MEAL_TYPES)}",
-            fg=typer.colors.RED,
-            err=True,
-        )
-        raise typer.Exit(code=2)
+    try:
+        meal_type = MealType.parse(meal)
+    except ValueError as exc:
+        _emit_error(fmt, "invalid_meal", str(exc))
+        raise typer.Exit(code=2) from exc
+
     when = parse_date_arg(on_date)
-    meal_ord = MEAL_TYPES[meal]
-    with _open_client(ctx) as client:
-        es = daily.get_daily_details(client.http, when)
+    meal_ord = int(meal_type)
+    with _open_loseit(ctx) as li:
+        es = li.diary(when)
         if not es:
-            msg = f"No diary entries for {when.isoformat()}"
             if fmt is not OutputFormat.text:
                 _emit_structured(fmt, {"error": "empty_diary", "date": when.isoformat()})
             else:
-                typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
+                typer.secho(
+                    f"❌ No diary entries for {when.isoformat()}",
+                    fg=typer.colors.RED,
+                    err=True,
+                )
             raise typer.Exit(code=1)
         meal_es = [e for e in es if e.meal_ordinal == meal_ord]
         if not meal_es:
@@ -982,12 +776,12 @@ def delete(
                     {
                         "error": "empty_meal",
                         "date": when.isoformat(),
-                        "meal": MEAL_NAMES[meal_ord],
+                        "meal": meal_type.name,
                     },
                 )
             else:
                 typer.secho(
-                    f"❌ No entries in {MEAL_NAMES[meal_ord]} on {when.isoformat()}",
+                    f"❌ No entries in {meal_type.name} on {when.isoformat()}",
                     fg=typer.colors.RED,
                     err=True,
                 )
@@ -999,15 +793,15 @@ def delete(
                     fmt,
                     {
                         "error": "missing_pick",
-                        "meal": MEAL_NAMES[meal_ord],
-                        "candidates": [_entry_to_dict(e) for e in meal_es],
+                        "meal": meal_type.name,
+                        "candidates": [e.to_dict() for e in meal_es],
                     },
                 )
             else:
                 _print_diary(es, when)
                 typer.echo(
                     f"\nUse --pick N to choose an entry from "
-                    f"{MEAL_NAMES[meal_ord]} (1..{len(meal_es)})"
+                    f"{meal_type.name} (1..{len(meal_es)})"
                 )
             raise typer.Exit(code=1)
         idx = _resolve_pick(pick, "Pick", len(meal_es))
@@ -1016,10 +810,9 @@ def delete(
             brand_str = f" ({target.food_brand})" if target.food_brand else ""
             prefix = "🟡 DRY RUN — would delete" if dry_run else "🗑️  Deleting"
             typer.echo(
-                f"{prefix} from {MEAL_NAMES[meal_ord]}: "
+                f"{prefix} from {meal_type.name}: "
                 f"{target.food_name}{brand_str} × {target.servings}"
             )
-        # In dry-run mode we skip the confirmation prompt and the actual delete.
         if not dry_run:
             if not yes and fmt is OutputFormat.text:
                 ans = typer.prompt(
@@ -1028,20 +821,21 @@ def delete(
                 if ans.strip().lower() != "delete":
                     typer.echo("Cancelled.")
                     raise typer.Exit(code=0)
-            entries.delete(client.http, target)
-        if fmt is not OutputFormat.text:
-            _emit_structured(
-                fmt,
-                {
-                    "action": "delete",
-                    "dry_run": dry_run,
-                    "date": when.isoformat(),
-                    "meal": MEAL_NAMES[meal_ord],
-                    "target": _entry_to_dict(target),
-                },
-            )
-        elif not dry_run:
-            typer.secho("✅ Deleted", fg=typer.colors.GREEN)
+            li.delete_entry(target)
+
+    if fmt is not OutputFormat.text:
+        _emit_structured(
+            fmt,
+            {
+                "action": "delete",
+                "dry_run": dry_run,
+                "date": when.isoformat(),
+                "meal": meal_type.name,
+                "target": target.to_dict(),
+            },
+        )
+    elif not dry_run:
+        typer.secho("✅ Deleted", fg=typer.colors.GREEN)
 
 
 @app.command()
@@ -1123,208 +917,62 @@ def login(
         cf=str(config_file),
         wc=write_config,
     )
-    name = browser.value
-    token = refresh_token_from_browser(name)
 
-    if token is None:
-        _login_failure(
-            fmt=fmt,
-            browser=name,
-            reason="missing",
-            token_file=token_file,
-            open_signin=open_signin,
-            message=f"No liauth cookie found in {name.title()} for loseit.com.",
-        )
-        return
-
-    exp = decode_jwt_exp(token)
-    if is_token_expired(token):
-        _login_failure(
-            fmt=fmt,
-            browser=name,
-            reason="expired",
-            token_file=token_file,
-            open_signin=open_signin,
-            message=f"liauth cookie in {name.title()} is expired.",
-            exp=exp,
-        )
-        return
-
-    save_token(token, token_file)
-
-    written_config: Path | None = None
-    written_values: dict[str, Any] = {}
-    if write_config:
-        written_values, written_config = _populate_config_from_login(
-            token=token,
-            browser_name=name,
-            user_name_override=user_name_override,
-            config_file=config_file,
-            interactive=fmt is OutputFormat.text,
-        )
-
-    if fmt is not OutputFormat.text:
-        _emit_structured(
-            fmt,
-            {
-                "action": "login",
-                "status": "ok",
-                "browser": name,
-                "token_file": str(token_file),
-                "exp": exp,
-                "exp_iso": _exp_iso(exp),
-                "config_file": str(written_config) if written_config else None,
-                "config_values": written_values or None,
-            },
-        )
-    else:
-        typer.secho(
-            f"✅ Imported liauth from {name.title()} → {token_file}",
-            fg=typer.colors.GREEN,
-        )
-        if exp is not None:
-            typer.echo(f"   JWT exp: {_exp_iso(exp)}")
-        if written_config:
-            typer.secho(f"✅ Wrote config → {written_config}", fg=typer.colors.GREEN)
-            for k, v in written_values.items():
-                typer.echo(f"   {k:14}: {v}")
-        elif write_config:
-            # Got here because the values couldn't be resolved and the user
-            # is non-interactive (json mode or piped) — explain.
-            typer.secho(
-                "⚠️  Skipped writing config: could not resolve user_name "
-                "non-interactively. Pass --user-name or run in text mode.",
-                fg=typer.colors.YELLOW,
-                err=True,
-            )
-
-
-def _detect_hours_from_gmt() -> int:
-    """Return the current local UTC offset in whole hours (DST-aware)."""
-    offset = datetime.now().astimezone().utcoffset()
-    if offset is None:
-        return 0
-    # Floor-division by 3600 would skew negative offsets (-21600 // 3600 = -6,
-    # which is correct, but e.g. -19800 // 3600 = -6 too — India's :30 offsets
-    # round to the nearest hour). Use int(round(...)) so :30 zones land on
-    # whichever hour they're closer to.
-    return round(offset.total_seconds() / 3600)
-
-
-def _populate_config_from_login(
-    *,
-    token: str,
-    browser_name: str,
-    user_name_override: str | None,
-    config_file: Path,
-    interactive: bool,
-) -> tuple[dict[str, Any], Path | None]:
-    """Resolve user_id / user_name / hours_from_gmt and write the YAML file.
-
-    Returns ``(values_written, path)`` on success, ``({}, None)`` if a
-    required value couldn't be resolved (only happens when
-    ``user_name_override`` is unset, the JWT and cookies don't expose a
-    username, and ``interactive`` is False — i.e. JSON mode or non-TTY).
-    """
-    info = extract_user_info_from_jwt(token)
-
-    # user_name: explicit flag > JWT claim > browser-cookie sniff > prompt
-    user_name = user_name_override or info.get("user_name")
-    if not user_name:
-        cookies = load_cookies_from_browser(browser_name)
-        user_name = extract_user_name_from_cookies(cookies)
-    if not user_name and interactive:
+    # Only prompt for a username when running interactively (text mode).
+    # In json/toon mode an unresolvable username surfaces as a partial result.
+    def _prompt_for_username() -> str | None:
         try:
-            user_name = typer.prompt("Lose It! username (the email you sign in with)")
+            return typer.prompt("Lose It! username (the email you sign in with)")
         except (typer.Abort, EOFError):
-            user_name = None
-    if not user_name:
-        return {}, None
+            return None
 
-    values: dict[str, Any] = {
-        "user_name": user_name.strip(),
-        "hours_from_gmt": _detect_hours_from_gmt(),
-    }
-    if "user_id" in info:
-        values["user_id"] = info["user_id"]
-
-    written = write_yaml_config(config_file, values)
-    return values, written
-
-
-def _login_failure(
-    *,
-    fmt: OutputFormat,
-    browser: str,
-    reason: str,
-    token_file: Path,
-    open_signin: bool,
-    message: str,
-    exp: int | None = None,
-) -> None:
-    """Common error path for the ``login`` command: print, open browser, exit 1."""
-    opened = False
-    if open_signin:
-        opened = _open_in_browser(SIGNIN_URL, browser)
+    result = LoseIt.login_from_browser(
+        browser.value,
+        token_file=token_file,
+        config_file=config_file,
+        user_name=user_name_override,
+        write_config=write_config,
+        prompt_for_username=_prompt_for_username if fmt is OutputFormat.text else None,
+    )
 
     if fmt is not OutputFormat.text:
-        _emit_structured(
-            fmt,
-            {
-                "action": "login",
-                "status": reason,
-                "browser": browser,
-                "token_file": str(token_file),
-                "exp": exp,
-                "exp_iso": _exp_iso(exp),
-                "signin_url": SIGNIN_URL,
-                "opened_browser": opened,
-                "message": message,
-            },
-        )
-    else:
-        typer.secho(f"❌ {message}", fg=typer.colors.RED, err=True)
-        if exp is not None:
-            typer.echo(f"   JWT exp: {_exp_iso(exp)} (now: {_exp_iso(int(_now()))})", err=True)
+        _emit_structured(fmt, result.to_dict())
+        if result.status != "ok":
+            raise typer.Exit(code=1)
+        return
+
+    # ── Text rendering ──────────────────────────────────────────────────
+    if result.status != "ok":
+        typer.secho(f"❌ {result.message}", fg=typer.colors.RED, err=True)
+        if result.exp_iso is not None:
+            typer.echo(f"   JWT exp: {result.exp_iso}", err=True)
+        opened = _open_in_browser(_SIGNIN_URL, browser.value) if open_signin else False
         if opened:
-            typer.echo(f"   Opened {SIGNIN_URL} in {browser.title()}.", err=True)
+            typer.echo(f"   Opened {_SIGNIN_URL} in {browser.value.title()}.", err=True)
         else:
-            typer.echo(f"   Sign in here: {SIGNIN_URL}", err=True)
-        typer.echo(f"   Then re-run: loseit login --browser {browser}", err=True)
-    raise typer.Exit(code=1)
+            typer.echo(f"   Sign in here: {_SIGNIN_URL}", err=True)
+        typer.echo(f"   Then re-run: loseit login --browser {browser.value}", err=True)
+        raise typer.Exit(code=1)
 
-
-def _open_in_browser(url: str, browser: str) -> bool:
-    """Open ``url`` in the named browser; fall back to the system default."""
-    import shutil
-    import subprocess
-    import sys
-
-    if sys.platform == "darwin":
-        app_name = {"chrome": "Google Chrome", "brave": "Brave Browser"}.get(browser)
-        if app_name:
-            try:
-                subprocess.run(["open", "-a", app_name, url], check=True)
-                return True
-            except (subprocess.CalledProcessError, FileNotFoundError):
-                pass
-    elif shutil.which(browser):
-        try:
-            subprocess.Popen([browser, url])
-            return True
-        except OSError:
-            pass
-    return webbrowser.open(url)
-
-
-def _now() -> float:
-    return datetime.now(tz=UTC).timestamp()
-
-
-def _exp_iso(exp: int | None) -> str | None:
-    if exp is None:
-        return None
-    return datetime.fromtimestamp(exp, tz=UTC).isoformat()
+    typer.secho(
+        f"✅ Imported liauth from {browser.value.title()} → {token_file}",
+        fg=typer.colors.GREEN,
+    )
+    if result.exp_iso is not None:
+        typer.echo(f"   JWT exp: {result.exp_iso}")
+    if result.config_file:
+        typer.secho(f"✅ Wrote config → {result.config_file}", fg=typer.colors.GREEN)
+        for k, v in (result.config_values or {}).items():
+            typer.echo(f"   {k:14}: {v}")
+    elif write_config:
+        # `--write-config` requested but no values resolved — typically because
+        # the username couldn't be sniffed and the user didn't fill the prompt.
+        typer.secho(
+            "⚠️  Skipped writing config: could not resolve user_name "
+            "non-interactively. Pass --user-name or run in text mode.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
 
 
 @app.command()
@@ -1332,25 +980,25 @@ def whoami(ctx: typer.Context) -> None:
     """Print the resolved client configuration."""
     fmt = _output_format(ctx)
     logger.info("cli.whoami: output={o}", o=fmt.value)
-    with _open_client(ctx) as client:
-        cfg = client.config
-        if fmt is not OutputFormat.text:
-            _emit_structured(
-                fmt,
-                {
-                    "user_id": cfg.user_id,
-                    "user_name": cfg.user_name,
-                    "hours_from_gmt": cfg.hours_from_gmt,
-                    "policy_hash": cfg.policy_hash,
-                    "strong_name": cfg.strong_name,
-                },
-            )
-        else:
-            typer.echo(f"user_id        : {cfg.user_id}")
-            typer.echo(f"user_name      : {cfg.user_name}")
-            typer.echo(f"hours_from_gmt : {cfg.hours_from_gmt}")
-            typer.echo(f"policy_hash    : {cfg.policy_hash}")
-            typer.echo(f"strong_name    : {cfg.strong_name}")
+    with _open_loseit(ctx) as li:
+        cfg = li.whoami()
+    if fmt is not OutputFormat.text:
+        _emit_structured(
+            fmt,
+            {
+                "user_id": cfg.user_id,
+                "user_name": cfg.user_name,
+                "hours_from_gmt": cfg.hours_from_gmt,
+                "policy_hash": cfg.policy_hash,
+                "strong_name": cfg.strong_name,
+            },
+        )
+    else:
+        typer.echo(f"user_id        : {cfg.user_id}")
+        typer.echo(f"user_name      : {cfg.user_name}")
+        typer.echo(f"hours_from_gmt : {cfg.hours_from_gmt}")
+        typer.echo(f"policy_hash    : {cfg.policy_hash}")
+        typer.echo(f"strong_name    : {cfg.strong_name}")
 
 
 # ── Entrypoint ───────────────────────────────────────────────────────────────

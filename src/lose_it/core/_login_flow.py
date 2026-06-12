@@ -17,7 +17,14 @@ Lifted from the ``_detect_hours_from_gmt`` and
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Callable
+
+from .auth import (
+    extract_user_info_from_jwt,
+    extract_user_name_from_cookies,
+    load_cookies_from_browser,
+)
 
 __all__ = ["DerivedConfigValues", "detect_hours_from_gmt", "derive_config_values"]
 
@@ -43,7 +50,12 @@ class DerivedConfigValues:
         Drops ``None`` values so a partial resolve doesn't blow away an
         existing field in the YAML file.
         """
-        raise NotImplementedError
+        out: dict[str, object] = {"hours_from_gmt": self.hours_from_gmt}
+        if self.user_name is not None:
+            out["user_name"] = self.user_name
+        if self.user_id is not None:
+            out["user_id"] = self.user_id
+        return out
 
 
 def detect_hours_from_gmt() -> int:
@@ -54,7 +66,11 @@ def detect_hours_from_gmt() -> int:
     plain integer, so any user in a non-whole-hour zone has to pick
     one side anyway.
     """
-    raise NotImplementedError
+    offset = datetime.now().astimezone().utcoffset()
+    if offset is None:
+        return 0
+    # round() so ±:30 zones land on whichever hour they're closer to.
+    return round(offset.total_seconds() / 3600)
 
 
 def derive_config_values(
@@ -84,4 +100,22 @@ def derive_config_values(
     inspect ``.user_name`` / ``.user_id`` for ``None`` to decide whether
     the values are safe to write to YAML.
     """
-    raise NotImplementedError
+    info = extract_user_info_from_jwt(token)
+
+    user_name: str | None = user_name_override or info.get("user_name")
+    if not user_name:
+        # browser_name is treated narrowly here; auth.load_cookies_from_browser
+        # validates against its Literal type and returns {} if browser-cookie3
+        # isn't importable.
+        cookies = load_cookies_from_browser(browser_name)  # type: ignore[arg-type]
+        user_name = extract_user_name_from_cookies(cookies)
+    if not user_name and prompt_for_username is not None:
+        user_name = prompt_for_username()
+    if user_name is not None:
+        user_name = user_name.strip() or None
+
+    return DerivedConfigValues(
+        user_name=user_name,
+        user_id=info.get("user_id"),
+        hours_from_gmt=detect_hours_from_gmt(),
+    )

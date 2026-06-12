@@ -104,7 +104,7 @@ def test_login_writes_config_from_jwt_email(
         }
     )
     monkeypatch.setattr(auth_module, "refresh_token_from_browser", lambda _b: jwt)
-    monkeypatch.setattr("lose_it.cli.refresh_token_from_browser", lambda _b: jwt)
+    monkeypatch.setattr("lose_it.client.refresh_token_from_browser", lambda _b: jwt)
 
     token_file = tmp_path / "token"
     config_file = tmp_path / "config.yaml"
@@ -150,9 +150,9 @@ def test_login_uses_cookie_when_jwt_has_no_email(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     jwt = _make_jwt({"sub": "777", "exp": int(time.time()) + 86400})
-    monkeypatch.setattr("lose_it.cli.refresh_token_from_browser", lambda _b: jwt)
+    monkeypatch.setattr("lose_it.client.refresh_token_from_browser", lambda _b: jwt)
     monkeypatch.setattr(
-        "lose_it.cli.load_cookies_from_browser",
+        "lose_it.core._login_flow.load_cookies_from_browser",
         lambda _b: {"loseit_email": "via-cookie@example.com", "other": "x"},
     )
 
@@ -193,9 +193,9 @@ def test_user_name_flag_beats_jwt_and_cookies(
             "exp": int(time.time()) + 86400,
         }
     )
-    monkeypatch.setattr("lose_it.cli.refresh_token_from_browser", lambda _b: jwt)
+    monkeypatch.setattr("lose_it.client.refresh_token_from_browser", lambda _b: jwt)
     monkeypatch.setattr(
-        "lose_it.cli.load_cookies_from_browser",
+        "lose_it.core._login_flow.load_cookies_from_browser",
         lambda _b: {"loseit_email": "from-cookie@example.com"},
     )
 
@@ -237,7 +237,7 @@ def test_no_write_config_skips_yaml(
             "exp": int(time.time()) + 86400,
         }
     )
-    monkeypatch.setattr("lose_it.cli.refresh_token_from_browser", lambda _b: jwt)
+    monkeypatch.setattr("lose_it.client.refresh_token_from_browser", lambda _b: jwt)
 
     token_file = tmp_path / "token"
     config_file = tmp_path / "config.yaml"
@@ -273,8 +273,8 @@ def test_json_mode_with_unresolvable_user_name_skips_yaml(
 ) -> None:
     """JSON output mode is non-interactive; never prompt or block."""
     jwt = _make_jwt({"sub": "1", "exp": int(time.time()) + 86400})
-    monkeypatch.setattr("lose_it.cli.refresh_token_from_browser", lambda _b: jwt)
-    monkeypatch.setattr("lose_it.cli.load_cookies_from_browser", lambda _b: {})
+    monkeypatch.setattr("lose_it.client.refresh_token_from_browser", lambda _b: jwt)
+    monkeypatch.setattr("lose_it.core._login_flow.load_cookies_from_browser", lambda _b: {})
 
     token_file = tmp_path / "token"
     config_file = tmp_path / "config.yaml"
@@ -320,7 +320,7 @@ def test_login_preserves_unrelated_yaml_keys(
             "exp": int(time.time()) + 86400,
         }
     )
-    monkeypatch.setattr("lose_it.cli.refresh_token_from_browser", lambda _b: jwt)
+    monkeypatch.setattr("lose_it.client.refresh_token_from_browser", lambda _b: jwt)
 
     result = runner.invoke(
         app,
