@@ -86,12 +86,27 @@ def test_search_json_output(env, runner: CliRunner, httpx_mock) -> None:
     assert payload["count"] == len(payload["results"])
     assert payload["count"] > 0
     for r in payload["results"]:
-        assert set(r) == {"name", "brand", "category", "food_id", "pk_bytes"}
-        assert len(r["pk_bytes"]) == 16
-        # ``food_id`` is the 32-char lowercase-hex view of ``pk_bytes``.
+        # Default output omits the raw byte array — ``food_id`` is the
+        # only identifier the CLI itself accepts (--food-id, describe-food).
+        assert set(r) == {"name", "brand", "category", "food_id"}
+        # ``food_id`` is the 32-char lowercase-hex form of the food's PK.
         assert isinstance(r["food_id"], str)
         assert len(r["food_id"]) == 32
         assert r["food_id"] == r["food_id"].lower()
+
+
+def test_search_json_output_verbose_includes_pk_bytes(env, runner: CliRunner, httpx_mock) -> None:
+    """``-v`` adds the raw 16-int ``pk_bytes`` array next to ``food_id``."""
+    httpx_mock.add_response(
+        url=SERVICE_URL,
+        text=(FIXTURES / "search_foods_tortilla.txt").read_text(),
+    )
+    result = runner.invoke(app, ["-o", "json", "search", "tortilla", "-v"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    for r in payload["results"]:
+        assert set(r) == {"name", "brand", "category", "food_id", "pk_bytes"}
+        assert len(r["pk_bytes"]) == 16
 
 
 # ── diary ───────────────────────────────────────────────────────────────────
