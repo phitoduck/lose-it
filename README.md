@@ -52,11 +52,15 @@ claude plugin install log-food@lose-it
 
 > **/log-food** Log 1 Xtreme carb balance tortilla, 110g of avocado, and 120g of real good brand lightly breaded chicken strips
 
-## Examples
+## Subcommands
+
+**Bash:**
 
 ```bash
-loseit --help
+$ loseit --help
 ```
+
+**Output:**
 
 ```text
  Usage: loseit [OPTIONS] COMMAND [ARGS]...
@@ -76,9 +80,13 @@ loseit --help
 
 ### `login` — import the auth token *and* populate the config
 
+**Bash:**
+
 ```bash
-loseit login --browser chrome
+$ loseit login --browser chrome
 ```
+
+**Output:**
 
 ```text
 ✅ Imported liauth from Chrome → /Users/you/.config/loseit/token
@@ -89,9 +97,13 @@ loseit login --browser chrome
    user_id       : 12345678
 ```
 
+**Bash:**
+
 ```bash
-loseit login --browser brave
+$ loseit login --browser brave
 ```
+
+**Output:**
 
 ```text
 ❌ liauth cookie in Brave is expired.
@@ -100,13 +112,22 @@ loseit login --browser brave
    Then re-run: loseit login --browser brave
 ```
 
+<details>
+<summary>click to view details...</summary>
+
 The first run on macOS triggers a Keychain prompt so the OS can unlock the browser's cookie store. After that it's silent. If neither the JWT nor any `loseit.com` cookie carries your username, `loseit login` prompts once and saves it to the YAML. Pass `--user-name alice@example.com` to skip the prompt (handy in CI), or `--no-write-config` to import only the token.
+
+</details>
 
 ### `search`
 
+**Bash:**
+
 ```bash
-loseit search "x-treme carb balance tortilla"
+$ loseit search "x-treme carb balance tortilla"
 ```
+
+**Output:**
 
 ```text
   #  Food                                               Brand                Food ID
@@ -115,13 +136,22 @@ loseit search "x-treme carb balance tortilla"
   2  Tortilla Wraps, High Fiber, Low Carb, Xtreme Welln Mission Tortillas Ca 0d5f30bf42…
 ```
 
+<details>
+<summary>click to view details...</summary>
+
 The `Food ID` column is the lowercase-hex form of the food's stable 16-byte primary key. The text view truncates it to 10 chars; the full 32-char value is in the JSON `food_id` field (`loseit search ... -o json`).
+
+</details>
 
 ### `log`
 
+**Bash:**
+
 ```bash
-loseit log "x-treme carb balance tortilla" --meal lunch --pick 2 --servings 1
+$ loseit log "x-treme carb balance tortilla" --meal lunch --pick 2 --servings 1
 ```
+
+**Output:**
 
 ```text
   #  Food                                               Brand                Food ID
@@ -132,53 +162,93 @@ loseit log "x-treme carb balance tortilla" --meal lunch --pick 2 --servings 1
 ✅ Logged Tortilla Wraps, High Fiber, Low Carb, Xtreme Wellness (id 0d5f…) → lunch 1 serving (70 cal)
 ```
 
+<details>
+<summary>click to view details...</summary>
+
 For unit-based logging, pass `--serving-amount N --serving-unit X` where `X` is one of `tsp`, `tbsp`, `cup`, `piece`, `each`, `g`, `fl_oz`, `mL`, `bottle`, `can`, `slice`, `serving`, `scoop`, `container`, `pie` (plus common aliases):
 
+</details>
+
+**Bash:**
+
 ```bash
-loseit log "tj tomato soup" --pick 3 -m snacks --serving-amount 490 --serving-unit ml
+$ loseit log "tj tomato soup" --pick 3 -m snacks --serving-amount 490 --serving-unit ml
 ```
+
+**Output:**
 
 ```text
 ✅ Logged Soup, Organic Tomato Red Pepper low sodium (TJ: 8 fl oz) → snacks 490 mL (207 cal)
 ```
 
+**Bash:**
+
 ```bash
-loseit log "avocado per 100g" --pick 8 -m snacks --serving-amount 110 --serving-unit g
+$ loseit log "avocado per 100g" --pick 8 -m snacks --serving-amount 110 --serving-unit g
 ```
+
+**Output:**
 
 ```text
 ✅ Logged Avocado (USDA Website Per 100g) → snacks 110 grams (137 cal)
 ```
 
+<details>
+<summary>click to view details...</summary>
+
 The CLI handles same-class conversions (e.g. cup ↔ mL ↔ fl_oz) via a generic table. **For cross-class conversions** (e.g. asking for grams against a food natively measured in "serving") the CLI falls back to the food's own `per_serving_g` / `per_serving_ml` values stored in its nutrient HashMap. Example: Realgood chicken strips are stored as "1 serving" but the food's wire data carries `per_serving_g=112`, so:
 
+</details>
+
+**Bash:**
+
 ```bash
-loseit log "realgood foods chicken" --pick 1 -m snacks --serving-amount 152 --serving-unit g
+$ loseit log "realgood foods chicken" --pick 1 -m snacks --serving-amount 152 --serving-unit g
 ```
+
+**Output:**
 
 ```text
 ✅ Logged Lightly Breaded Chicken Strips → snacks 152 g (163 cal)
 ```
 
+<details>
+<summary>click to view details...</summary>
+
 If neither the generic table nor the food's nutrients can supply the conversion, the CLI errors with `unit_not_supported` and tells you which native unit the entry uses.
 
 Pick indices drift between sessions (Lose It! mutates its index). For drift-proof, scriptable logging, pass the stable `--food-id` instead — it skips the search step entirely:
 
+</details>
+
+**Bash:**
+
 ```bash
-loseit log --food-id 0d5f30bf4231a3da8c3c9608f0630010 --meal snacks --servings 1.0
+$ loseit log --food-id 0d5f30bf4231a3da8c3c9608f0630010 --meal snacks --servings 1.0
 ```
+
+**Output:**
 
 ```text
 ✅ Logged Organic Tomato And Roasted Red Pepper Soup (id 0d5f…) → snacks 1 serving (207 cal)
 ```
 
+<details>
+<summary>click to view details...</summary>
+
 `--food-id` is mutually exclusive with the positional `<query>` and `--pick`; pass exactly one.
+
+</details>
 
 ### `diary`
 
+**Bash:**
+
 ```bash
-loseit diary
+$ loseit diary
 ```
+
+**Output:**
 
 ```text
 📅 Diary for 2026-06-08:
@@ -194,11 +264,20 @@ loseit diary
 
 ### `describe-food`
 
+<details>
+<summary>click to view details...</summary>
+
 Inspect one or more foods by ID; emits labeled nutrient + cross-class conversion data. Foods are fetched concurrently via `asyncio.to_thread`, so N foods take ~max(per-request-latency) rather than the sum:
 
+</details>
+
+**Bash:**
+
 ```bash
-loseit -o json describe-food 4465349443cea79c404de42baac3b73e c5d8f3b75e3045f0a98c7c7f5f4d9d6a
+$ loseit -o json describe-food 4465349443cea79c404de42baac3b73e c5d8f3b75e3045f0a98c7c7f5f4d9d6a
 ```
+
+**Output:**
 
 ```json
 {
@@ -222,13 +301,22 @@ loseit -o json describe-food 4465349443cea79c404de42baac3b73e c5d8f3b75e3045f0a9
 }
 ```
 
+<details>
+<summary>click to view details...</summary>
+
 The `per_serving_g` / `per_serving_ml` values are what unlock cross-class `--serving-unit` logging (see `log` above). Useful for debugging which unit combinations a food supports.
+
+</details>
 
 ### `delete`
 
+**Bash:**
+
 ```bash
-loseit delete --meal lunch --pick 1 --yes
+$ loseit delete --meal lunch --pick 1 --yes
 ```
+
+**Output:**
 
 ```text
 🗑️  Deleting from lunch: Tortilla Wraps, High Fiber, Low Carb, Xtreme Wellness (Mission) × 1.0
@@ -237,9 +325,13 @@ loseit delete --meal lunch --pick 1 --yes
 
 ### `whoami`
 
+**Bash:**
+
 ```bash
-loseit whoami
+$ loseit whoami
 ```
+
+**Output:**
 
 ```text
 user_id        : 12345678
@@ -251,11 +343,20 @@ strong_name    : 351AE5DC0CA36AD3BA9C7CBA7B0E07B8
 
 ### Script-friendly output: `--output json` / `-o json`
 
+<details>
+<summary>click to view details...</summary>
+
 Every subcommand accepts a global `--output` (alias `-o`) flag. The default is `text`; pass `json` to get a JSON document on stdout suitable for piping into `jq`.
 
+</details>
+
+**Bash:**
+
 ```bash
-loseit -o json diary --date 2026-06-08 | jq '.entries[] | .food_name'
+$ loseit -o json diary --date 2026-06-08 | jq '.entries[] | .food_name'
 ```
+
+**Output:**
 
 ```json
 "Tortilla Wraps, High Fiber, Low Carb, Xtreme Wellness"
@@ -263,11 +364,20 @@ loseit -o json diary --date 2026-06-08 | jq '.entries[] | .food_name'
 "Real Good Lightly Breaded Chicken Strips"
 ```
 
+<details>
+<summary>click to view details...</summary>
+
 Diary entries include a `nutrients_by_label` field that maps the food's nutrient HashMap to human-readable nutrient names (`calories`, `total_fat_g`, `sat_fat_g`, `cholesterol_mg`, `sodium_mg`, `carb_g`, `fiber_g`, `sugar_g`, `protein_g`, `serving_weight_g`, `serving_volume_ml`, …) alongside the raw `nutrients` map keyed by ordinal. The `food_measure_unit` field labels the entry's stored unit (`grams`, `cup`, `serving`, `scoop`, etc.) — see the `FoodMeasurement` and `FoodNutrient` enums in `client/_enums.py` for the full table.
 
+</details>
+
+**Bash:**
+
 ```bash
-loseit -o json diary | jq '.entries[0] | {food_name, food_measure_unit, servings, nutrients_by_label}'
+$ loseit -o json diary | jq '.entries[0] | {food_name, food_measure_unit, servings, nutrients_by_label}'
 ```
+
+**Output:**
 
 ```json
 {
@@ -284,11 +394,20 @@ loseit -o json diary | jq '.entries[0] | {food_name, food_measure_unit, servings
 
 ### LLM-friendly output: `--output toon` / `-o toon`
 
+<details>
+<summary>click to view details...</summary>
+
 Pass `toon` to render the same payload as [Token-Oriented Object Notation](https://toonformat.dev) — a compact, JSON-equivalent format designed for shovelling structured data into LLM prompts. The data shape is identical to `-o json` (you can round-trip it through `toon-format`), but it spends ~40–60% fewer characters (and tokens) on arrays of records because field names are pulled into a single header row.
 
+</details>
+
+**Bash:**
+
 ```bash
-lose-it -o toon search "tortilla"
+$ lose-it -o toon search "tortilla"
 ```
+
+**Output:**
 
 ```yaml
 query: tortilla
@@ -301,9 +420,14 @@ results[3]:
   ...
 ```
 
+<details>
+<summary>click to view details...</summary>
+
 `food_id` is the only identifier the CLI itself accepts (`--food-id`, `describe-food`). Pass `--verbose` / `-v` to also include the raw 16-int `pk_bytes` array — useful when driving the SDK from Python code, just noise otherwise.
 
 On a typical 3-row search payload, the JSON view is ~900 chars and the TOON view ~470 chars — about a ~48% reduction. Round-tripping the TOON output through a decoder produces the same Python dict as `json.loads` of the JSON output, so anything downstream that wants real JSON can recover it on demand:
+
+</details>
 
 ```python
 import toon_format
@@ -312,11 +436,20 @@ data = toon_format.decode(toon_output)
 
 ### Preview without mutating: `--dry-run`
 
+<details>
+<summary>click to view details...</summary>
+
 `log` and `delete` accept `--dry-run`. Read-only lookups still run (so you see what *would* be logged or deleted), but the mutating RPC is skipped.
 
+</details>
+
+**Bash:**
+
 ```bash
-loseit log "x-treme carb balance tortilla" -m lunch --pick 2 --dry-run
+$ loseit log "x-treme carb balance tortilla" -m lunch --pick 2 --dry-run
 ```
+
+**Output:**
 
 ```text
 🟡 DRY RUN — would log Tortilla Wraps, High Fiber, Low Carb, Xtreme Wellness → lunch × 1.0 (70 cal)
@@ -324,12 +457,17 @@ loseit log "x-treme carb balance tortilla" -m lunch --pick 2 --dry-run
 
 ### Verbose logging: `--log-level` / `--log-file`
 
+<details>
+<summary>click to view details...</summary>
+
 Every subcommand accepts two global logging flags (powered by [loguru](https://github.com/Delgan/loguru)):
 
 - `--log-level {trace|debug|info|success|warning|error|critical}` (env: `LOSEIT_LOG_LEVEL`) — verbosity for logs emitted on **stderr**. Default: **muted** (the CLI is silent unless you opt in).
 - `--log-file PATH` (env: `LOSEIT_LOG_FILE`) — append a **full TRACE-level transcript** of the session to this file. The file sink always captures at TRACE regardless of `--log-level`, so you can keep the console quiet and still get the wire dump on disk.
 
 The levels, from loudest to quietest:
+
+</details>
 
 | Level | What you get |
 |---|---|
@@ -340,11 +478,20 @@ The levels, from loudest to quietest:
 | `warning` | Degraded paths (empty diaries, missing day-keys, fallback parses). |
 | `error` | HTTP 4xx/5xx, GWT `//EX[…]` errors, transport failures. |
 
+<details>
+<summary>click to view details...</summary>
+
 **`--log-level info`** — one line per high-level event:
 
+</details>
+
+**Bash:**
+
 ```bash
-loseit --log-level info search "tortilla" 1>/dev/null
+$ loseit --log-level info search "tortilla" 1>/dev/null
 ```
+
+**Output:**
 
 ```text
 12:00:00.123 INFO     lose_it.cli:search:344 cli.search: query='tortilla' output=text
@@ -353,11 +500,20 @@ loseit --log-level info search "tortilla" 1>/dev/null
 12:00:00.330 SUCCESS  lose_it.client._http:post_rpc:205 rpc searchFoods OK in 188.5 ms (2764 bytes)
 ```
 
+<details>
+<summary>click to view details...</summary>
+
 **`--log-level trace`** — dumps every request and response in full, headers included. Useful for reverse-engineering the GWT-RPC surface:
 
+</details>
+
+**Bash:**
+
 ```bash
-loseit --log-level trace search "avocado" 1>/dev/null
+$ loseit --log-level trace search "avocado" 1>/dev/null
 ```
+
+**Output:**
 
 ```text
 12:00:00.123 TRACE    lose_it.client._http:post_rpc:121 HTTP REQUEST → searchFoods
@@ -371,19 +527,33 @@ HTTP/1.1 200 (188.4 ms)
 //OK[0,17,2,42,40,13,-51,-6,9290,"Z6mB_lo",...]
 ```
 
+<details>
+<summary>click to view details...</summary>
+
 **`--log-file`** — captures a full session to disk (TRACE-level by default), regardless of `--log-level`. The file format uses pipe-separated columns so it round-trips cleanly through `less` / `grep`:
 
+</details>
+
+**Bash:**
+
 ```bash
-loseit --log-file ~/loseit-session.log diary
-grep -E "rpc.*OK" ~/loseit-session.log
+$ loseit --log-file ~/loseit-session.log diary
+$ grep -E "rpc.*OK" ~/loseit-session.log
 ```
+
+**Output:**
 
 ```text
 2026-06-11 12:00:00.578 | SUCCESS  | lose_it.client._http:post_rpc:205 | rpc getInitializationData OK in 159.1 ms (10306 bytes)
 2026-06-11 12:00:00.672 | SUCCESS  | lose_it.client._http:post_rpc:205 | rpc getDailyDetailsIncludingPendingForDate OK in 92.7 ms (7610 bytes)
 ```
 
+<details>
+<summary>click to view details...</summary>
+
 > ⚠️ **Heads up:** by default the `── headers ──` / `── cookies ──` sections are **omitted** from the TRACE dump even at `--log-level trace`. Pass `--log-headers` to opt in — and only when you're actually debugging an auth/header issue, because the `liauth` and `fn_auth` cookies are bearer JWTs for your Lose It! account. If you do enable headers, treat any `--log-file` output as sensitive and scrub before sharing. The repo's gitleaks config (see [Lint, format, secret-scan (prek)](#lint-format-secret-scan-prek)) blocks any commit containing a real `liauth`/`fn_auth` JWT exactly to prevent accidental disclosure.
+
+</details>
 
 ## Configuration
 
