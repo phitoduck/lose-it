@@ -110,12 +110,24 @@ $ loseit log "x-treme carb balance tortilla" --meal lunch --pick 2 --servings 1
 ✅ Logged Tortilla Wraps, High Fiber, Low Carb, Xtreme Wellness (id 0d5f…) → lunch 1 serving (70 cal)
 ```
 
-For foods that should be logged by weight, use `--grams N` on a gram-measured entry. The CLI validates the picked food and errors if it isn't gram-measured, so you don't accidentally log "1.2 grams of chicken":
+For unit-based logging, pass `--serving-amount N --serving-unit X` where `X` is one of `g`, `ml`, `cup`, `fl_oz`, `tbsp`, `each`, `slice`, `serving`, `scoop` (plus common aliases):
 
 ```text
-$ loseit log "avocado per 100g" --meal snacks --pick 8 --grams 110
-✅ Logged Avocado (USDA Website Per 100g) (id 7f3a…) → snacks 110 grams (176 cal)
+$ loseit log "tj tomato soup" --pick 3 -m snacks --serving-amount 490 --serving-unit ml
+✅ Logged Soup, Organic Tomato Red Pepper low sodium (TJ: 8 fl oz) → snacks 490 mL (207 cal)
+
+$ loseit log "avocado per 100g" --pick 8 -m snacks --serving-amount 110 --serving-unit g
+✅ Logged Avocado (USDA Website Per 100g) → snacks 110 grams (137 cal)
 ```
+
+The CLI handles same-class conversions (e.g. cup ↔ mL ↔ fl_oz) via a generic table. **For cross-class conversions** (e.g. asking for grams against a food natively measured in "serving") the CLI falls back to the food's own `per_serving_g` / `per_serving_ml` values stored in its nutrient HashMap. Example: Realgood chicken strips are stored as "1 serving" but the food's wire data carries `per_serving_g=112`, so:
+
+```text
+$ loseit log "realgood foods chicken" --pick 1 -m snacks --serving-amount 152 --serving-unit g
+✅ Logged Lightly Breaded Chicken Strips → snacks 152 g (163 cal)
+```
+
+If neither the generic table nor the food's nutrients can supply the conversion, the CLI errors with `unit_not_supported` and tells you which native unit the entry uses.
 
 Pick indices drift between sessions (Lose It! mutates its index). For drift-proof, scriptable logging, pass the stable `--food-id` instead — it skips the search step entirely:
 
@@ -141,6 +153,36 @@ $ loseit diary
   Snacks:
     1. Greek Yogurt, Strawberry, Non Fat (Chobani)                      × 1.0  [110 cal]
 ```
+
+### `describe-food`
+
+Inspect one or more foods by ID; emits labeled nutrient + cross-class conversion data. Foods are fetched concurrently via `asyncio.to_thread`, so N foods take ~max(per-request-latency) rather than the sum:
+
+```text
+$ loseit -o json describe-food 4465349443cea79c404de42baac3b73e c5d8f3b75e3045f0a98c7c7f5f4d9d6a
+{
+  "count": 2,
+  "foods": [
+    {
+      "food_id": "4465349443cea79c404de42baac3b73e",
+      "name": "Lightly Breaded Chicken Strips ",
+      "brand": "Realgood Foods Co.",
+      "primary_serving": {"ordinal": 27, "unit": "serving", "native_qty_per_serving": 1.0},
+      "cross_class_conversion": {"per_serving_g": 112.0, "per_serving_ml": null},
+      "nutrients_per_serving": {
+        "calories": 120.0, "total_fat_g": 5.0, "saturated_fat_g": 1.5,
+        "cholesterol_mg": 60.0, "sodium_mg": 380.0, "carb_g": 4.0,
+        "fiber_g": 1.0, "sugar_g": 1.0, "protein_g": 21.0,
+        "serving_weight_g": 112.0,
+        "unknown_nutrient_18": 30.0, "unknown_nutrient_22": 300.0
+      }
+    },
+    ...
+  ]
+}
+```
+
+The `per_serving_g` / `per_serving_ml` values are what unlock cross-class `--serving-unit` logging (see `log` above). Useful for debugging which unit combinations a food supports.
 
 ### `delete`
 
@@ -172,6 +214,22 @@ $ loseit -o json diary --date 2026-06-08 | jq '.entries[] | .food_name'
 "Tortilla Wraps, High Fiber, Low Carb, Xtreme Wellness"
 "Avocado, whole"
 "Real Good Lightly Breaded Chicken Strips"
+```
+
+Diary entries include a `nutrients_by_label` field that maps the food's nutrient HashMap to human-readable nutrient names (`calories`, `total_fat_g`, `sat_fat_g`, `cholesterol_mg`, `sodium_mg`, `carb_g`, `fiber_g`, `sugar_g`, `protein_g`, `serving_weight_g`, `serving_volume_ml`, …) alongside the raw `nutrients` map keyed by ordinal. The `food_measure_unit` field labels the entry's stored unit (`grams`, `cup`, `serving`, `scoop`, etc.) — see the `FoodMeasurement` and `FoodNutrient` enums in `client/_enums.py` for the full table.
+
+```text
+$ loseit -o json diary | jq '.entries[0] | {food_name, food_measure_unit, servings, nutrients_by_label}'
+{
+  "food_name": "Soup, Organic Tomato Red Pepper low sodium (TJ: 8 fl oz)",
+  "food_measure_unit": "milliliter",
+  "servings": 2.07,
+  "nutrients_by_label": {
+    "calories": 207.0, "sodium_mg": 290.0, "carb_g": 31.1, "sugar_g": 16.6,
+    "total_fat_g": 7.2, "fiber_g": 4.1, "protein_g": 4.1,
+    "cholesterol_mg": 20.7, "serving_volume_ml": 490.0
+  }
+}
 ```
 
 ### LLM-friendly output: `--output toon` / `-o toon`
@@ -443,7 +501,7 @@ The gitleaks config has two custom rules: a tight ES384-JWT match (kid-agnostic,
 - **GWT writes byte arrays in reverse**: both PKs you see in responses are reversed copies of their wire-form bytes. `_gwt.reverse_bytes` handles round-trips.
 - **GWT writes object fields in declaration order, dedup'd across an array**: when several `FoodLogEntry` objects share the same enum value (e.g. all in *snacks*) or the same nutrient HashMap (e.g. multiple identical logs), the response writes the shared value *once* and references it from each entry. The parser falls back to a global search when an entry's local range comes up empty.
 - **Food codes can contain `$` and `_`**: e.g. `DoA3$q`. The food-identifier-code regex allows the full GWT short-string alphabet.
-- **The serving-unit is the food's default**: `--servings N` is a multiplier on the food's default serving — 1 wrap, 1 avocado, 100 g, etc. For **gram-measured** foods (FoodMeasurement ordinal 8) the default serving is 100 g, so `--servings 1.2` correctly logs 120 g (the official UI displays "120 grams"). For more natural gram logging, use `--grams N` on a gram-measured food entry: `loseit log "avocado per 100g" --pick 8 -m snacks --grams 110` logs 110 g directly and errors if the picked entry isn't gram-measured. The CLI advertises the food's unit in the dry-run / log output (`× 110 grams`, `× 1.0 serving`, `× 1.1 each`).
+- **The serving-unit is the food's default**: `--servings N` is a multiplier on the food's canonical serving (1 wrap, 1 avocado, 1 scoop, etc.). For natural unit-based logging, use `--serving-amount N --serving-unit X` — the CLI converts to canonical servings via either the generic `CONVERSIONS` table (for same-class conversions like cup ↔ mL) or the food's own stored per-serving data (for cross-class cases like grams against a serving-measured food). See the `log` command above for examples.
 
 ## License
 

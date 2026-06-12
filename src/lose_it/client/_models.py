@@ -48,6 +48,22 @@ class UnsavedFoodLogEntry:
     food_measure_unit: str | None = None
     canonical_per_serving: float | None = None
     native_qty_per_serving: float | None = None
+    # Labeled nutrients — same data as ``nutrients`` but with the
+    # FoodNutrient enum applied: ``{"calories": 100, "sodium_mg": 140,
+    # "unknown_nutrient_18": 30, ...}``. Surfaced in ``lose-it -o json``
+    # output and in ``describe-food``.
+    nutrients_by_label: dict[str, float] = field(default_factory=dict)
+    # Cross-class unit conversion. Extracted from the food's nutrient
+    # HashMap when present:
+    #   - ``per_serving_ml`` = value at FoodNutrient.SERVING_VOLUME_ML (ord=1)
+    #     — present only for volumetric foods (cup/fl_oz/mL native)
+    #   - ``per_serving_g``  = value at FoodNutrient.SERVING_WEIGHT_G (ord=2)
+    #     — present only for mass foods (gram-stored)
+    # These let the log path convert e.g. ``--serving-amount 152 --serving-unit g``
+    # against an ord=27 (serving)-stored chicken-strips food without a generic
+    # serving→grams entry in CONVERSIONS.
+    per_serving_ml: float | None = None
+    per_serving_g: float | None = None
 
 
 @dataclass
