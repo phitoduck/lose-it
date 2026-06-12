@@ -9,7 +9,7 @@
 <p align="center">
   <a href="pyproject.toml"><img src="https://img.shields.io/badge/python-3.12+-3776ab?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.12+"/></a>
   <a href="https://github.com/phitoduck/lose-it/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/phitoduck/lose-it/ci.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=CI" alt="CI status"/></a>
-  <a href="tests/"><img src="https://img.shields.io/badge/coverage-75%25-yellowgreen?style=for-the-badge&logo=pytest&logoColor=white" alt="coverage 75%"/></a>
+  <a href="https://github.com/phitoduck/lose-it/actions/workflows/ci.yml"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/phitoduck/lose-it/badges/coverage.json&style=for-the-badge&logo=pytest&logoColor=white" alt="coverage"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/phitoduck/lose-it?style=for-the-badge&logo=opensourceinitiative&logoColor=white&color=2dba4e" alt="License: MIT"/></a>
 </p>
 
