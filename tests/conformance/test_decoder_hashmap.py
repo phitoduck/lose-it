@@ -5,7 +5,7 @@ Background
 
 A user-reported probe of a tomato-soup ``getUnsavedFoodLogEntry`` response
 suggested that the schema-driven decoder in
-:mod:`lose_it.client._decoder` was pairing ``(key_{i+1}, value_i)`` instead
+:mod:`lose_it.core._decoder` was pairing ``(key_{i+1}, value_i)`` instead
 of ``(key_i, value_i)`` when reading ``java.util.HashMap`` entries — i.e.
 an off-by-one in the LIFO ``_MAP_TYPES`` branch.
 
@@ -37,7 +37,7 @@ HashMap-ordering correctness.
 
 from __future__ import annotations
 
-from lose_it.client._decoder import decode_response
+from lose_it.core._decoder import decode_response
 
 # Expected ``(FoodMeasurement.ordinal, Double)`` pairs, in LIFO read order,
 # for the nutrient HashMap inside the captured ``get_unsaved_tortilla.txt``

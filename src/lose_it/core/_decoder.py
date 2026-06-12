@@ -14,7 +14,7 @@ Inputs
   every Lose It! domain type plus all the relevant Java built-ins.
   This file is the ground truth and changes only when Lose It! redeploys.
 - A raw ``//OK[…]`` GWT-RPC response body, parsed via
-  :func:`lose_it.client._gwt.parse_response` into a flat token
+  :func:`lose_it.core._gwt.parse_response` into a flat token
   list and a separate string table.
 
 Algorithm

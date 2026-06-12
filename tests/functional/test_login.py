@@ -1,6 +1,6 @@
 """Functional tests for ``loseit login`` — browser → token round-trip.
 
-Exercises :func:`lose_it.client.auth.refresh_token_from_browser` against
+Exercises :func:`lose_it.core.auth.refresh_token_from_browser` against
 the real Chrome and Brave cookie stores on the developer's laptop. For each
 browser the test will:
 
@@ -27,9 +27,9 @@ from typing import Literal
 import pytest
 
 from lose_it import Client
-from lose_it.client import foods
-from lose_it.client._settings import Settings
-from lose_it.client.auth import (
+from lose_it.core import foods
+from lose_it.core._settings import Settings
+from lose_it.core.auth import (
     decode_jwt_exp,
     is_token_expired,
     refresh_token_from_browser,

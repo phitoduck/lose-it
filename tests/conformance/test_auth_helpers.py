@@ -13,7 +13,7 @@ import base64
 import json
 from typing import Any
 
-from lose_it.client.auth import (
+from lose_it.core.auth import (
     decode_jwt_exp,
     decode_jwt_payload,
     extract_user_info_from_jwt,

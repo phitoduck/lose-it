@@ -22,7 +22,7 @@ from __future__ import annotations
 import re
 from unittest.mock import patch
 
-from lose_it.client.init import _FALLBACK_DAY_KEY, get_daydate_key
+from lose_it.core.init import _FALLBACK_DAY_KEY, get_daydate_key
 
 
 def test_fallback_key_is_non_empty_and_well_shaped() -> None:
@@ -57,8 +57,8 @@ def test_get_daydate_key_uses_fallback_when_target_not_in_init_window() -> None:
             return "<irrelevant — parse_response is mocked>"
 
     with (
-        patch("lose_it.client.init.build_payload", return_value="<stub>"),
-        patch("lose_it.client.init.parse_response", return_value=fake_tokens),
+        patch("lose_it.core.init.build_payload", return_value="<stub>"),
+        patch("lose_it.core.init.parse_response", return_value=fake_tokens),
     ):
         result = get_daydate_key(_FakeHttp(), target_day_num=99999)
 
@@ -86,8 +86,8 @@ def test_get_daydate_key_returns_exact_match_when_target_in_init_window() -> Non
             return "<irrelevant — parse_response is mocked>"
 
     with (
-        patch("lose_it.client.init.build_payload", return_value="<stub>"),
-        patch("lose_it.client.init.parse_response", return_value=fake_tokens),
+        patch("lose_it.core.init.build_payload", return_value="<stub>"),
+        patch("lose_it.core.init.parse_response", return_value=fake_tokens),
     ):
         result = get_daydate_key(_FakeHttp(), target_day_num=9291)
 
