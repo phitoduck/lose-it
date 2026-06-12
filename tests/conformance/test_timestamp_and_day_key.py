@@ -10,7 +10,7 @@ Minimal repro for each is documented in CHANGELOG.md.
 
 from __future__ import annotations
 
-from lose_it.client._decoder import _DATE, _TIMESTAMP, _Reader, _read_typed
+from lose_it.client._decoder import _DATE, _TIMESTAMP, _read_typed, _Reader
 
 
 def test_date_handler_preserves_raw_base64_token() -> None:
