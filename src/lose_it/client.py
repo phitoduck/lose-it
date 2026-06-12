@@ -231,9 +231,7 @@ class LoseIt:
         pk_bytes = hex_to_pk(food_id) if isinstance(food_id, str) else list(food_id)
         return _foods.get_food(self.http, pk_bytes)
 
-    def get_food_template(
-        self, food: FoodSearchResult | str | list[int]
-    ) -> UnsavedFoodLogEntry:
+    def get_food_template(self, food: FoodSearchResult | str | list[int]) -> UnsavedFoodLogEntry:
         """Fetch the unsaved-entry template for a food (nutrient + serving sizes).
 
         Accepts either a :class:`FoodSearchResult` (skips the ``getFood``
@@ -438,9 +436,7 @@ class LoseIt:
             )
 
         exp = decode_jwt_exp(token)
-        exp_iso = (
-            datetime.fromtimestamp(exp, tz=UTC).isoformat() if exp is not None else None
-        )
+        exp_iso = datetime.fromtimestamp(exp, tz=UTC).isoformat() if exp is not None else None
 
         if is_token_expired(token):
             return LoginResult(

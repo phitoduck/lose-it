@@ -179,9 +179,7 @@ class FoodLogEntry:
         (``0 → "calories"``, ``9 → "sodium_mg"``, …), so downstream
         callers don't have to remember the ordinal table.
         """
-        return {
-            label_for_nutrient(int(ord_)): float(val) for ord_, val in self.nutrients_ordered
-        }
+        return {label_for_nutrient(int(ord_)): float(val) for ord_, val in self.nutrients_ordered}
 
     def to_dict(self) -> dict[str, Any]:
         """Project to a JSON-safe dict.

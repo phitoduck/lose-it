@@ -676,9 +676,9 @@ $ loseit --log-level info search "tortilla" 1>/dev/null
 
 ```text
 12:00:00.123 INFO     lose_it.cli:search:344 cli.search: query='tortilla' output=text
-12:00:00.135 INFO     lose_it.client:from_env:65 Client.from_env: user='you@example.com' hours_from_gmt=-6 permutation=351AE5DC0CA36AD3BA9C7CBA7B0E07B8
-12:00:00.140 INFO     lose_it.client.foods:search:135 foods.search: query='tortilla'
-12:00:00.330 SUCCESS  lose_it.client._http:post_rpc:205 rpc searchFoods OK in 188.5 ms (2764 bytes)
+12:00:00.135 INFO     lose_it.client:from_env:184 LoseIt.from_env: user='you@example.com' hours_from_gmt=-6 permutation=351AE5DC0CA36AD3BA9C7CBA7B0E07B8
+12:00:00.140 INFO     lose_it.core.foods:search:183 foods.search: query='tortilla'
+12:00:00.330 SUCCESS  lose_it.core._http:post_rpc:205 rpc searchFoods OK in 188.5 ms (2764 bytes)
 ```
 
 <details>
@@ -807,30 +807,34 @@ The `Class/<digits>` strings you'll see in the SDK source — `UserId/4281239478
 ## SDK
 
 ```python
-from datetime import date
-from lose_it import Client
-from lose_it.client import foods, entries, daily
-from lose_it.client._dates import day_number_for
-from lose_it.client.init import get_daydate_key
+from lose_it import LoseIt, MealType, ServingUnit
 
-with Client.from_env() as client:
+with LoseIt.from_env() as li:
     # Search
-    results = foods.search(client.http, "tortilla")
+    results = li.search("tortilla")
     chosen = results[0]
 
-    # Get the food's nutrient template, then log 1 serving to lunch
-    unsaved = foods.get_unsaved_food_log_entry(client.http, chosen)
-    day_num = day_number_for(date.today())
-    day_key = get_daydate_key(client.http, day_num)
-    entries.log_food(client.http, unsaved, meal_ordinal=1,
-                     day_key=day_key, day_num=day_num, servings=1.0)
+    # Log 1 serving to lunch — portion math, day-key lookup, and the
+    # log RPC all happen inside this one call.
+    logged = li.log_food(chosen, meal=MealType.lunch, servings=1.0)
+    print(f"logged {logged.food.name} → {logged.meal_name} ({logged.calories:.0f} cal)")
 
-    # List + delete
-    for e in daily.get_daily_details(client.http, date.today()):
+    # Unit-based logging (e.g. 61 g of a tortilla wrap):
+    li.log_food(chosen, meal="lunch",
+                serving_amount=61, serving_unit=ServingUnit.g)
+
+    # Today's diary, then delete the tortilla we just logged
+    for e in li.diary():
         print(f"{e.food_name}  × {e.servings}  [{e.calories} cal]")
         if "tortilla" in e.food_name.lower():
-            entries.delete(client.http, e)
+            li.delete_entry(e)
+
+    # JSON-safe projection of any model
+    import json
+    print(json.dumps(logged.to_dict(), indent=2))
 ```
+
+The high-level `LoseIt` class wraps the lower-level RPC modules under `lose_it.core.{foods, entries, daily, init, auth}` — reach for those when you want direct control over a specific RPC (e.g. fixture capture).
 
 ## Develop
 
@@ -847,24 +851,33 @@ LOSEIT_RUN_FUNCTIONAL=1 uv run pytest  # incl. real-API CRUD
 
 ```text
 src/lose_it/
-├── __init__.py             # exports `Client`
-├── cli.py                  # typer CLI
-└── client/
-    ├── __init__.py         # `Client` class
+├── __init__.py             # exports `LoseIt`, `Client`, models, enums
+├── cli.py                  # typer CLI — one method per subcommand on `LoseIt`
+├── client.py               # `LoseIt` (high-level) + `Client` (low-level)
+├── models.py               # FoodSearchResult, FoodLogEntry, FoodDescription,
+│                           #   LoggedFood, LoginResult, … (each with `.to_dict()`)
+├── enums.py                # MealType, ServingUnit
+└── core/                   # internal plumbing — stable contract is `LoseIt`
+    ├── __init__.py
     ├── _settings.py        # pydantic-settings layered config (CLI > env > YAML > defaults)
     ├── _config.py          # backwards-compat `Config` façade over Settings
     ├── _http.py            # httpx wrapper + error types
     ├── _gwt.py             # GWT-RPC serialization primitives
-    ├── _models.py          # FoodSearchResult / UnsavedFoodLogEntry / FoodLogEntry
+    ├── _decoder.py         # schema-driven response decoder
+    ├── _portion.py         # `resolve_portion` + `validate_portion_args`
+    ├── _login_flow.py      # JWT/cookie → config-values derivation
+    ├── _ids.py             # hex ↔ pk_bytes
+    ├── _units.py           # FoodMeasurement unit conversions
+    ├── _enums.py           # FoodNutrient labels
     ├── _dates.py           # date ↔ day-number conversion
     ├── auth.py             # token loading + Chrome/Brave cookie import
     ├── init.py             # getInitializationData → DayDate key lookup
-    ├── foods.py            # searchFoods + getUnsavedFoodLogEntry
+    ├── foods.py            # searchFoods + getUnsavedFoodLogEntry + getFood
     ├── entries.py          # updateFoodLogEntry (log) + deleteFoodLogEntry
     └── daily.py            # getDailyDetailsIncludingPendingForDate
 ```
 
-Module structure mirrors the underlying GWT-RPC resources: one module per backend resource, one function per RPC method.
+The `core/` modules mirror the underlying GWT-RPC resources: one module per backend resource, one function per RPC method. The `LoseIt` class at the top level composes them.
 
 ### Tests
 

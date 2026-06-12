@@ -800,8 +800,7 @@ def delete(
             else:
                 _print_diary(es, when)
                 typer.echo(
-                    f"\nUse --pick N to choose an entry from "
-                    f"{meal_type.name} (1..{len(meal_es)})"
+                    f"\nUse --pick N to choose an entry from {meal_type.name} (1..{len(meal_es)})"
                 )
             raise typer.Exit(code=1)
         idx = _resolve_pick(pick, "Pick", len(meal_es))
@@ -810,8 +809,7 @@ def delete(
             brand_str = f" ({target.food_brand})" if target.food_brand else ""
             prefix = "🟡 DRY RUN — would delete" if dry_run else "🗑️  Deleting"
             typer.echo(
-                f"{prefix} from {meal_type.name}: "
-                f"{target.food_name}{brand_str} × {target.servings}"
+                f"{prefix} from {meal_type.name}: {target.food_name}{brand_str} × {target.servings}"
             )
         if not dry_run:
             if not yes and fmt is OutputFormat.text:

@@ -242,9 +242,7 @@ def resolve_portion(
     )
 
 
-def scaled_calories(
-    unsaved: UnsavedFoodLogEntry, canonical_servings: float
-) -> float | None:
+def scaled_calories(unsaved: UnsavedFoodLogEntry, canonical_servings: float) -> float | None:
     """Return ``cal_per_serving × canonical_servings``, or ``None`` if absent.
 
     The unsaved-entry response carries the food's nutrient map keyed by
