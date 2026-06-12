@@ -222,13 +222,13 @@ Diary entries include a `nutrients_by_label` field that maps the food's nutrient
 ```text
 $ loseit -o json diary | jq '.entries[0] | {food_name, food_measure_unit, servings, nutrients_by_label}'
 {
-  "food_name": "Soup, Organic Tomato Red Pepper low sodium (TJ: 8 fl oz)",
-  "food_measure_unit": "milliliter",
-  "servings": 2.07,
+  "food_name": "Avocado (USDA Website Per 100g)",
+  "food_measure_unit": "grams",
+  "servings": 86.0,
   "nutrients_by_label": {
-    "calories": 207.0, "sodium_mg": 290.0, "carb_g": 31.1, "sugar_g": 16.6,
-    "total_fat_g": 7.2, "fiber_g": 4.1, "protein_g": 4.1,
-    "cholesterol_mg": 20.7, "serving_volume_ml": 490.0
+    "calories": 118.3, "total_fat_g": 11.1, "carb_g": 6.7, "sugar_g": 0.5,
+    "fiber_g": 5.2, "protein_g": 1.5, "sodium_mg": 5.2,
+    "serving_weight_g": 73.96
   }
 }
 ```
