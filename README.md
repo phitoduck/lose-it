@@ -807,27 +807,36 @@ The `Class/<digits>` strings you'll see in the SDK source — `UserId/4281239478
 ## SDK
 
 ```python
+from datetime import date
+
 from lose_it import LoseIt, MealType, ServingUnit
 
 with LoseIt.from_env() as li:
+    when = date.today()
+
     # Search
     results = li.search("tortilla")
     chosen = results[0]
 
     # Log 1 serving to lunch — portion math, day-key lookup, and the
     # log RPC all happen inside this one call.
-    logged = li.log_food(chosen, meal=MealType.lunch, servings=1.0)
+    logged = li.log_food(chosen, meal=MealType.lunch, servings=1.0, when=when)
     print(f"logged {logged.food.name} → {logged.meal_name} ({logged.calories:.0f} cal)")
 
     # Unit-based logging (e.g. 61 g of a tortilla wrap):
     li.log_food(chosen, meal="lunch",
-                serving_amount=61, serving_unit=ServingUnit.g)
+                serving_amount=61, serving_unit=ServingUnit.g, when=when)
 
-    # Today's diary, then delete the tortilla we just logged
-    for e in li.diary():
+    # Read back the day's diary and pick out the entries we just logged.
+    # `food_id` is the stable hex form of the food's primary key —
+    # the same value `li.search(...)` and `li.log_food(...)` round-trip.
+    just_logged = [e for e in li.diary(when) if e.food_id == chosen.food_id]
+    for e in just_logged:
         print(f"{e.food_name}  × {e.servings}  [{e.calories} cal]")
-        if "tortilla" in e.food_name.lower():
-            li.delete_entry(e)
+
+    # Clean up: delete every entry we logged for this food.
+    for e in just_logged:
+        li.delete_entry(e)
 
     # JSON-safe projection of any model
     import json
