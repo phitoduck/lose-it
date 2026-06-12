@@ -42,6 +42,42 @@ curl -sL https://raw.githubusercontent.com/phitoduck/lose-it/main/README.md
 
 Or if a clone is already on disk: read it directly from `~/repos/lose-it/README.md`. Either way, keep its contents in your working context while you log.
 
+### Read `diary-notes.toon` — the lessons-learned cache
+
+The skill maintains a **persistent lessons file** as a sibling of the CLI config:
+
+- `~/.config/loseit/config.yaml` — the CLI config (written by `loseit login`)
+- `~/.config/loseit/diary-notes.toon` — **your** working memory across sessions
+
+Read it at the start of every run. It's a [TOON](https://toonformat.dev)-formatted array of corrections the user has explicitly made — picks that turned out to be wrong, brands that drift, app-side display quirks, "always use this food_id for X", etc. Treat it as binding guidance: if a note says "for chicken strips, use food_id 4465… not 9aaa… (the latter's per-100g math overcounts in the app)", **do that** without re-deriving why.
+
+Schema:
+
+```toon
+notes[N]{food_id,query,brand,note}:
+  - "<32-char hex>","<search query that found it>","<brand>","<lesson — what to do, what to avoid, why>"
+```
+
+- `food_id` is the stable key when known; fall back to `query` + `brand` when the user's correction didn't pin down a specific entry.
+- `note` is free-form prose — short and actionable. Lead with the rule, follow with a one-line *why*.
+
+Load it:
+
+```bash
+NOTES="${XDG_CONFIG_HOME:-$HOME/.config}/loseit/diary-notes.toon"
+[ -f "$NOTES" ] && cat "$NOTES"
+```
+
+If the file doesn't exist yet, that's fine — start with an empty cache. The first time you record a lesson, create the file with the header row.
+
+### Append to `diary-notes.toon` when corrected mid-session
+
+If the user pushes back on a pick — "no, that one's wrong, use the other entry"; "I deleted that, it's the Trader Joe's one, not the Whole Foods one"; "that brand's nutrition is off" — capture the lesson **immediately** into `diary-notes.toon` before moving on. The next session will read it back and avoid the same mistake.
+
+Format the new row with the food_id when you have it, plus a brief actionable note. Don't write essays — a single sentence is usually enough. Append, don't rewrite the whole file. If the row's schema header doesn't exist yet, create it.
+
+The point of this file is to make the agent **stop relearning the same lessons every session**. Treat it as a small, append-only log of the user's preferences and the Lose It! DB's quirks.
+
 ---
 
 ## STEP 1 — Parse the prompt into per-food entries
@@ -100,6 +136,8 @@ loseit -o toon describe-food <food_id_1> <food_id_2> <food_id_3>
 - `nutrients_per_serving` → labeled dict: `{calories, total_fat_g, sat_fat_g, cholesterol_mg, sodium_mg, carb_g, fiber_g, sugar_g, protein_g, serving_weight_g, serving_volume_ml, ...}`
 
 **Pick the right candidate by sanity-checking the labeled values**, not by guessing pick indices. Apply these biases in order:
+
+0. **Check `diary-notes.toon` first.** If a prior session recorded a binding lesson for this food (matching `query`, `brand`, or a specific `food_id`), follow it. That entry exists *because* the user already corrected you on this food before — don't repeat the mistake.
 
 1. **Bias toward the user's requested unit.** If the user said "120g of avocado", prefer entries that support gram-based logging — i.e. `primary_serving.unit == "grams"` OR `cross_class_conversion.per_serving_g` is populated. Not every avocado entry supports grams: one might only have `primary_serving.unit: "cup"` with no `per_serving_g`, in which case `--serving-amount 120 --serving-unit g` will error. Skim the `describe-food` output and drop candidates that don't support the asked-for unit before you get to the dry-run. Same logic for `mL` / `fl_oz` (look for `per_serving_ml` or volumetric native units), `tsp` / `tbsp` / `cup`, etc.
 
