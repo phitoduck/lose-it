@@ -53,9 +53,11 @@ loseit login                       # default: --browser chrome
 loseit diary
 ```
 
-Prompt for, e.g. Claude Code:
+**Claude Code Prompt:**
 
 > Log 1 Xtreme carb balance tortilla, 110g of avocado, and 120g of real good brand lightly breaded chicken strips
+
+**Result:**
 
 <p align="center">
   <img src="docs/mobile-app-demo.jpeg" alt="Lose It! mobile app — Mon, Jun 8: Snacks (451 cal): Tortilla Wraps 1 Serving (70 cal), Real good Lightly Breaded Chicken 120 Grams (187 cal), Avocado (USDA Website Per 100g) 110 Grams (194 cal)" width="320"/>
@@ -72,13 +74,19 @@ claude plugin install log-food@lose-it
 
 ### Example
 
+**Claude Code Prompt:**
+
 > **/log-food** Log 1 Xtreme carb balance tortilla, 110g of avocado, and 120g of real good brand lightly breaded chicken strips
 
 ### Complex example — multi-food meal + diary cleanup
 
 A messier, real-world prompt. Fuzzy quantities, a guessed-at sauce, "a few bites" of corn, *and* an aside asking the skill to clean up duplicate entries — handled in a single turn:
 
+**Claude Code Prompt:**
+
 > **/log-food** I ordered some poke today today there was a bowl with a bunch of edamame in it. Probably three quarters cup of edam edamame. And I would guess like three quarter cup of Ahi tuna and three quarter cup of crab imitation meat and there was this white sauce on it I'm not sure what it was uh presumably some sauce that's common to serve with uh poke bowls with imitation crab. And I had a few bites of corn. So that'll need to be converted into whatever unit makes sense for a guess of that. And that's all for that meal. Now, I also erroneously added too many entries to my food log today. So for example, there are multiple logs for Trader Joe's tomato soup. There should only be one. So the redundant ones should be deleted.
+
+**Result:**
 
 <p align="center">
   <img src="docs/complex-food-log.jpeg" alt="Lose It! mobile app — Thu, Jun 11 Snacks (1,078 cal). Earlier entries: Tortilla Wraps 1 serving (70), Avocado 86g (118), Lightly Breaded Chicken Strips 1.36 servings (163), Trader Joe's Tomato Roasted Red Pepper Soup 490 mL (207) — exactly one, duplicate deleted. Poke bowl just added: Edamame Soybeans 118g (131), Ahi Tuna Raw 180g (194), Imitation Crab 100g (94), Japanese Spicy Mayo 1 tbsp (85), Corn Sweet 19g (16)." width="320"/>
