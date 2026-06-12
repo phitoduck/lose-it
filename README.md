@@ -15,6 +15,28 @@
 
 > ⚠️ **Reverse-engineered & unofficial.** Talks to Lose It!'s private GWT-RPC web endpoints. No official API exists; the protocol is brittle and may break without notice. Not affiliated with Lose It! / FitNow, Inc.
 
+## Table of contents
+
+- [Quickstart](#quickstart)
+- [Claude Code skill](#claude-code-skill)
+- [Subcommands](#subcommands)
+  - [`login`](#login--import-the-auth-token-and-populate-the-config)
+  - [`search`](#search)
+  - [`log`](#log)
+  - [`diary`](#diary)
+  - [`describe-food`](#describe-food)
+  - [`delete`](#delete)
+  - [`whoami`](#whoami)
+  - [Script-friendly output: `--output json` / `-o json`](#script-friendly-output---output-json---o-json)
+  - [LLM-friendly output: `--output toon` / `-o toon`](#llm-friendly-output---output-toon---o-toon)
+  - [Preview without mutating: `--dry-run`](#preview-without-mutating---dry-run)
+  - [Verbose logging: `--log-level` / `--log-file`](#verbose-logging---log-level---log-file)
+- [Configuration](#configuration)
+- [SDK](#sdk)
+- [Develop](#develop)
+- [Known quirks (annotated in the parser)](#known-quirks-annotated-in-the-parser)
+- [License](#license)
+
 ## Quickstart
 
 You need to already be signed into [loseit.com](https://www.loseit.com/) in Chrome or Brave.
