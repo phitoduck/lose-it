@@ -348,7 +348,16 @@ def _print_diary(entries_, when: date) -> None:
 
 
 def _entry_to_dict(e) -> dict[str, Any]:
-    """Project a FoodLogEntry into a JSON-safe dict."""
+    """Project a FoodLogEntry into a JSON-safe dict.
+
+    Includes both raw-ordinal nutrients (``nutrients``) and labeled
+    nutrients (``nutrients_by_label``) so the JSON output is both
+    human-readable and machine-parseable for downstream verification.
+    """
+    from .client._enums import label_for_nutrient, label_for_ordinal
+
+    raw_nutrients = {int(ord_): float(val) for ord_, val in (e.nutrients_ordered or [])}
+    labeled_nutrients = {label_for_nutrient(o): v for o, v in raw_nutrients.items()}
     return {
         "meal": MEAL_NAMES.get(e.meal_ordinal, f"meal{e.meal_ordinal}"),
         "meal_ordinal": e.meal_ordinal,
@@ -358,13 +367,15 @@ def _entry_to_dict(e) -> dict[str, Any]:
         "food_identifier_code": e.food_identifier_code,
         "servings": e.servings,
         "calories": e.calories,
-        "nutrients": {int(ord_): float(val) for ord_, val in (e.nutrients_ordered or [])},
+        "nutrients": raw_nutrients,
+        "nutrients_by_label": labeled_nutrients,
         "entry_pk": list(e.entry_pk_response),
         "food_pk": list(e.food_pk_response),
         "entry_day_key": e.entry_day_key,
         "context_day_key": e.context_day_key,
         "day_num": e.day_num,
         "food_measure_ordinal": e.food_measure_ordinal,
+        "food_measure_unit": label_for_ordinal(e.food_measure_ordinal),
     }
 
 
@@ -637,15 +648,41 @@ def log(
         if sa_set and chosen_ord is not None and serving_amount is not None:
             native_ord = measure_ord if measure_ord is not None else 0
             cf_native_to_chosen = _conversion_factor(native_ord, chosen_ord)
-            if cf_native_to_chosen is None:
+            chosen_qty_per_serving: float | None = None
+            if cf_native_to_chosen is not None:
+                # Same-class conversion: apply the generic factor.
+                f3 = unsaved.canonical_per_serving or 1.0
+                f4 = unsaved.native_qty_per_serving or 1.0
+                native_qty_per_serving = f4 / f3 if f3 else 1.0
+                chosen_qty_per_serving = native_qty_per_serving * cf_native_to_chosen
+            else:
+                # Cross-class fallback: the food's own nutrient HashMap may
+                # carry a per-serving qty in mass (ord=2, ``per_serving_g``)
+                # or volume (ord=1, ``per_serving_ml``) units that the
+                # generic CONVERSIONS table can't supply without per-food
+                # density data. Example: chicken strips natively measured
+                # in "serving" but the user asks ``--serving-unit g`` —
+                # ``per_serving_g=112`` lets us compute canonical_servings
+                # = 152 / 112 = 1.357 directly.
+                _GRAMS = 8
+                _ML = 11
+                if chosen_ord == _GRAMS and unsaved.per_serving_g:
+                    chosen_qty_per_serving = unsaved.per_serving_g
+                elif chosen_ord in {2, 3, 10, 11} and unsaved.per_serving_ml:
+                    cf_ml_to_chosen = _conversion_factor(_ML, chosen_ord)
+                    if cf_ml_to_chosen is not None:
+                        chosen_qty_per_serving = unsaved.per_serving_ml * cf_ml_to_chosen
+            if chosen_qty_per_serving is None:
                 chosen_name = CANONICAL_UNIT_NAMES.get(chosen_ord, serving_unit or "?")
                 native_name = unsaved.food_measure_unit or measure_name(measure_ord)
                 msg = (
                     f"{selected.name!r} is measured in {native_name!r}; "
                     f"the CLI doesn't have a {native_name}→{chosen_name} "
-                    f"conversion factor. Pick a different food entry whose "
-                    f"native unit is {chosen_name}, or use --servings to "
-                    f"log in the food's native unit."
+                    f"conversion factor, and the food doesn't carry the "
+                    f"per-serving {chosen_name} value in its nutrients. "
+                    f"Pick a different food entry whose native unit is "
+                    f"{chosen_name}, or use --servings to log in the food's "
+                    f"native unit."
                 )
                 if fmt is not OutputFormat.text:
                     _emit_structured(
@@ -661,13 +698,6 @@ def log(
                 else:
                     typer.secho(f"❌ {msg}", fg=typer.colors.RED, err=True)
                 raise typer.Exit(code=2)
-            # The food's per-serving qty in its native unit (f4/f3).
-            # Default to 1.0 if the food's record didn't carry these —
-            # matches the legacy assumption for foods where f4 was absent.
-            f3 = unsaved.canonical_per_serving or 1.0
-            f4 = unsaved.native_qty_per_serving or 1.0
-            native_qty_per_serving = f4 / f3 if f3 else 1.0
-            chosen_qty_per_serving = native_qty_per_serving * cf_native_to_chosen
             servings = serving_amount / chosen_qty_per_serving
             conv_factor = chosen_qty_per_serving
             measure_ord_override = chosen_ord
@@ -763,6 +793,104 @@ def diary(
             )
         else:
             _print_diary(es, when)
+
+
+@app.command(name="describe-food")
+def describe_food(
+    ctx: typer.Context,
+    food_ids: Annotated[
+        list[str],
+        typer.Argument(
+            help=(
+                "One or more 32-char hex food IDs (from `lose-it search` "
+                "output). Each ID's full nutrient + serving-size data is "
+                "fetched concurrently and emitted in JSON."
+            ),
+        ),
+    ],
+) -> None:
+    """Inspect one or more foods by ID; fetch concurrently.
+
+    For each food, returns the food's stored per-serving data:
+    calories, macros (fat/sat-fat/cholesterol/sodium/carb/fiber/sugar/protein),
+    plus cross-class conversion values (``per_serving_g`` for solid foods,
+    ``per_serving_ml`` for liquids). Useful for understanding what units
+    a food supports and for verifying log payloads before sending.
+
+    Foods are fetched in parallel using ``asyncio.to_thread`` over the
+    sync HTTP client — N foods take ~max(per-request-latency) instead
+    of sum.
+    """
+    import asyncio
+
+    from .client._ids import hex_to_pk
+
+    fmt = _output_format(ctx)
+    logger.info("cli.describe_food: n={n}", n=len(food_ids))
+
+    def _describe_one(http, food_id: str) -> dict[str, Any]:
+        try:
+            pk_bytes = hex_to_pk(food_id)
+        except ValueError as exc:
+            return {"food_id": food_id, "error": "invalid_food_id", "message": str(exc)}
+        try:
+            selected = foods.get_food(http, pk_bytes)
+            unsaved = foods.get_unsaved_food_log_entry(http, selected)
+        except Exception as exc:
+            return {"food_id": food_id, "error": "fetch_failed", "message": str(exc)}
+        return {
+            "food_id": food_id,
+            "name": unsaved.name,
+            "brand": unsaved.brand,
+            "category": unsaved.category,
+            "primary_serving": {
+                "ordinal": unsaved.food_measure_ordinal,
+                "unit": unsaved.food_measure_unit,
+                "canonical_per_serving": unsaved.canonical_per_serving,
+                "native_qty_per_serving": unsaved.native_qty_per_serving,
+            },
+            "cross_class_conversion": {
+                "per_serving_g": unsaved.per_serving_g,
+                "per_serving_ml": unsaved.per_serving_ml,
+            },
+            "nutrients_per_serving": unsaved.nutrients_by_label,
+            "raw_nutrients_by_ord": unsaved.nutrients,
+        }
+
+    async def _describe_many(http) -> list[dict[str, Any]]:
+        return await asyncio.gather(
+            *(asyncio.to_thread(_describe_one, http, fid) for fid in food_ids)
+        )
+
+    with _open_client(ctx) as client:
+        results = asyncio.run(_describe_many(client.http))
+
+    if fmt is not OutputFormat.text:
+        _emit_structured(fmt, {"count": len(results), "foods": results})
+    else:
+        for r in results:
+            if r.get("error"):
+                typer.secho(
+                    f"❌ {r['food_id']}: {r['error']} — {r.get('message', '')}",
+                    fg=typer.colors.RED,
+                    err=True,
+                )
+                continue
+            typer.secho(f"\n📋 {r['name']}", fg=typer.colors.CYAN, bold=True)
+            typer.echo(f"   brand={r['brand']!r} category={r['category']!r}")
+            typer.echo(f"   food_id={r['food_id']}")
+            ps = r["primary_serving"]
+            typer.echo(
+                f"   1 serving = {ps['native_qty_per_serving']} {ps['unit']} (ord={ps['ordinal']})"
+            )
+            cc = r["cross_class_conversion"]
+            if cc["per_serving_g"] is not None:
+                typer.echo(f"   per_serving_g = {cc['per_serving_g']}")
+            if cc["per_serving_ml"] is not None:
+                typer.echo(f"   per_serving_ml = {cc['per_serving_ml']}")
+            typer.echo("   nutrients:")
+            for label, val in r["nutrients_per_serving"].items():
+                typer.echo(f"     {label:<24} {val}")
 
 
 @app.command()

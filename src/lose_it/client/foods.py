@@ -283,6 +283,8 @@ def _extract_unsaved_from_decoded(
     if food_serving is not None:
         # Nutrients live in the HashMap under FoodNutrients.f0 (the
         # generated schema flattens it into a `java.util.HashMap` entry).
+        from ._enums import FoodNutrient, label_for_nutrient
+
         for hm in _walk(food_serving, fqcn_prefix="java.util.HashMap"):
             entries_list = hm.get("entries")
             if not isinstance(entries_list, list):
@@ -295,7 +297,18 @@ def _extract_unsaved_from_decoded(
                     and isinstance(key["ordinal"], (int, float))
                     and 0 <= int(key["ordinal"]) <= 30
                 ):
-                    out.nutrients[int(key["ordinal"])] = float(val)
+                    ord_int = int(key["ordinal"])
+                    fval = float(val)
+                    out.nutrients[ord_int] = fval
+                    out.nutrients_by_label[label_for_nutrient(ord_int)] = fval
+                    # Extract per-serving conversion slots when present.
+                    # These are the data points that unlock cross-class
+                    # ``--serving-unit`` overrides (e.g. ``--serving-unit g``
+                    # against a serving-stored food like chicken strips).
+                    if ord_int == FoodNutrient.SERVING_VOLUME_ML:
+                        out.per_serving_ml = fval
+                    elif ord_int == FoodNutrient.SERVING_WEIGHT_G:
+                        out.per_serving_g = fval
 
         # FoodServingSize sits at f1 of FoodServing.
         #
