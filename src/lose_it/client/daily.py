@@ -325,7 +325,7 @@ def get_daily_details(http: HttpClient, target_date: date) -> list[FoodLogEntry]
     """Fetch + parse today's (or any day's) FoodLogEntry list."""
     logger.info("daily.get_daily_details: date={d}", d=target_date.isoformat())
     day_num = day_number_for(target_date)
-    day_key = get_daydate_key(http, day_num) or ""
+    day_key = get_daydate_key(http, day_num)
     logger.debug("daily.get_daily_details: day_num={n} day_key={k!r}", n=day_num, k=day_key)
     text = http.post_rpc(_build_payload(http.config, target_date, day_key))
     entries = parse_entries(
@@ -348,5 +348,5 @@ def get_daily_details_raw(http: HttpClient, target_date: date) -> str:
     """
     logger.info("daily.get_daily_details_raw: date={d}", d=target_date.isoformat())
     day_num = day_number_for(target_date)
-    day_key = get_daydate_key(http, day_num) or ""
+    day_key = get_daydate_key(http, day_num)
     return http.post_rpc(_build_payload(http.config, target_date, day_key))
