@@ -23,8 +23,8 @@ import yaml
 from typer.testing import CliRunner
 
 from lose_it.cli import app
-from lose_it.client import auth as auth_module
-from lose_it.client._settings import write_yaml_config
+from lose_it.core import auth as auth_module
+from lose_it.core._settings import write_yaml_config
 
 
 def _make_jwt(payload: dict[str, Any]) -> str:

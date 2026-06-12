@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ._models import UnsavedFoodLogEntry
+from ..models import UnsavedFoodLogEntry
 
 __all__ = ["PortionError", "ResolvedPortion", "resolve_portion", "scaled_calories"]
 
@@ -98,7 +98,7 @@ def resolve_portion(
     2. Otherwise both must be set and ``servings`` must be left at its
        default of ``1.0`` (passing both is treated as user confusion).
     3. Resolve ``serving_unit`` (string or alias) to its FoodMeasurement
-       ordinal via :func:`lose_it.client._units.resolve_unit`.
+       ordinal via :func:`lose_it.core._units.resolve_unit`.
     4. If the food's native unit is in the same class as the chosen unit
        (both volumetric, both same count enum), use the static
        ``CONVERSIONS`` table.

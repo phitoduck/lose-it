@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 from lose_it import Client
-from lose_it.client._config import Config
+from lose_it.core._config import Config
 
 FIXTURE_DIR = Path(__file__).parent / "conformance" / "fixtures"
 

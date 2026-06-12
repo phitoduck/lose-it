@@ -1,7 +1,7 @@
 """Typer-based CLI for the Lose It! SDK.
 
 The CLI is a thin wrapper around :class:`lose_it.Client` and the
-``lose_it.client.*`` modules. Subcommands::
+``lose_it.core.*`` modules. Subcommands::
 
     loseit search "tortilla"                              List candidate foods
     loseit log "tortilla" --meal lunch --servings 1.0     Search + log
@@ -42,23 +42,25 @@ import typer
 
 from ._logging import configure as _configure_logging
 from ._logging import logger
-from .client import Client, MissingConfigError, daily, entries, foods
-from .client._config import (
+from .client import Client
+from .core import daily, entries, foods
+from .core._config import (
     MEAL_NAMES,
     MEAL_TYPES,
+    MissingConfigError,
     measure_name,
 )
-from .client._dates import day_number_for, parse_date_arg
-from .client._ids import hex_to_pk, pk_to_hex
-from .client._settings import DEFAULT_CONFIG_FILE, write_yaml_config
-from .client._units import (
+from .core._dates import day_number_for, parse_date_arg
+from .core._ids import hex_to_pk, pk_to_hex
+from .core._settings import DEFAULT_CONFIG_FILE, write_yaml_config
+from .core._units import (
     CANONICAL_UNIT_NAMES,
     resolve_unit,
 )
-from .client._units import (
+from .core._units import (
     conversion_factor as _conversion_factor,
 )
-from .client.auth import (
+from .core.auth import (
     DEFAULT_TOKEN_FILE,
     SIGNIN_URL,
     decode_jwt_exp,
@@ -69,7 +71,7 @@ from .client.auth import (
     refresh_token_from_browser,
     save_token,
 )
-from .client.init import get_daydate_key
+from .core.init import get_daydate_key
 
 
 class OutputFormat(enum.StrEnum):
@@ -384,7 +386,7 @@ def _entry_to_dict(e) -> dict[str, Any]:
     nutrients (``nutrients_by_label``) so the JSON output is both
     human-readable and machine-parseable for downstream verification.
     """
-    from .client._enums import label_for_nutrient, label_for_ordinal
+    from .core._enums import label_for_nutrient, label_for_ordinal
 
     raw_nutrients = {int(ord_): float(val) for ord_, val in (e.nutrients_ordered or [])}
     labeled_nutrients = {label_for_nutrient(o): v for o, v in raw_nutrients.items()}
@@ -870,7 +872,7 @@ def describe_food(
     """
     import asyncio
 
-    from .client._ids import hex_to_pk
+    from .core._ids import hex_to_pk
 
     fmt = _output_format(ctx)
     logger.info("cli.describe_food: n={n}", n=len(food_ids))

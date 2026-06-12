@@ -3,8 +3,9 @@
 :class:`LoseIt` owns the HTTP session + account config and exposes one
 method per user-facing capability (search, log, diary, delete, describe,
 login bootstrap). Each method composes pure helpers from
-:mod:`._portion` / :mod:`._login_flow` with the low-level RPC functions
-in :mod:`.foods` / :mod:`.entries` / :mod:`.daily` / :mod:`.init`.
+:mod:`.core._portion` / :mod:`.core._login_flow` with the low-level RPC
+functions in :mod:`.core.foods` / :mod:`.core.entries` /
+:mod:`.core.daily` / :mod:`.core.init`.
 
 The class is a thin façade — the goal is *call site ergonomics*::
 
@@ -21,8 +22,10 @@ The class is a thin façade — the goal is *call site ergonomics*::
 module-level functions and reproducing the portion-resolution +
 day_key-lookup glue at every call site.
 
-For backwards compat, :class:`~lose_it.client.Client` remains as an
-alias of ``LoseIt`` so existing tests/imports keep working.
+:class:`Client` is the existing low-level handle (Config + HttpClient)
+that the module-level RPC functions in :mod:`lose_it.core` take as a
+first argument. Kept here unchanged so existing code keeps working; once
+:class:`LoseIt` is implemented, ``Client`` will become an alias.
 """
 
 from __future__ import annotations
@@ -33,9 +36,11 @@ from typing import Any
 
 import httpx
 
-from ._config import Config
-from ._http import HttpClient
-from ._models import (
+from ._logging import logger
+from .core import auth as _auth
+from .core._config import Config, MissingConfigError
+from .core._http import HttpClient
+from .models import (
     FoodDescription,
     FoodLogEntry,
     FoodSearchResult,
@@ -44,7 +49,65 @@ from ._models import (
     UnsavedFoodLogEntry,
 )
 
-__all__ = ["LoseIt"]
+__all__ = ["Client", "LoseIt"]
+
+
+class Client:
+    """Low-level handle: account config + authenticated httpx session.
+
+    Used by the module-level RPC functions in :mod:`lose_it.core`. Most
+    callers should reach for :class:`LoseIt` (high-level) instead.
+    """
+
+    def __init__(
+        self,
+        config: Config,
+        token: str,
+        *,
+        transport: httpx.BaseTransport | None = None,
+    ):
+        self.config = config
+        self.http = HttpClient(config, token, transport=transport)
+
+    @classmethod
+    def from_env(
+        cls,
+        *,
+        token: str | None = None,
+        transport: httpx.BaseTransport | None = None,
+        **config_overrides: Any,
+    ) -> Client:
+        """Build a Client from the layered config (CLI > env > YAML > defaults).
+
+        ``token`` and any ``LOSEIT_*`` settings are resolved from the same
+        layered sources via :meth:`Config.from_env`. If a ``token`` kwarg
+        is passed explicitly it wins; otherwise the resolved
+        ``config.token`` is used; otherwise the token file at
+        ``config.token_file`` is read.
+        """
+        logger.debug(
+            "Client.from_env: overrides={ov}",
+            ov={k: v for k, v in config_overrides.items() if v is not None},
+        )
+        config = Config.from_env(**config_overrides)
+        if token is None:
+            token = config.token or _auth.load_token(config.token_file)
+        logger.info(
+            "Client.from_env: user={u!r} hours_from_gmt={h} permutation={p}",
+            u=config.user_name,
+            h=config.hours_from_gmt,
+            p=config.strong_name,
+        )
+        return cls(config, token, transport=transport)
+
+    def close(self) -> None:
+        self.http.close()
+
+    def __enter__(self) -> Client:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        self.close()
 
 
 class LoseIt:
@@ -114,7 +177,7 @@ class LoseIt:
     def search(self, query: str) -> list[FoodSearchResult]:
         """Search the LoseIt food database. Returns up to ~15 results.
 
-        Thin wrapper over :func:`lose_it.client.foods.search`; folded
+        Thin wrapper over :func:`lose_it.core.foods.search`; folded
         here so callers can use ``li.search(...)`` instead of
         ``foods.search(li.http, ...)``.
         """
@@ -126,7 +189,7 @@ class LoseIt:
         Accepts the lowercase-hex form exposed by ``loseit search``'s
         ``Food ID`` column / JSON ``food_id`` field, or the raw
         ``pk_bytes`` list returned by :meth:`search`. Hex strings get
-        validated/decoded via :func:`lose_it.client._ids.hex_to_pk`.
+        validated/decoded via :func:`lose_it.core._ids.hex_to_pk`.
         """
         raise NotImplementedError
 
@@ -205,7 +268,7 @@ class LoseIt:
         Raises:
             ValueError: ``meal`` not recognized.
             PortionError: invalid portion-size combination (see
-                :func:`lose_it.client._portion.resolve_portion`).
+                :func:`lose_it.core._portion.resolve_portion`).
         """
         raise NotImplementedError
 
@@ -228,9 +291,9 @@ class LoseIt:
     ) -> LoginResult:
         """Import the ``liauth`` JWT from a browser; optionally write YAML config.
 
-        Composes :func:`lose_it.client.auth.refresh_token_from_browser`
-        + :func:`save_token` + :func:`_login_flow.derive_config_values`
-        + :func:`_settings.write_yaml_config` so the CLI's ``login``
+        Composes :func:`lose_it.core.auth.refresh_token_from_browser`
+        + :func:`save_token` + :func:`lose_it.core._login_flow.derive_config_values`
+        + :func:`lose_it.core._settings.write_yaml_config` so the CLI's ``login``
         command can shrink to a few lines of flag plumbing + a single
         ``LoseIt.login_from_browser(...)`` call.
 
@@ -239,7 +302,7 @@ class LoseIt:
         whether to open the signin URL.
 
         ``prompt_for_username`` is a callable matching the
-        :data:`lose_it.client._login_flow.derive_config_values`
+        :data:`lose_it.core._login_flow.derive_config_values`
         signature; passing ``None`` means non-interactive (skips
         prompting and returns a partial result when the username
         can't be auto-resolved).

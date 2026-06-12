@@ -7,7 +7,7 @@ candidate foods with their primary keys.
 the food's serving size + nutrient template, which the client then scales
 by the desired number of servings when posting to ``updateFoodLogEntry``.
 
-Response parsing is delegated to :mod:`lose_it.client._decoder`,
+Response parsing is delegated to :mod:`lose_it.core._decoder`,
 which walks the GWT TypeSerializer schemas extracted from Lose It!'s
 compiled JS bundle. The schemas encode field order + type for every
 class on the wire, so positional access (``f0``, ``f1``, …) corresponds
@@ -25,7 +25,7 @@ from ._decoder import decode_response
 from ._gwt import build_envelope
 from ._http import HttpClient, LoseItError
 from ._ids import pk_to_hex
-from ._models import FoodSearchResult, UnsavedFoodLogEntry
+from ..models import FoodSearchResult, UnsavedFoodLogEntry
 
 # ── Schema field positions ───────────────────────────────────────────────────
 #

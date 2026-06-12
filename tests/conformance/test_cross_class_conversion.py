@@ -16,7 +16,7 @@ Test cases below use the math the CLI's ``log`` command performs:
 
 from __future__ import annotations
 
-from lose_it.client._models import UnsavedFoodLogEntry
+from lose_it.models import UnsavedFoodLogEntry
 
 
 def _fake_chicken_strips() -> UnsavedFoodLogEntry:

@@ -17,7 +17,7 @@ from ._dates import day_number_for
 from ._decoder import decode_response
 from ._gwt import build_envelope, parse_response
 from ._http import HttpClient
-from ._models import FoodLogEntry
+from ..models import FoodLogEntry
 from .init import get_daydate_key
 
 # Type hashes used to walk the decoder's output.

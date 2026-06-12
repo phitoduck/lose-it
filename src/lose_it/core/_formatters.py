@@ -18,7 +18,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
-from ._models import (
+from ..models import (
     FoodDescription,
     FoodLogEntry,
     FoodSearchResult,

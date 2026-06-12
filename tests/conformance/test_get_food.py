@@ -10,9 +10,9 @@ from __future__ import annotations
 import pytest
 
 from lose_it import Client
-from lose_it.client import foods
-from lose_it.client._config import Config
-from lose_it.client._http import LoseItError
+from lose_it.core import foods
+from lose_it.core._config import Config
+from lose_it.core._http import LoseItError
 
 SERVICE_URL = "https://www.loseit.com/web/service"
 

@@ -10,7 +10,7 @@ import random
 
 import pytest
 
-from lose_it.client._ids import hex_to_pk, pk_to_hex
+from lose_it.core._ids import hex_to_pk, pk_to_hex
 
 # A known PK from the spec's wire-evidence snippet. The 16 bytes appear
 # at the end of the data section in reversed (wire) form; ``pk_bytes``

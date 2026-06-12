@@ -21,7 +21,7 @@ from typer.testing import CliRunner
 
 from lose_it import Client
 from lose_it.cli import app
-from lose_it.client import daily
+from lose_it.core import daily
 
 pytestmark = pytest.mark.functional
 

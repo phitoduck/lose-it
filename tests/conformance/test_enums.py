@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from lose_it.client._enums import (
+from lose_it.core._enums import (
     FoodMeasurement,
     FoodNutrient,
     label_for_nutrient,
@@ -55,7 +55,7 @@ def test_enum_is_int_subclass() -> None:
 
 def test_decoder_attaches_unit_label_to_food_measure_object() -> None:
     """End-to-end: decoded FoodMeasure objects carry a ``unit`` field."""
-    from lose_it.client._decoder import _FOOD_MEASURE_FQCN
+    from lose_it.core._decoder import _FOOD_MEASURE_FQCN
 
     # Build a synthetic FoodMeasure dict the way the decoder would, then
     # assert the labeler attaches the right unit.

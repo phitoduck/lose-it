@@ -18,9 +18,9 @@ from __future__ import annotations
 
 import math
 
-from lose_it.client import entries
-from lose_it.client._config import Config
-from lose_it.client._models import UnsavedFoodLogEntry
+from lose_it.core import entries
+from lose_it.core._config import Config
+from lose_it.models import UnsavedFoodLogEntry
 
 
 def _soup_unsaved() -> UnsavedFoodLogEntry:

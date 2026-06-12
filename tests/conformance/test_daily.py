@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from datetime import date
 
-from lose_it.client import daily
-from lose_it.client._models import FoodLogEntry
+from lose_it.core import daily
+from lose_it.models import FoodLogEntry
 
 SERVICE_URL = "https://www.loseit.com/web/service"
 

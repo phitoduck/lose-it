@@ -151,7 +151,7 @@ class FoodDescription:
     """Output of ``LoseIt.describe_food`` — full nutrient/serving profile.
 
     Same data the ``loseit describe-food`` command renders. Fold into
-    JSON with :func:`lose_it.client._formatters.food_description_to_dict`,
+    JSON with :func:`lose_it.core._formatters.food_description_to_dict`,
     or pretty-print with :func:`render_food_description`.
     """
 
