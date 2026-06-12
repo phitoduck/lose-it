@@ -71,3 +71,85 @@ jobs:
           name: coverage-xml-py${{ matrix.python-version }}
           path: coverage.xml
           if-no-files-found: ignore
+
+  # ── Dynamic coverage badge ────────────────────────────────────────────────
+  #
+  # Only runs on pushes to main (skipped on PRs — we don't want PRs from forks
+  # to be able to mutate the badges branch). Reads the coverage.xml produced
+  # by the ``ci`` job, generates a shields.io ``endpoint``-format JSON, and
+  # pushes it to the ``badges`` orphan branch. The README renders the badge
+  # via ``https://img.shields.io/endpoint?url=…/badges/coverage.json``.
+  #
+  # Uses only the default GITHUB_TOKEN — no Gist, no PAT, no third-party
+  # action. ``badges`` is not in the workflow's push trigger, so updates to
+  # it don't loop CI.
+  coverage-badge:
+    name: Update coverage badge
+    needs: ci
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout (main, for git config + remote URL)
+        uses: actions/checkout@v5
+
+      - name: Download coverage artifact from ci job
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-xml-py3.12
+
+      - name: Compute coverage percentage + color
+        id: cov
+        run: |
+          # The coverage.xml root element has a `line-rate` attribute that's
+          # the fraction of lines covered (0.0–1.0). Round to int percent.
+          PCT=$(python -c "
+          import xml.etree.ElementTree as ET
+          rate = float(ET.parse('coverage.xml').getroot().attrib['line-rate'])
+          print(round(rate * 100))
+          ")
+          if [ "$PCT" -ge 90 ]; then COLOR=brightgreen
+          elif [ "$PCT" -ge 80 ]; then COLOR=green
+          elif [ "$PCT" -ge 70 ]; then COLOR=yellowgreen
+          elif [ "$PCT" -ge 60 ]; then COLOR=yellow
+          elif [ "$PCT" -ge 50 ]; then COLOR=orange
+          else COLOR=red
+          fi
+          echo "pct=$PCT" >> "$GITHUB_OUTPUT"
+          echo "color=$COLOR" >> "$GITHUB_OUTPUT"
+          echo "Coverage: $PCT% ($COLOR)"
+
+      - name: Push badge JSON to ``badges`` branch
+        env:
+          PCT: ${{ steps.cov.outputs.pct }}
+          COLOR: ${{ steps.cov.outputs.color }}
+        run: |
+          set -euo pipefail
+          # shields.io endpoint badge schema:
+          # https://shields.io/badges/endpoint-badge
+          cat > /tmp/coverage.json <<EOF
+          {"schemaVersion": 1, "label": "coverage", "message": "${PCT}%", "color": "${COLOR}"}
+          EOF
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Checkout (or create) an orphan ``badges`` branch in a temp worktree.
+          # Worktree keeps the main checkout clean so future workflow steps
+          # (none today, but resilient against additions) still see source.
+          mkdir -p /tmp/badges-worktree
+          if git ls-remote --exit-code --heads origin badges > /dev/null; then
+            git fetch origin badges
+            git worktree add /tmp/badges-worktree badges
+          else
+            git worktree add --orphan -b badges /tmp/badges-worktree
+            rm -rf /tmp/badges-worktree/* /tmp/badges-worktree/.[!.]* || true
+          fi
+          cp /tmp/coverage.json /tmp/badges-worktree/coverage.json
+          cd /tmp/badges-worktree
+          git add coverage.json
+          if git diff --staged --quiet; then
+            echo "Coverage unchanged (${PCT}%); skipping commit."
+          else
+            git commit -m "ci: bump coverage badge to ${PCT}%"
+            git push origin badges
+          fi
