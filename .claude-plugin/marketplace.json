@@ -1,0 +1,18 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "lose-it",
+  "description": "Claude Code skill that drives the lose-it CLI from natural-language prompts.",
+  "owner": {
+    "name": "Eric Riddoch",
+    "email": "eric.riddoch@gmail.com"
+  },
+  "plugins": [
+    {
+      "name": "log-food",
+      "source": "./",
+      "description": "Log meals to Lose It! from a natural-language prompt: search → describe → dry-run → log → verify, all unit-aware.",
+      "category": "productivity",
+      "homepage": "https://github.com/phitoduck/lose-it"
+    }
+  ]
+}

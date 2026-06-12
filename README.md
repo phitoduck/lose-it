@@ -45,6 +45,21 @@ If `loseit login` reports the cookie is missing or expired, it opens the Lose It
 
 Want to skip the install? `uvx --from git+https://github.com/phitoduck/lose-it loseit diary` runs any command in an ephemeral environment.
 
+## Claude Code skill
+
+This repo ships a [Claude Code skill](https://docs.claude.com/en/docs/claude-code/skills) at [`skills/log-food/`](skills/log-food/SKILL.md). When installed, prompts like *"log 1 tortilla, 110g of avocado, and 120g of real good chicken strips"* auto-trigger the skill — it drives `loseit search` / `describe-food` / `log` end-to-end with unit-aware logic, dry-runs first, and verifies via diary readback.
+
+Install via the Claude Code CLI (the repo is its own marketplace — `.claude-plugin/marketplace.json` declares the `log-food` plugin):
+
+```bash
+claude plugin marketplace add phitoduck/lose-it
+claude plugin install log-food@lose-it
+```
+
+Then restart Claude Code so the skill registers. Verify with `claude plugin list` — `log-food` should appear under marketplace `lose-it`. No slash command needed; the natural-language triggers in the skill frontmatter (`log food`, `log my breakfast`, …) auto-fire it.
+
+To pick up updates later: `claude plugin update log-food@lose-it`. To remove: `claude plugin uninstall log-food`.
+
 ## Examples
 
 ```text
