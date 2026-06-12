@@ -136,16 +136,21 @@ jobs:
           # Checkout (or create) an orphan ``badges`` branch in a temp worktree.
           # Worktree keeps the main checkout clean so future workflow steps
           # (none today, but resilient against additions) still see source.
-          mkdir -p /tmp/badges-worktree
           if git ls-remote --exit-code --heads origin badges > /dev/null; then
             git fetch origin badges
             git worktree add /tmp/badges-worktree badges
           else
             git worktree add --orphan -b badges /tmp/badges-worktree
-            rm -rf /tmp/badges-worktree/* /tmp/badges-worktree/.[!.]* || true
           fi
           cp /tmp/coverage.json /tmp/badges-worktree/coverage.json
           cd /tmp/badges-worktree
+          # Stage only coverage.json. Any other files that came along for the
+          # ride (worktree was checked out from main's tree in the orphan case,
+          # or from the existing badges branch otherwise) stay un-staged → they
+          # don't end up in this commit. We deliberately do NOT ``rm -rf`` the
+          # worktree contents: an earlier revision did, but the ``.[!.]*`` glob
+          # matched the worktree's own ``.git`` link file and detached us from
+          # the repo. Just stage what we want and ignore the rest.
           git add coverage.json
           if git diff --staged --quiet; then
             echo "Coverage unchanged (${PCT}%); skipping commit."
