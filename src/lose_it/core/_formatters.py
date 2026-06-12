@@ -1,22 +1,25 @@
-"""Pure rendering of SDK models to ``str`` / ``dict``.
+"""Pure text-rendering of SDK models for CLI ``--output text`` mode.
 
-Two parallel renderers per model:
+Each ``render_*`` returns a multi-line string suitable for
+``print``/``typer.echo``. No function in this module imports ``typer``
+or writes to stdout — that lets non-typer surfaces (the ``log-food``
+skill, future TUI, notebook helpers) reuse the same formatting.
 
-- ``render_*`` returns a multi-line string suitable for ``typer.echo``
-  / ``print`` (CLI text mode).
-- ``*_to_dict`` returns a JSON-safe dict suitable for ``json.dumps`` or
-  ``toon_format.encode`` (CLI ``--output json``/``toon`` modes).
+The companion *machine-readable* projection (for ``--output json``/
+``toon``) lives on the dataclasses themselves: each model in
+:mod:`lose_it.models` has a ``.to_dict()`` method that returns the same
+shape the CLI used to build inline. Keeping those projections on the
+model means SDK callers get them for free::
 
-Keeping both shapes here — instead of inlining ``typer.echo`` calls in
-the CLI — means the same rendering can power non-typer surfaces (the
-``log-food`` skill, future TUI, notebook helpers) without dragging in a
-CLI dependency. No function in this module imports ``typer``.
+    desc = li.describe_food(food_id)
+    json.dumps(desc.to_dict(), indent=2)
+
+…without needing a parallel formatter module.
 """
 
 from __future__ import annotations
 
 from datetime import date
-from typing import Any
 
 from ..models import (
     FoodDescription,
@@ -27,20 +30,12 @@ from ..models import (
 )
 
 __all__ = [
-    "entry_to_dict",
-    "food_description_to_dict",
-    "logged_food_to_dict",
-    "login_result_to_dict",
     "render_diary",
     "render_food_description",
     "render_logged_food",
     "render_login_result",
     "render_search_results",
-    "search_results_to_dict",
 ]
-
-
-# ── Search results ──────────────────────────────────────────────────────────
 
 
 def render_search_results(results: list[FoodSearchResult], *, limit: int = 15) -> str:
@@ -53,27 +48,6 @@ def render_search_results(results: list[FoodSearchResult], *, limit: int = 15) -
     raise NotImplementedError
 
 
-def search_results_to_dict(
-    results: list[FoodSearchResult], query: str, *, verbose: bool = False
-) -> dict[str, Any]:
-    """Project search results into a JSON-safe dict.
-
-    Shape matches today's ``--output json`` envelope::
-
-        {"query": str, "count": int, "results": [
-            {"name", "brand", "category", "food_id", ?"pk_bytes"}, …
-        ]}
-
-    ``verbose=True`` includes the raw 16-int ``pk_bytes`` array on each
-    result — useful for SDK callers driving the Python API but noisy in
-    the default CLI surface.
-    """
-    raise NotImplementedError
-
-
-# ── Diary entries ───────────────────────────────────────────────────────────
-
-
 def render_diary(entries: list[FoodLogEntry], when: date) -> str:
     """Format a day's entries grouped by meal.
 
@@ -84,20 +58,6 @@ def render_diary(entries: list[FoodLogEntry], when: date) -> str:
     raise NotImplementedError
 
 
-def entry_to_dict(entry: FoodLogEntry) -> dict[str, Any]:
-    """Project a :class:`FoodLogEntry` into a JSON-safe dict.
-
-    Includes both raw-ordinal nutrients (``nutrients``) and labeled
-    nutrients (``nutrients_by_label``) so the document is both
-    human-readable and machine-parseable. Mirrors the shape today's
-    ``--output json`` produces (lifted from ``cli._entry_to_dict``).
-    """
-    raise NotImplementedError
-
-
-# ── Food description (describe-food) ────────────────────────────────────────
-
-
 def render_food_description(desc: FoodDescription) -> str:
     """Format a :class:`FoodDescription` as the CLI's text block.
 
@@ -106,14 +66,6 @@ def render_food_description(desc: FoodDescription) -> str:
     conversion values when present, then a nutrients table.
     """
     raise NotImplementedError
-
-
-def food_description_to_dict(desc: FoodDescription) -> dict[str, Any]:
-    """JSON-safe projection of a :class:`FoodDescription`."""
-    raise NotImplementedError
-
-
-# ── log-food result ─────────────────────────────────────────────────────────
 
 
 def render_logged_food(logged: LoggedFood) -> str:
@@ -127,14 +79,6 @@ def render_logged_food(logged: LoggedFood) -> str:
     raise NotImplementedError
 
 
-def logged_food_to_dict(logged: LoggedFood) -> dict[str, Any]:
-    """JSON-safe projection of a :class:`LoggedFood`."""
-    raise NotImplementedError
-
-
-# ── login result ────────────────────────────────────────────────────────────
-
-
 def render_login_result(result: LoginResult) -> str:
     """Format the ``login`` command's status output.
 
@@ -143,9 +87,4 @@ def render_login_result(result: LoginResult) -> str:
     ``"expired"``: the error message + hint + signin URL (and a tail
     suggesting the re-run command). The CLI applies colour separately.
     """
-    raise NotImplementedError
-
-
-def login_result_to_dict(result: LoginResult) -> dict[str, Any]:
-    """JSON-safe projection of a :class:`LoginResult`."""
     raise NotImplementedError

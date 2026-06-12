@@ -13,12 +13,21 @@ Two flavors live here:
   :class:`~lose_it.LoseIt` client's convenience methods; composed of
   wire-shape values plus derived/formatted fields so callers don't
   have to reach into the lower-level types.
+
+Every model exposes ``.to_dict()`` — the JSON-safe projection used by
+``loseit --output json``/``toon`` and by any caller that wants the
+flattened shape without writing the field walk themselves.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
+
+from .core._enums import label_for_nutrient, label_for_ordinal
+from .core._ids import pk_to_hex
+from .enums import MealType
 
 
 @dataclass
@@ -29,6 +38,35 @@ class FoodSearchResult:
     brand: str
     category: str
     pk_bytes: list[int]  # in response form (already reversed from wire)
+
+    @property
+    def food_id(self) -> str:
+        """Lowercase-hex form of :attr:`pk_bytes` (32 chars), or ``""``.
+
+        The 32-char form is the only food identifier the CLI accepts —
+        :class:`~lose_it.LoseIt`'s ``log_food`` / ``get_food`` /
+        ``describe_food`` all take it. Returns an empty string when
+        ``pk_bytes`` isn't a 16-byte key (e.g. partial fixtures).
+        """
+        return pk_to_hex(self.pk_bytes) if len(self.pk_bytes) == 16 else ""
+
+    def to_dict(self, *, verbose: bool = False) -> dict[str, Any]:
+        """Project to a JSON-safe dict.
+
+        Shape: ``{"name", "brand", "category", "food_id", ?"pk_bytes"}``.
+        ``verbose=True`` adds the raw 16-int ``pk_bytes`` list — useful
+        when round-tripping the result back to a low-level RPC, noisy
+        in CLI output.
+        """
+        out: dict[str, Any] = {
+            "name": self.name,
+            "brand": self.brand,
+            "category": self.category,
+            "food_id": self.food_id,
+        }
+        if verbose:
+            out["pk_bytes"] = list(self.pk_bytes)
+        return out
 
 
 @dataclass
@@ -111,6 +149,68 @@ class FoodLogEntry:
                 return val
         return None
 
+    @property
+    def meal_name(self) -> str:
+        """Human-readable meal name (``"lunch"``, etc.) for :attr:`meal_ordinal`.
+
+        Falls back to ``"meal<N>"`` for ordinals outside the documented
+        0..3 range so the projection stays informative even if Lose It!
+        ever ships a new slot.
+        """
+        try:
+            return MealType(self.meal_ordinal).name
+        except ValueError:
+            return f"meal{self.meal_ordinal}"
+
+    @property
+    def food_measure_unit(self) -> str:
+        """Label for :attr:`food_measure_ordinal` (``"grams"``, ``"each"``, …).
+
+        Uses the same FoodMeasurement-ordinal → label mapping the
+        decoder uses for typed enum values.
+        """
+        return label_for_ordinal(self.food_measure_ordinal)
+
+    @property
+    def nutrients_by_label(self) -> dict[str, float]:
+        """Labeled view of :attr:`nutrients_ordered`.
+
+        Each ordinal gets mapped through :func:`label_for_nutrient`
+        (``0 → "calories"``, ``9 → "sodium_mg"``, …), so downstream
+        callers don't have to remember the ordinal table.
+        """
+        return {
+            label_for_nutrient(int(ord_)): float(val) for ord_, val in self.nutrients_ordered
+        }
+
+    def to_dict(self) -> dict[str, Any]:
+        """Project to a JSON-safe dict.
+
+        Carries both the raw-ordinal nutrient map and the labeled
+        nutrient map so the document is both human-readable and
+        machine-parseable. Used by ``loseit diary --output json``.
+        """
+        raw_nutrients = {int(ord_): float(val) for ord_, val in self.nutrients_ordered}
+        return {
+            "meal": self.meal_name,
+            "meal_ordinal": self.meal_ordinal,
+            "food_name": self.food_name,
+            "food_brand": self.food_brand,
+            "food_category": self.food_category,
+            "food_identifier_code": self.food_identifier_code,
+            "servings": self.servings,
+            "calories": self.calories,
+            "nutrients": raw_nutrients,
+            "nutrients_by_label": self.nutrients_by_label,
+            "entry_pk": list(self.entry_pk_response),
+            "food_pk": list(self.food_pk_response),
+            "entry_day_key": self.entry_day_key,
+            "context_day_key": self.context_day_key,
+            "day_num": self.day_num,
+            "food_measure_ordinal": self.food_measure_ordinal,
+            "food_measure_unit": self.food_measure_unit,
+        }
+
 
 # ── High-level result models (LoseIt client method returns) ─────────────────
 
@@ -131,6 +231,15 @@ class PrimaryServing:
     canonical_per_serving: float | None
     native_qty_per_serving: float | None
 
+    def to_dict(self) -> dict[str, Any]:
+        """JSON-safe projection (same field names as the dataclass)."""
+        return {
+            "ordinal": self.ordinal,
+            "unit": self.unit,
+            "canonical_per_serving": self.canonical_per_serving,
+            "native_qty_per_serving": self.native_qty_per_serving,
+        }
+
 
 @dataclass(frozen=True)
 class CrossClassConversion:
@@ -145,14 +254,20 @@ class CrossClassConversion:
     per_serving_g: float | None
     per_serving_ml: float | None
 
+    def to_dict(self) -> dict[str, Any]:
+        """JSON-safe projection (same field names as the dataclass)."""
+        return {
+            "per_serving_g": self.per_serving_g,
+            "per_serving_ml": self.per_serving_ml,
+        }
+
 
 @dataclass(frozen=True)
 class FoodDescription:
     """Output of ``LoseIt.describe_food`` — full nutrient/serving profile.
 
-    Same data the ``loseit describe-food`` command renders. Fold into
-    JSON with :func:`lose_it.core._formatters.food_description_to_dict`,
-    or pretty-print with :func:`render_food_description`.
+    Same data the ``loseit describe-food`` command renders. Call
+    :meth:`to_dict` for the JSON shape used by ``--output json``/``toon``.
     """
 
     food_id: str
@@ -163,6 +278,20 @@ class FoodDescription:
     cross_class_conversion: CrossClassConversion
     nutrients_per_serving: dict[str, float]
     raw_nutrients_by_ord: dict[int, float]
+
+    def to_dict(self) -> dict[str, Any]:
+        """JSON-safe projection — nested under ``primary_serving`` /
+        ``cross_class_conversion`` for symmetry with the dataclass."""
+        return {
+            "food_id": self.food_id,
+            "name": self.name,
+            "brand": self.brand,
+            "category": self.category,
+            "primary_serving": self.primary_serving.to_dict(),
+            "cross_class_conversion": self.cross_class_conversion.to_dict(),
+            "nutrients_per_serving": dict(self.nutrients_per_serving),
+            "raw_nutrients_by_ord": dict(self.raw_nutrients_by_ord),
+        }
 
 
 @dataclass(frozen=True)
@@ -184,6 +313,23 @@ class LoggedFood:
     portion_unit: str
     calories: float | None
     dry_run: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        """JSON-safe projection. Mirrors the ``loseit log --output json``
+        envelope: ``action="log"`` at the top so consumers can pattern-match
+        the kind of event regardless of which command produced it."""
+        return {
+            "action": "log",
+            "dry_run": self.dry_run,
+            "date": self.when,
+            "meal": self.meal_name,
+            "meal_ordinal": self.meal_ordinal,
+            "servings": self.canonical_servings,
+            "portion_size": self.portion_amount,
+            "measure_unit": self.portion_unit,
+            "food": self.food.to_dict(),
+            "calories": self.calories,
+        }
 
 
 @dataclass(frozen=True)
@@ -207,3 +353,23 @@ class LoginResult:
     config_values: dict[str, object] | None
     signin_url: str | None = None  # set on status != "ok" so the CLI can offer it
     message: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """JSON-safe projection — mirrors the ``loseit login --output json``
+        envelope. Optional fields (``signin_url``, ``message``) only appear
+        when set."""
+        out: dict[str, Any] = {
+            "action": "login",
+            "status": self.status,
+            "browser": self.browser,
+            "token_file": str(self.token_file),
+            "exp": self.exp,
+            "exp_iso": self.exp_iso,
+            "config_file": str(self.config_file) if self.config_file is not None else None,
+            "config_values": self.config_values,
+        }
+        if self.signin_url is not None:
+            out["signin_url"] = self.signin_url
+        if self.message is not None:
+            out["message"] = self.message
+        return out
