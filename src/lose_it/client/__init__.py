@@ -4,8 +4,8 @@ The :class:`Client` holds account configuration + the httpx session. All
 RPC functions live in submodules and accept a ``Client`` as their first
 argument, so the API surface looks like::
 
-    from lose_it_utils import Client
-    from lose_it_utils.client import foods, entries, daily
+    from lose_it import Client
+    from lose_it.client import foods, entries, daily
 
     with Client.from_env() as c:
         results = foods.search(c.http, "tortilla")

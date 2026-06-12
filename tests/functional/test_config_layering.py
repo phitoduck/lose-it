@@ -1,6 +1,6 @@
 """End-to-end functional tests for the 12-factor config chain.
 
-These tests invoke the actual ``lose-it`` Typer app via :class:`CliRunner`
+These tests invoke the actual ``loseit`` Typer app via :class:`CliRunner`
 and confirm that the resolved config (printed by ``whoami``) matches the
 expected layering. No real API is touched — ``whoami`` only reads
 config; it does not hit the backend — so these tests run unconditionally,
@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from lose_it_utils.cli import app
+from lose_it.cli import app
 
 
 @pytest.fixture(autouse=True)

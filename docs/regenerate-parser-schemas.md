@@ -1,6 +1,6 @@
 # Runbook: regenerate the GWT-RPC parser schemas
 
-The decoder in `src/lose_it_utils/client/_decoder.py` is driven by
+The decoder in `src/lose_it/client/_decoder.py` is driven by
 `_schemas.json`, which is extracted once from Lose It!'s compiled JS
 bundle. The schemas only need refreshing when Lose It! redeploys their web
 client.
@@ -33,10 +33,10 @@ curl -s "https://d3hsih69yn4d89.cloudfront.net/web/web.nocache.js?v=$(date +%s)"
 python tools/extract_gwt_schemas.py \
   --permutation <strong_name_from_step_1> \
   --fragments 1 8 10 \
-  --out src/lose_it_utils/client/_schemas.json
+  --out src/lose_it/client/_schemas.json
 
 # 4. Update the hard-coded permutation defaults in
-#    src/lose_it_utils/client/_settings.py (`strong_name` and
+#    src/lose_it/client/_settings.py (`strong_name` and
 #    `policy_hash` — the latter is the 5th `|`-field of any
 #    `/web/service` POST body; grab from DevTools).
 
@@ -44,8 +44,8 @@ python tools/extract_gwt_schemas.py \
 uv run pytest --no-cov
 prek run --all-files
 git checkout -b chore/refresh-parser-schemas
-git add src/lose_it_utils/client/_schemas.json \
-        src/lose_it_utils/client/_settings.py
+git add src/lose_it/client/_schemas.json \
+        src/lose_it/client/_settings.py
 git commit -m "chore(parser): refresh schemas for permutation <strong_name>"
 git push -u origin HEAD
 gh pr create --title "chore(parser): refresh GWT schemas after Lose It! redeploy"
@@ -53,7 +53,7 @@ gh pr create --title "chore(parser): refresh GWT schemas after Lose It! redeploy
 
 ## 3. Why this matters — concrete sample
 
-Before the schema-driven decoder, `lose-it search "kodiak"` returned this
+Before the schema-driven decoder, `loseit search "kodiak"` returned this
 for row 6, picked by string-length / capitalization heuristics:
 
 ```
@@ -76,7 +76,7 @@ brand    = "Kodiak"
 category = "Pancakes"
 ```
 
-The downstream impact of the broken version: `lose-it log "kodiak" --pick 6`
+The downstream impact of the broken version: `loseit log "kodiak" --pick 6`
 serialized the wrong `FoodIdentifier` to the server, which either logged
 the diary entry under the wrong food (silent data corruption) or rejected
 the call with a generic `IncompatibleRemoteServiceException`. The schema

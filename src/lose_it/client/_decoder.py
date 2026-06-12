@@ -14,7 +14,7 @@ Inputs
   every Lose It! domain type plus all the relevant Java built-ins.
   This file is the ground truth and changes only when Lose It! redeploys.
 - A raw ``//OK[…]`` GWT-RPC response body, parsed via
-  :func:`lose_it_utils.client._gwt.parse_response` into a flat token
+  :func:`lose_it.client._gwt.parse_response` into a flat token
   list and a separate string table.
 
 Algorithm
@@ -58,7 +58,7 @@ from ._enums import label_for_ordinal
 from ._gwt import parse_response
 
 # FQCNs whose decoded objects get a plain-English label attached next to
-# their raw ``ordinal``. Surfaces in ``lose-it -o json`` output and in
+# their raw ``ordinal``. Surfaces in ``loseit -o json`` output and in
 # any downstream parser that walks the decoded tree.
 _FOOD_MEASURE_FQCN = "com.loseit.core.client.model.FoodMeasure/1457474932"
 

@@ -4,7 +4,7 @@ This is a one-shot tool. Run it after Lose It! redeploys (i.e. when the
 ``x-gwt-permutation`` changes). It downloads the main ``*.cache.js``
 bundle and every loaded ``deferredjs/*.cache.js`` fragment from
 ``d3hsih69yn4d89.cloudfront.net``, walks the GWT serializer table, and
-emits ``src/lose_it_utils/client/_schemas.json`` containing the field
+emits ``src/lose_it/client/_schemas.json`` containing the field
 sequence for every Lose It! domain type.
 
 The schema is the **ground truth** for what the server can serialize.
@@ -17,7 +17,7 @@ Usage::
     python tools/extract_gwt_schemas.py \\
         --permutation 351AE5DC0CA36AD3BA9C7CBA7B0E07B8 \\
         --fragments 1 8 10 \\
-        --out src/lose_it_utils/client/_schemas.json
+        --out src/lose_it/client/_schemas.json
 
 The default fragment list is what the live web app loads on first nav;
 inspect Chrome DevTools' Network tab if Lose It! starts loading more.

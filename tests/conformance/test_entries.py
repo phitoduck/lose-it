@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from lose_it_utils.client import daily, entries
-from lose_it_utils.client._gwt import parse_response
-from lose_it_utils.client._models import UnsavedFoodLogEntry
+from lose_it.client import daily, entries
+from lose_it.client._gwt import parse_response
+from lose_it.client._models import UnsavedFoodLogEntry
 
 SERVICE_URL = "https://www.loseit.com/web/service"
 

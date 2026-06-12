@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from lose_it_utils.client._settings import (
+from lose_it.client._settings import (
     BASE_URL,
     SERVICE_URL,
     MissingConfigError,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from lose_it_utils.client._enums import FoodMeasurement, label_for_ordinal
+from lose_it.client._enums import FoodMeasurement, label_for_ordinal
 
 
 def test_known_ordinals_label_to_lowercase_enum_names() -> None:
@@ -42,7 +42,7 @@ def test_enum_is_int_subclass() -> None:
 
 def test_decoder_attaches_unit_label_to_food_measure_object() -> None:
     """End-to-end: decoded FoodMeasure objects carry a ``unit`` field."""
-    from lose_it_utils.client._decoder import _FOOD_MEASURE_FQCN
+    from lose_it.client._decoder import _FOOD_MEASURE_FQCN
 
     # Build a synthetic FoodMeasure dict the way the decoder would, then
     # assert the labeler attaches the right unit.
