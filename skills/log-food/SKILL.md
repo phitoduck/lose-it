@@ -32,6 +32,16 @@ If the user has never run `loseit login`, do that once now (they must already be
 loseit login                  # default --browser chrome; or --browser brave
 ```
 
+### Read the README as your CLI reference
+
+The `lose-it` repo ships a single-file CLI docset at its [`README.md`](https://github.com/phitoduck/lose-it/blob/main/README.md). Fetch it once per session — it's the authoritative reference for every subcommand, flag, output format, the full unit alias list, the JSON/TOON schema, and known quirks. Cheaper than guessing.
+
+```bash
+curl -sL https://raw.githubusercontent.com/phitoduck/lose-it/main/README.md
+```
+
+Or if a clone is already on disk: read it directly from `~/repos/lose-it/README.md`. Either way, keep its contents in your working context while you log.
+
 ---
 
 ## STEP 1 — Parse the prompt into per-food entries
@@ -89,10 +99,15 @@ loseit -o toon describe-food <food_id_1> <food_id_2> <food_id_3>
 - `cross_class_conversion` → `{per_serving_g, per_serving_ml}` — what the CLI uses to translate between weight and volume units for a food
 - `nutrients_per_serving` → labeled dict: `{calories, total_fat_g, sat_fat_g, cholesterol_mg, sodium_mg, carb_g, fiber_g, sugar_g, protein_g, serving_weight_g, serving_volume_ml, ...}`
 
-**Pick the right candidate by sanity-checking the labeled values**, not by guessing pick indices:
-- `calories` should match common knowledge per the food's native unit (avocado ~160 cal/100g; cooked chicken breast ~165 cal/100g; tomato soup ~80 cal/cup; honey ~20 cal/tsp).
-- `cross_class_conversion.per_serving_g` is what makes `--serving-unit g` work on a cup/serving/each-stored food — present means the food supports gram-based logging even if its native unit is something else.
-- Prefer entries with a real manufacturer **brand** (`Trader Joe's`, `Kodiak Cakes`, `Kirkland Signature`, …) over entries whose brand is empty, equals a category name, or equals the user's own username — personal-DB entries can carry buggy per-serving math.
+**Pick the right candidate by sanity-checking the labeled values**, not by guessing pick indices. Apply these biases in order:
+
+1. **Bias toward the user's requested unit.** If the user said "120g of avocado", prefer entries that support gram-based logging — i.e. `primary_serving.unit == "grams"` OR `cross_class_conversion.per_serving_g` is populated. Not every avocado entry supports grams: one might only have `primary_serving.unit: "cup"` with no `per_serving_g`, in which case `--serving-amount 120 --serving-unit g` will error. Skim the `describe-food` output and drop candidates that don't support the asked-for unit before you get to the dry-run. Same logic for `mL` / `fl_oz` (look for `per_serving_ml` or volumetric native units), `tsp` / `tbsp` / `cup`, etc.
+
+2. **Bias toward foods the user has logged before.** Run `loseit -o toon diary --date <recent>` for a few recent days (or grep the user's diary history if it's already in context) and check whether any of your candidate `food_id`s appear. A prior log is a strong signal the user already approved that entry — re-use it. But don't be blind to it: if the user explicitly names a **new brand** ("the new Costco chicken strips", "Kirkland greek yogurt — switched from Chobani"), let that override and pick a new entry that matches the new brand. Past usage is a strong prior, not a hard constraint.
+
+3. **Sanity-check calories** against common knowledge per the food's native unit (avocado ~160 cal/100g; cooked chicken breast ~165 cal/100g; tomato soup ~80 cal/cup; honey ~20 cal/tsp). If the candidate's per-serving cal is wildly off, skip it.
+
+4. **Prefer entries with a real manufacturer brand** (`Trader Joe's`, `Kodiak Cakes`, `Kirkland Signature`, …) over entries whose brand is empty, equals a category name, or equals the user's own username — personal-DB entries can carry buggy per-serving math.
 
 This *replaces* the old "14-pick Python probe" workflow. Don't write probe scripts; `describe-food` does it in one call.
 
