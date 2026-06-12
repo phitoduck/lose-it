@@ -68,10 +68,6 @@ Either invoke the skill explicitly with `/log-food`, or just describe your meal 
 
 **Claude Code Prompt:**
 
-> Log 1 Xtreme carb balance tortilla, 110g of avocado, and 120g of real good brand lightly breaded chicken strips
-
-**Claude Code Prompt:**
-
 > **/log-food** Log 1 Xtreme carb balance tortilla, 110g of avocado, and 120g of real good brand lightly breaded chicken strips
 
 **Result:**
