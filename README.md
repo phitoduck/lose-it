@@ -39,26 +39,18 @@ Prompt for, e.g. Claude Code:
   <img src="docs/mobile-app-demo.jpeg" alt="Lose It! mobile app — Mon, Jun 8: Snacks (451 cal): Tortilla Wraps 1 Serving (70 cal), Real good Lightly Breaded Chicken 120 Grams (187 cal), Avocado (USDA Website Per 100g) 110 Grams (194 cal)" width="320"/>
 </p>
 
-`loseit login` does the one-time setup for you: it imports the `liauth` JWT from the browser, derives `user_id` from the JWT's `sub` claim, picks up `user_name` from the JWT payload or the browser's other `loseit.com` cookies (prompting once if neither has it), reads `hours_from_gmt` from your OS timezone, and writes them all to `~/.config/loseit/config.yaml`. No `LOSEIT_*` env vars to set by hand — see [Configuration](#configuration) for layered overrides.
-
-If `loseit login` reports the cookie is missing or expired, it opens the Lose It! signin page in the chosen browser — sign in, then re-run `loseit login`.
-
-Want to skip the install? `uvx --from git+https://github.com/phitoduck/lose-it loseit diary` runs any command in an ephemeral environment.
-
 ## Claude Code skill
 
-This repo ships a [Claude Code skill](https://docs.claude.com/en/docs/claude-code/skills) at [`skills/log-food/`](skills/log-food/SKILL.md). When installed, prompts like *"log 1 tortilla, 110g of avocado, and 120g of real good chicken strips"* auto-trigger the skill — it drives `loseit search` / `describe-food` / `log` end-to-end with unit-aware logic, dry-runs first, and verifies via diary readback.
-
-Install via the Claude Code CLI (the repo is its own marketplace — `.claude-plugin/marketplace.json` declares the `log-food` plugin):
+### Install
 
 ```bash
 claude plugin marketplace add phitoduck/lose-it
 claude plugin install log-food@lose-it
 ```
 
-Then restart Claude Code so the skill registers. Verify with `claude plugin list` — `log-food` should appear under marketplace `lose-it`. No slash command needed; the natural-language triggers in the skill frontmatter (`log food`, `log my breakfast`, …) auto-fire it.
+### Example
 
-To pick up updates later: `claude plugin update log-food@lose-it`. To remove: `claude plugin uninstall log-food`.
+> Log 1 Xtreme carb balance tortilla, 110g of avocado, and 120g of real good brand lightly breaded chicken strips
 
 ## Examples
 
