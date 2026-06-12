@@ -104,22 +104,54 @@ CANONICAL_UNIT_NAMES: dict[int, str] = {
 }
 
 
+def known_unit_names() -> list[str]:
+    """Sorted list of the canonical user-facing unit names.
+
+    Used by the ``log`` command's ``--help`` to enumerate values the user
+    can pass to ``--serving-unit`` without knowing the Lose It! API's
+    internal FoodMeasurement ordinals.
+    """
+    # Use CANONICAL_UNIT_NAMES (one name per ordinal) instead of the full
+    # alias set (which has 4× the entries with synonyms like ``cups``,
+    # ``c``, ``ml``, ``milliliter``). Keep sort stable by ordinal so the
+    # output is predictable.
+    return [CANONICAL_UNIT_NAMES[ord_] for ord_ in sorted(CANONICAL_UNIT_NAMES)]
+
+
 def resolve_unit(raw: str) -> int:
     """Resolve a user-supplied ``--serving-unit`` value to its ordinal.
 
-    Raises ``ValueError`` for unknown units and the ambiguous bare
-    ``"oz"`` (which can mean weight ounce or fluid ounce depending on
-    context).
+    Accepts:
+
+    - A known unit name (case-insensitive): ``cup``, ``mL``, ``g``,
+      ``fl_oz``, ``tbsp``, ``each``, ``slice``, ``serving``, ``scoop``,
+      plus common aliases (``cups``, ``ml``, ``grams``, ``tablespoon``).
+    - A raw integer FoodMeasurement ordinal as a string (e.g. ``"46"``
+      for the ``PIE`` unit). This is an *escape hatch* for units we
+      haven't yet labelled in :class:`FoodMeasurement`. Requires knowing
+      the Lose It! API's internal enum values — only use it when the
+      string form rejects the unit you want.
+
+    Raises ``ValueError`` for unknown unit names and for the ambiguous
+    bare ``"oz"`` (weight vs fluid).
     """
     key = raw.strip().lower().replace(" ", "_")
     if key == "oz":
         raise ValueError(
             "Bare 'oz' is ambiguous (weight vs fluid). Use 'fl_oz' for volume or 'g' for weight."
         )
+    # Integer escape hatch: ``--serving-unit 46`` resolves to FoodMeasurement
+    # ordinal 46. We deliberately keep this lenient (no upper bound check) —
+    # the server rejects nonsense ords, and a misconfigured override is no
+    # worse than the legacy --measure-ord override we used to have.
+    if key.lstrip("-").isdigit():
+        return int(key)
     if key not in UNIT_ALIASES:
+        known = ", ".join(known_unit_names())
         raise ValueError(
-            f"Unknown --serving-unit {raw!r}. Known values: "
-            + ", ".join(sorted(set(UNIT_ALIASES.keys())))
+            f"Unknown --serving-unit {raw!r}. Known values: {known}. "
+            f"For unlisted units, pass the raw FoodMeasurement ordinal "
+            f"as an integer (e.g. '--serving-unit 46' for PIE)."
         )
     return UNIT_ALIASES[key]
 

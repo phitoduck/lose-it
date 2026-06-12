@@ -72,6 +72,31 @@ def test_resolve_unit_strips_whitespace_and_spaces() -> None:
     assert resolve_unit("fluid oz") == 10
 
 
+def test_resolve_unit_accepts_integer_ordinal_as_escape_hatch() -> None:
+    """For units the CLI doesn't yet label, the user can pass a raw ordinal.
+
+    Example: ``FoodMeasurement.PIE = 46`` exists in the enum but if it
+    didn't, the user could still log against a pizza-stored food with
+    ``--serving-unit 46``. This is an escape hatch — it requires knowing
+    Lose It!'s internal enum values, but it unblocks new ordinals
+    without a CLI release.
+    """
+    assert resolve_unit("46") == 46
+    assert resolve_unit("99") == 99  # totally unmapped
+    assert resolve_unit(" 27 ") == 27  # tolerates whitespace
+
+
+def test_resolve_unit_unknown_error_message_lists_known_values_and_escape_hatch() -> None:
+    """The error message tells the user the known names AND the integer escape hatch."""
+    with pytest.raises(ValueError) as excinfo:
+        resolve_unit("xyz")
+    msg = str(excinfo.value)
+    # Known names enumerated:
+    assert "cup" in msg and "tbsp" in msg and "scoop" in msg
+    # Escape hatch documented:
+    assert "ordinal" in msg.lower() or "integer" in msg.lower()
+
+
 # ── conversion_factor ───────────────────────────────────────────────────────
 
 
