@@ -31,8 +31,11 @@ first argument. Kept here unchanged so existing code keeps working; once
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import json
+import os
 from collections.abc import Callable
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -57,7 +60,7 @@ from .core.auth import (
     refresh_token_from_browser,
     save_token,
 )
-from .core.init import get_daydate_key
+from .core.init import get_daydate_key, get_init_day_keys
 from .enums import MealType, ServingUnit
 from .models import (
     CrossClassConversion,
@@ -69,9 +72,24 @@ from .models import (
     PrimaryServing,
     UnsavedFoodLogEntry,
 )
+from .trash import (
+    DeleteResult,
+    DeleteSafetyError,
+    LocalFileTrashSink,
+    TrashReceipt,
+    TrashSink,
+    default_trash_file,
+)
 
 # Lose It's signin URL — surfaced in LoginResult for the CLI to display.
 _SIGNIN_URL = "https://www.loseit.com/"
+
+# Sentinel for ``delete_entry(trash_sink=...)`` that distinguishes
+# "caller did not pass the kwarg" (use the default LocalFileTrashSink)
+# from "caller passed None" (explicit opt-out, gated by
+# acknowledge_no_trash). ``None`` itself can't carry both meanings.
+_DEFAULT_SINK_SENTINEL: object = object()
+
 
 __all__ = ["Client", "LoseIt"]
 
@@ -303,6 +321,60 @@ class LoseIt:
             when = date.today()
         return _daily.get_daily_details(self.http, when)
 
+    def diary_range(
+        self,
+        start: date,
+        end: date,
+    ) -> dict[date, list[FoodLogEntry]]:
+        """Bulk diary fetch via ``getDailyDetailsIncludingPendingForDateRange``.
+
+        Returns a per-day map covering every date in ``[start, end]``
+        inclusive — days with no entries are still present with an empty
+        list.
+
+        On the wire this issues exactly **one** range RPC per call. The
+        first time the method is invoked on a given client instance it
+        also issues one ``getInitializationData`` RPC to bootstrap the
+        day-key cache — subsequent calls reuse the cached window. So a
+        backup loop that walks 365 calendar days as 52 weekly slices
+        spends 1 init + 52 range RPCs, never per-day RPCs.
+
+        Raises :class:`lose_it.core.daily.TooMuchData` on
+        413 / 429 / 5xx responses or oversize ``//EX`` envelopes; the
+        backup primitive (T2) catches this and recurses into a smaller
+        grain.
+        """
+        day_keys = self._range_day_keys(start, end)
+        return _daily.get_daily_details_range(
+            self.http,
+            start=start,
+            end=end,
+            day_keys=day_keys,
+        )
+
+    # Per-instance day_key cache for diary_range. Populated lazily on
+    # first call by issuing a single getInitializationData RPC. The server
+    # accepts ``_FALLBACK_DAY_KEY`` for anything outside the init window,
+    # so once we've made the bootstrap call we don't need a second one
+    # for later ranges that happen to fall outside the cached window.
+    _day_key_cache: dict[int, str]
+    _day_key_cache_loaded: bool
+
+    def _range_day_keys(self, start: date, end: date) -> dict[int, str]:
+        """Resolve the ``(start, end)`` day_keys, bootstrapping on demand.
+
+        On the first call this issues exactly one
+        ``getInitializationData`` RPC, parses the entire day-key window
+        out of the response, and caches it on the instance. Subsequent
+        calls reuse the cached window — no extra init RPCs, even if the
+        new range falls outside the cached window (the server accepts
+        the ``ZZZZZZZ`` fallback for any day_num it doesn't recognize).
+        """
+        if not getattr(self, "_day_key_cache_loaded", False):
+            self._day_key_cache = get_init_day_keys(self.http)
+            self._day_key_cache_loaded = True
+        return dict(self._day_key_cache)
+
     def log_food(
         self,
         food: FoodSearchResult | str,
@@ -385,9 +457,356 @@ class LoseIt:
             dry_run=dry_run,
         )
 
-    def delete_entry(self, entry: FoodLogEntry) -> None:
-        """Delete a diary entry. The whole entry payload is required by the server."""
+    def delete_entry(
+        self,
+        entry: FoodLogEntry,
+        *,
+        trash_sink: TrashSink | None = _DEFAULT_SINK_SENTINEL,  # type: ignore[assignment]
+        acknowledge_no_trash: bool = False,
+        confirm: bool = False,
+    ) -> DeleteResult:
+        """Delete a diary entry via a trash sink + the wire call.
+
+        Every delete writes a recoverable trash record **first** —
+        only after the sink confirms it captured the entry does the
+        ``deleteFoodLogEntry`` RPC fire. See ``docs/backup-spec.md``
+        §9 for the full rationale.
+
+        Args:
+            entry: The diary entry to remove.
+            trash_sink: Where to stash the entry before deletion.
+
+                - **Default (sentinel):** a fresh
+                  :class:`LocalFileTrashSink` writing to
+                  ``~/.local/share/loseit/trash.jsonl`` (mode ``0o600``).
+                - ``None``: explicit opt-out. Requires
+                  ``acknowledge_no_trash=True`` or :class:`DeleteSafetyError`
+                  is raised.
+                - Any object implementing the :class:`TrashSink` protocol
+                  (``stash(entry) -> TrashReceipt``) is used as-is.
+            acknowledge_no_trash: Required when ``trash_sink is None`` —
+                a no-op otherwise. Documents that the caller knows the
+                entry will be unrecoverable.
+            confirm: Reserved for future "type the food name to confirm"
+                flow inside the SDK. Currently unused; the CLI handles
+                interactive confirmation today.
+
+        Returns:
+            :class:`DeleteResult` carrying the entry's JSON projection,
+            the receipts from every sink that absorbed it (zero receipts
+            on explicit opt-out), and the UTC ISO timestamp of the wire
+            delete.
+
+        Raises:
+            DeleteSafetyError: ``trash_sink is None`` and
+                ``acknowledge_no_trash`` is False.
+            Exception: Anything the sink raises during ``stash``. The
+                wire delete is NOT sent in that case — the entry is still
+                on the server.
+        """
+        # Late-resolve the sentinel so we use a fresh sink per call (the
+        # default path expands ``~`` and accepts any LOSEIT_USER-driven
+        # account name the caller passes through).
+        resolved_sink: TrashSink | None
+        if trash_sink is _DEFAULT_SINK_SENTINEL:
+            resolved_sink = LocalFileTrashSink(user_name=self.config.user_name or "")
+        else:
+            resolved_sink = trash_sink  # type: ignore[assignment]
+
+        receipts: list[TrashReceipt] = []
+        if resolved_sink is None:
+            if not acknowledge_no_trash:
+                raise DeleteSafetyError("trash_required")
+        else:
+            # Any exception from ``stash`` propagates and skips the wire
+            # call — that's the whole invariant.
+            receipts.append(resolved_sink.stash(entry))
+
         _entries.delete(self.http, entry)
+
+        return DeleteResult(
+            entry=entry.to_dict(),
+            trash_receipts=receipts,
+            deleted_at=datetime.now(tz=UTC).isoformat(timespec="seconds"),
+        )
+
+    def restore_trash(
+        self,
+        *,
+        trash_file: Path | None = None,
+        line: int | None = None,
+        keep: bool = False,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Re-log a record from the trash file.
+
+        Reads one line from ``trash_file`` (defaults to
+        ``~/.local/share/loseit/trash.jsonl``), re-issues
+        :meth:`log_food` with the minimum payload set
+        (``food_id``, ``meal``, ``servings``, ``when``), and either
+        consumes the line (default) or keeps it.
+
+        Args:
+            trash_file: Source trash file. ``None`` resolves the default.
+            line: 1-based line number to restore. ``None`` → last line.
+            keep: When True, leave the line on disk after restoring.
+            dry_run: When True, return the plan without re-logging or
+                modifying the file.
+
+        Returns:
+            A small dict carrying the plan + outcome — used by the CLI
+            to render the BDD-specified stdout. Keys:
+
+            - ``trash_file``: resolved path.
+            - ``line_no``: which 1-based line was acted on.
+            - ``total_lines``: line count of the file before restore.
+            - ``is_last``: ``line_no == total_lines``.
+            - ``food_id`` / ``food_name`` / ``meal`` / ``date`` /
+              ``servings``: the record's projection.
+            - ``logged``: the :class:`LoggedFood` from ``log_food`` (or
+              ``None`` for dry-run / unresolved food).
+            - ``consumed``: True iff the line was removed from the file.
+            - ``dry_run``: echoes the input.
+            - ``keep``: echoes the input.
+        """
+        path = trash_file if trash_file is not None else default_trash_file()
+        text = path.read_text(encoding="utf-8")
+        # ``splitlines()`` drops the trailing newline if present — we use
+        # ``keepends=False`` and re-assemble below.
+        lines = text.splitlines()
+        if not lines:
+            raise ValueError(f"trash file {path} is empty")
+
+        total = len(lines)
+        line_no = line if line is not None else total
+        if not 1 <= line_no <= total:
+            raise ValueError(f"--line {line_no} out of range (file has {total} lines)")
+        record_raw = lines[line_no - 1]
+        record = json.loads(record_raw)
+        entry_dict = record.get("entry", {})
+
+        food_id = entry_dict.get("food_id") or ""
+        food_name = entry_dict.get("food_name", "")
+        meal_name = entry_dict.get("meal", "snacks")
+        date_str = entry_dict.get("date") or ""
+        servings = float(entry_dict.get("servings", 1.0) or 1.0)
+
+        # Derive ``date`` from ``day_num`` when the trash schema didn't
+        # carry an explicit ``date`` field (T4 owns surfacing ``date`` on
+        # the FLE; until then we fall back to today).
+        when: date | None = None
+        if date_str:
+            try:
+                when = date.fromisoformat(date_str)
+            except ValueError:
+                when = None
+
+        is_last = line_no == total
+        result: dict[str, Any] = {
+            "trash_file": str(path),
+            "line_no": line_no,
+            "total_lines": total,
+            "is_last": is_last,
+            "food_id": food_id,
+            "food_name": food_name,
+            "meal": meal_name,
+            "date": date_str,
+            "servings": servings,
+            "logged": None,
+            "consumed": False,
+            "dry_run": dry_run,
+            "keep": keep,
+        }
+
+        if dry_run:
+            return result
+
+        # Replay through the existing high-level path. We need a
+        # ``MealType`` for log_food's parser — ``meal_name`` already
+        # comes from ``MealType(n).name`` so it round-trips.
+        try:
+            meal_type = MealType.parse(meal_name)
+        except ValueError:
+            meal_type = MealType.snacks
+
+        if not food_id:
+            raise ValueError(f"trash record on line {line_no} has no food_id — cannot re-log")
+
+        logged = self.log_food(
+            food=food_id,
+            meal=meal_type,
+            servings=servings,
+            when=when,
+        )
+        result["logged"] = logged
+
+        if not keep:
+            # Atomic rewrite: build the new content (omitting the line),
+            # write to a tmp file in the same dir, fsync, os.replace.
+            remaining = [ln for i, ln in enumerate(lines, start=1) if i != line_no]
+            new_text = ("\n".join(remaining) + "\n") if remaining else ""
+            tmp = path.with_suffix(path.suffix + ".tmp")
+            tmp.write_text(new_text, encoding="utf-8")
+            os.replace(tmp, path)
+            # Best-effort chmod — the file already existed and the perm
+            # bits transferred via the replace on POSIX. Don't fail
+            # the whole restore over a chmod hiccup.
+            with contextlib.suppress(OSError):
+                os.chmod(path, 0o600)
+            result["consumed"] = True
+
+        return result
+
+    # ── Backup + restore (spec §3.1 / §3.2) ─────────────────────────────
+
+    def backup(
+        self,
+        root: Path = Path("~/.local/share/loseit/backup").expanduser(),
+        *,
+        grain: str = "month",
+        start: date | None = None,
+        end: date | None = None,
+        probe_from: date = date(2015, 1, 1),
+        resume: bool = True,
+        refresh_foods: bool = False,
+        sleep_seconds: float = 1.0,
+        dry_run: bool = False,
+        today: date | None = None,
+        progress: Callable[[Any], None] | None = None,
+    ) -> Any:
+        """End-to-end backup orchestrator (spec §3.1 / §6 / §5).
+
+        Thin façade over :func:`lose_it.backup._orchestrator.backup`;
+        every keyword maps 1-1 to the same-named argument on the
+        underlying function. The CLI (``loseit backup``) wraps this
+        method; see the orchestrator docstring for the full algorithm.
+
+        Args:
+            root: Backup root directory. Default
+                ``~/.local/share/loseit/backup``.
+            grain: ``"day"``, ``"week"``, or ``"month"``. Default
+                ``"month"``.
+            start: First date inclusive. ``None`` → run the discovery
+                probe (spec §5).
+            end: Last date inclusive. ``None`` → today.
+            probe_from: Earliest date discovery considers. Default
+                ``2015-01-01``.
+            resume: Skip grain files that exist + parse + match the
+                running account. Default True.
+            refresh_foods: Reserved; passed through to the
+                describe-cadence helper.
+            sleep_seconds: Throttle between RPCs.
+            dry_run: Run discovery + bookkeeping but issue no fetch /
+                describe RPCs.
+            today: Test injection point for "now".
+            progress: Optional ``(GrainReport) -> None`` callback.
+
+        Returns:
+            :class:`~lose_it.backup.BackupSummary` rolling up per-grain
+            counts.
+        """
+        from lose_it.backup._orchestrator import backup as _backup
+
+        return _backup(
+            self,
+            root=root,
+            grain=grain,  # type: ignore[arg-type]
+            start=start,
+            end=end,
+            probe_from=probe_from,
+            resume=resume,
+            refresh_foods=refresh_foods,
+            sleep_seconds=sleep_seconds,
+            dry_run=dry_run,
+            today=today,
+            progress=progress,
+        )
+
+    def restore_backup(
+        self,
+        root: Path = Path("~/.local/share/loseit/backup").expanduser(),
+        *,
+        grain: str = "month",
+        start: date | None = None,
+        end: date | None = None,
+        strict_account: bool = True,
+        skip_restore_on_nonempty_grain_time_ranges: bool = False,
+        upsert_window: timedelta = timedelta(minutes=10),
+        sleep_seconds: float = 1.0,
+        dry_run: bool = False,
+        progress: Callable[[Any], None] | None = None,
+    ) -> Any:
+        """Restore a backup back onto the server (spec §3.2 / §7).
+
+        Two modes (spec §7):
+
+        * **Safe mode (default)** — entry-level upsert via
+          ``(food_id, modified_at ± upsert_window)``. Per-day server
+          reads + match against the archive; missing entries are
+          logged via :meth:`log_food`. Never double-logs, never
+          deletes (spec §7.1 / §7.4).
+        * **Cheap mode** —
+          ``skip_restore_on_nonempty_grain_time_ranges=True`` (spec
+          §7.2). Walks every day in each grain; on the first non-empty
+          day skips the whole grain; otherwise logs every backup
+          entry. Cheaper on reads, coarser on writes.
+
+        Args:
+            root: Backup root directory.
+            grain: ``"day"``, ``"week"``, or ``"month"``. Used to
+                discover grain files under ``root`` (file layout is
+                independent of grain at write time — see spec §3.2).
+            start: Earliest grain to restore. ``None`` → archive's
+                earliest.
+            end: Latest grain to restore. ``None`` → archive's latest.
+            strict_account: Refuse to restore from a grain file
+                pinned to a different account. Default True (spec §8).
+            skip_restore_on_nonempty_grain_time_ranges: When True,
+                use cheap mode. Default False (safe mode).
+            upsert_window: Fuzz window for the safe-mode match key
+                (``modified_at`` drift tolerance). Default ±10 minutes
+                (spec §7.1). Ignored in cheap mode.
+            sleep_seconds: Throttle between RPCs.
+            dry_run: Read pass but no ``log_food`` RPCs.
+            progress: Optional callback. In cheap mode receives
+                :class:`~lose_it.backup.CheapRestoreGrainReport`; in
+                safe mode receives
+                :class:`~lose_it.backup.SafeRestoreGrainReport`.
+
+        Returns:
+            :class:`~lose_it.backup.RestoreSummary`.
+        """
+        from lose_it.backup._orchestrator import (
+            restore_backup_cheap as _cheap,
+        )
+        from lose_it.backup._orchestrator import (
+            restore_backup_safe as _safe,
+        )
+
+        if skip_restore_on_nonempty_grain_time_ranges:
+            return _cheap(
+                self,
+                root=root,
+                grain=grain,  # type: ignore[arg-type]
+                start=start,
+                end=end,
+                strict_account=strict_account,
+                sleep_seconds=sleep_seconds,
+                dry_run=dry_run,
+                progress=progress,
+            )
+        return _safe(
+            self,
+            root=root,
+            grain=grain,  # type: ignore[arg-type]
+            start=start,
+            end=end,
+            strict_account=strict_account,
+            upsert_window=upsert_window,
+            sleep_seconds=sleep_seconds,
+            dry_run=dry_run,
+            progress=progress,
+        )
 
     # ── Bootstrap (login) ───────────────────────────────────────────────
 

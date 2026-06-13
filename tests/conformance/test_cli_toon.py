@@ -32,6 +32,10 @@ def env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     token_file = tmp_path / "token"
     token_file.write_text("fake-jwt-token")
     monkeypatch.setenv("LOSEIT_TOKEN", "fake-jwt-token")
+    # Isolate $HOME so the default LocalFileTrashSink path lands in tmp_path.
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
 
 
 @pytest.fixture

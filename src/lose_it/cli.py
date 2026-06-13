@@ -43,6 +43,8 @@ import asyncio
 import enum
 import json
 import webbrowser
+from datetime import date as _date
+from datetime import timedelta
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
@@ -68,6 +70,11 @@ _SIGNIN_URL = "https://www.loseit.com/"
 # Project identity — surfaced by ``loseit version`` / ``loseit --version``.
 _PROJECT_REPO = "https://github.com/phitoduck/lose-it"
 _PROJECT_LICENSE = "MIT"
+
+# Default backup root (spec §2 / §3.1). Expanded eagerly so ``--help``
+# renders the absolute path the user will actually see on disk rather than
+# a literal ``~``.
+DEFAULT_BACKUP_ROOT = Path("~/.local/share/loseit/backup").expanduser()
 
 
 def _resolve_version() -> str:
@@ -806,17 +813,71 @@ def delete(
             help="Print what would be deleted without sending the deleteFoodLogEntry call.",
         ),
     ] = False,
+    trash_file: Annotated[
+        Path | None,
+        typer.Option(
+            "--trash-file",
+            help=(
+                "Override the local trash file path. "
+                "Default: ~/.local/share/loseit/trash.jsonl. "
+                "The file is created with mode 0o600 on first write."
+            ),
+        ),
+    ] = None,
+    print_deleted: Annotated[
+        bool,
+        typer.Option(
+            "--print-deleted/--no-print-deleted",
+            help=(
+                "Echo the deleted entry to stdout as TOON. The output mirrors "
+                "the trash record so an agent's conversation log captures it "
+                "even when the local file lives on ephemeral storage."
+            ),
+        ),
+    ] = True,
+    no_trash: Annotated[
+        bool,
+        typer.Option(
+            "--no-trash",
+            help=(
+                "EXPLICIT opt-out — skip the trash sink entirely. Refuses "
+                "unless paired with --i-know-this-is-unrecoverable."
+            ),
+        ),
+    ] = False,
+    i_know_this_is_unrecoverable: Annotated[
+        bool,
+        typer.Option(
+            "--i-know-this-is-unrecoverable",
+            help=(
+                "Required acknowledgement for --no-trash. Confirms you "
+                "understand the deleted entry will be unrecoverable."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Delete a diary entry by meal + index."""
     fmt = _output_format(ctx)
     logger.info(
-        "cli.delete: meal={m} pick={p} date={d!r} yes={y} dry_run={dr}",
+        "cli.delete: meal={m} pick={p} date={d!r} yes={y} dry_run={dr} "
+        "no_trash={nt} trash_file={tf}",
         m=meal,
         p=pick,
         d=on_date,
         y=yes,
         dr=dry_run,
+        nt=no_trash,
+        tf=str(trash_file) if trash_file else None,
     )
+
+    # --no-trash gating — pre-validate before any RPC or read.
+    if no_trash and not i_know_this_is_unrecoverable:
+        # Exact stderr lifted from the BDD scenario (impl-plan §6, T5).
+        typer.echo("error: refusing to delete without a trash sink", err=True)
+        typer.echo("hint:  pass --i-know-this-is-unrecoverable to override", err=True)
+        typer.echo("       (this discards any chance of recovering the entry)", err=True)
+        raise typer.Exit(code=2)
+
     try:
         meal_type = MealType.parse(meal)
     except ValueError as exc:
@@ -888,21 +949,185 @@ def delete(
                 if ans.strip().lower() != "delete":
                     typer.echo("Cancelled.")
                     raise typer.Exit(code=0)
-            li.delete_entry(target)
+            # Build the trash sink + invoke delete_entry through the new
+            # safety-routed path.
+            from .trash import LocalFileTrashSink
+
+            if no_trash:
+                # Opt-out path — gated above.
+                try:
+                    delete_result = li.delete_entry(
+                        target,
+                        trash_sink=None,
+                        acknowledge_no_trash=True,
+                    )
+                except Exception as exc:  # pragma: no cover - belt+braces
+                    _emit_error(fmt, "delete_failed", str(exc))
+                    raise typer.Exit(code=2) from exc
+            else:
+                sink = LocalFileTrashSink(
+                    path=trash_file,
+                    user_name=li.config.user_name or "",
+                )
+                try:
+                    delete_result = li.delete_entry(target, trash_sink=sink)
+                except OSError as exc:
+                    # Trash sink failed before the wire delete fired —
+                    # the entry is still on the server.
+                    sink_path = trash_file if trash_file is not None else sink.path
+                    typer.echo(f"error: trash sink: cannot write {sink_path}", err=True)
+                    typer.echo(f"cause: {type(exc).__name__}({exc})", err=True)
+                    typer.echo(
+                        "hint:  the wire delete was NOT sent — your entry is still on the server",
+                        err=True,
+                    )
+                    raise typer.Exit(code=2) from exc
+
+            # Post-delete chatter (text mode): show the sink pointer
+            # before the green "✅ Deleted" line.
+            if fmt is OutputFormat.text:
+                if delete_result.trash_receipts:
+                    typer.echo(f"  trash sink: {delete_result.trash_receipts[0].where}")
+                    typer.echo("  (run 'loseit restore-trash' to undo the most recent delete)")
+                else:
+                    typer.echo("  trash sink: <none — caller acknowledged --no-trash>")
 
     if fmt is not OutputFormat.text:
-        _emit_structured(
-            fmt,
-            {
-                "action": "delete",
-                "dry_run": dry_run,
-                "date": when.isoformat(),
-                "meal": meal_type.name,
-                "target": target.to_dict(),
-            },
-        )
+        envelope: dict[str, Any] = {
+            "action": "delete",
+            "dry_run": dry_run,
+            "date": when.isoformat(),
+            "meal": meal_type.name,
+            "target": target.to_dict(),
+        }
+        if not dry_run:
+            envelope["trash_receipts"] = [
+                {
+                    "where": r.where,
+                    "stashed_at": r.stashed_at,
+                }
+                for r in delete_result.trash_receipts
+            ]
+            envelope["deleted_at"] = delete_result.deleted_at
+        _emit_structured(fmt, envelope)
     elif not dry_run:
         typer.secho("✅ Deleted", fg=typer.colors.GREEN)
+        if print_deleted:
+            # TOON projection of the deleted entry — same as the trash
+            # record's ``entry`` block. Top-level ``deleted_entry`` key
+            # matches the BDD scenario's expected stdout layout.
+            _emit_toon({"deleted_entry": target.to_dict()})
+
+
+@app.command(name="restore-trash")
+def restore_trash(
+    ctx: typer.Context,
+    trash_file: Annotated[
+        Path | None,
+        typer.Option(
+            "--trash-file",
+            help=("Source trash file. Default: ~/.local/share/loseit/trash.jsonl."),
+        ),
+    ] = None,
+    line: Annotated[
+        int | None,
+        typer.Option(
+            "--line",
+            help="1-based line number to restore. Default: the last line.",
+        ),
+    ] = None,
+    keep: Annotated[
+        bool,
+        typer.Option(
+            "--keep/--consume",
+            help=(
+                "Keep the trash line after restoring (``--keep``) or remove "
+                "it (``--consume``, the default)."
+            ),
+        ),
+    ] = False,
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run",
+            help="Print which line would be restored without re-logging.",
+        ),
+    ] = False,
+) -> None:
+    """Re-log the most recent trash record (or ``--line N``)."""
+    fmt = _output_format(ctx)
+    logger.info(
+        "cli.restore_trash: trash_file={tf} line={ln} keep={k} dry_run={dr}",
+        tf=str(trash_file) if trash_file else None,
+        ln=line,
+        k=keep,
+        dr=dry_run,
+    )
+    try:
+        with _open_loseit(ctx) as li:
+            result = li.restore_trash(
+                trash_file=trash_file,
+                line=line,
+                keep=keep,
+                dry_run=dry_run,
+            )
+    except FileNotFoundError as exc:
+        _emit_error(fmt, "trash_file_not_found", str(exc))
+        raise typer.Exit(code=2) from exc
+    except ValueError as exc:
+        _emit_error(fmt, "trash_invalid", str(exc))
+        raise typer.Exit(code=2) from exc
+
+    if fmt is not OutputFormat.text:
+        envelope: dict[str, Any] = {
+            "action": "restore_trash",
+            "trash_file": result["trash_file"],
+            "line_no": result["line_no"],
+            "total_lines": result["total_lines"],
+            "is_last": result["is_last"],
+            "dry_run": result["dry_run"],
+            "keep": result["keep"],
+            "consumed": result["consumed"],
+            "food_id": result["food_id"],
+            "food_name": result["food_name"],
+            "meal": result["meal"],
+            "date": result["date"],
+            "servings": result["servings"],
+        }
+        if result["logged"] is not None:
+            envelope["logged"] = result["logged"].to_dict()
+        _emit_structured(fmt, envelope)
+        return
+
+    # Text mode — exact stdout layout pinned by the BDD scenarios in
+    # ``docs/backup-impl-plan.md`` §6 (`loseit restore-trash`).
+    line_no = result["line_no"]
+    if result["dry_run"]:
+        suffix = "(last line)" if result["is_last"] else f"(line {line_no})"
+        typer.echo(f"would restore trash#{line_no} {suffix}")
+    elif keep:
+        typer.echo(f"restoring trash#{line_no} (--keep, line will remain after restore)")
+    else:
+        suffix = "(last line)" if result["is_last"] else f"(line {line_no})"
+        typer.echo(f"restoring trash#{line_no} {suffix}")
+    typer.echo(f"  food: {result['food_name']}")
+    typer.echo(f"  meal: {result['meal']}")
+    typer.echo(f"  date: {result['date']}")
+    typer.echo(f"  servings: {result['servings']}")
+    typer.echo("")
+    if result["dry_run"]:
+        typer.echo("no log RPC sent (dry run).")
+        return
+    new_food_id = result["food_id"]
+    if result["logged"] is not None:
+        # The wire log_food doesn't yet surface the new entry's PK at
+        # this layer — use the food_id we re-logged as a stable handle.
+        new_food_id = result["food_id"]
+    typer.echo(f"logged successfully (new entry id: {new_food_id})")
+    if keep:
+        typer.echo(f"trash#{line_no} retained.")
+    else:
+        typer.echo(f"trash#{line_no} consumed.")
 
 
 @app.command()
@@ -1066,6 +1291,602 @@ def whoami(ctx: typer.Context) -> None:
         typer.echo(f"hours_from_gmt : {cfg.hours_from_gmt}")
         typer.echo(f"policy_hash    : {cfg.policy_hash}")
         typer.echo(f"strong_name    : {cfg.strong_name}")
+
+
+# ── Backup / restore-backup helpers ────────────────────────────────────────
+
+
+def _parse_grain_kind(value: str) -> str:
+    """Validate ``--grain`` value (spec §2: ``day | week | month``)."""
+    v = value.lower()
+    if v not in ("day", "week", "month"):
+        raise typer.BadParameter(f"--grain must be day|week|month (got {value!r})")
+    return v
+
+
+def _parse_date_str(value: str | None, *, name: str) -> _date | None:
+    """Parse ``YYYY-MM-DD`` or return None; raise ``typer.BadParameter`` on bad input."""
+    if value is None:
+        return None
+    try:
+        return _date.fromisoformat(value)
+    except ValueError as exc:
+        raise typer.BadParameter(f"{name} must be YYYY-MM-DD (got {value!r})") from exc
+
+
+def _grain_file_rel(grain_path: Path, root: Path) -> str:
+    """Relative path under ``root`` for stdout (e.g. ``2016/02.toon``)."""
+    try:
+        return str(grain_path.relative_to(root))
+    except ValueError:
+        return str(grain_path)
+
+
+def _format_grain_label(grain: Any) -> str:
+    """Spec §3.1 row label for a :class:`~lose_it.backup.Grain` — e.g.
+    ``2016/02.toon`` for month, ``2016/W07.toon`` for week, ``2016/02/15.toon``
+    for day. Lives here (not on Grain itself) because it's pure
+    presentation.
+    """
+    if grain.kind == "month":
+        return f"{grain.start.year:04d}/{grain.start.month:02d}.toon"
+    if grain.kind == "week":
+        iso_year, iso_week, _wd = grain.start.isocalendar()
+        return f"{iso_year:04d}/W{iso_week:02d}.toon"
+    if grain.kind == "day":
+        return (
+            f"{grain.start.year:04d}/"
+            f"{grain.start.month:02d}/"
+            f"{grain.start.day:02d}.toon"
+        )
+    return f"{grain.start.isoformat()} ({grain.kind})"
+
+
+@app.command()
+def backup(
+    ctx: typer.Context,
+    root: Annotated[
+        Path,
+        typer.Option(
+            "--root",
+            help=(
+                "Backup root directory. Default: "
+                "~/.local/share/loseit/backup. One grain file per "
+                "calendar/ISO unit lives under here."
+            ),
+        ),
+    ] = DEFAULT_BACKUP_ROOT,
+    grain: Annotated[
+        str,
+        typer.Option(
+            "--grain",
+            help="Granularity of grain files. day|week|month (default month).",
+        ),
+    ] = "month",
+    start: Annotated[
+        str | None,
+        typer.Option(
+            "--start",
+            help="First date to fetch (YYYY-MM-DD). Default: discover via probe (§5).",
+        ),
+    ] = None,
+    end: Annotated[
+        str | None,
+        typer.Option(
+            "--end",
+            help="Last date to fetch (YYYY-MM-DD). Default: today.",
+        ),
+    ] = None,
+    probe_from: Annotated[
+        str,
+        typer.Option(
+            "--probe-from",
+            help="Earliest date the start-date probe will consider (default 2015-01-01).",
+        ),
+    ] = "2015-01-01",
+    sleep_seconds: Annotated[
+        float,
+        typer.Option(
+            "--sleep-seconds",
+            help="Seconds between per-day fetches (default 1.0).",
+        ),
+    ] = 1.0,
+    resume: Annotated[
+        bool,
+        typer.Option(
+            "--resume/--no-resume",
+            help="Skip grain files already recorded on disk (default --resume).",
+        ),
+    ] = True,
+    refresh_foods: Annotated[
+        bool,
+        typer.Option(
+            "--refresh-foods/--no-refresh-foods",
+            help="Re-fetch food descriptions even if cached locally (default off).",
+        ),
+    ] = False,
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run",
+            help="Print the plan and exit. No RPCs sent.",
+        ),
+    ] = False,
+    quiet_skips: Annotated[
+        bool,
+        typer.Option(
+            "--quiet-skips",
+            help="Collapse contiguous skip ranges to one line each (spec §3.1).",
+        ),
+    ] = False,
+) -> None:
+    """Walk the diary, fetch each grain, write one TOON file per grain (§3.1)."""
+    from lose_it.backup import FetchStatus, GrainReport
+
+    fmt = _output_format(ctx)
+    grain_kind = _parse_grain_kind(grain)
+    start_d = _parse_date_str(start, name="--start")
+    end_d = _parse_date_str(end, name="--end")
+    probe_from_d = _parse_date_str(probe_from, name="--probe-from") or _date(2015, 1, 1)
+
+    logger.info(
+        "cli.backup: root={r} grain={g} start={s} end={e} dry_run={dr} quiet_skips={q}",
+        r=str(root),
+        g=grain_kind,
+        s=start,
+        e=end,
+        dr=dry_run,
+        q=quiet_skips,
+    )
+
+    # Collect per-grain reports for the (post-loop) summary block. The
+    # text-mode CLI also streams a line as each report arrives so the
+    # user gets feedback during the run.
+    reports: list[GrainReport] = []
+    # State for --quiet-skips contiguous-range collapsing.
+    skip_run_first: GrainReport | None = None
+    skip_run_last: GrainReport | None = None
+    skip_run_days_total = 0
+    skip_run_entries_total = 0
+
+    def _flush_skip_run() -> None:
+        nonlocal skip_run_first, skip_run_last, skip_run_days_total, skip_run_entries_total
+        if skip_run_first is None or skip_run_last is None:
+            return
+        if skip_run_first is skip_run_last:
+            label = _format_grain_label(skip_run_first.grain)
+            days = (skip_run_first.grain.end - skip_run_first.grain.start).days + 1
+            typer.echo(
+                f"skip      {label}   complete ({days} days, {skip_run_first.entries} entries)"
+            )
+        else:
+            first_label = _format_grain_label(skip_run_first.grain)
+            last_label = _format_grain_label(skip_run_last.grain)
+            # Per the spec §3.1 example, count grains in the contiguous run.
+            n_grains = sum(
+                1 for r in reports
+                if r.status is FetchStatus.skip
+                and r.grain.start >= skip_run_first.grain.start
+                and r.grain.end <= skip_run_last.grain.end
+            )
+            typer.echo(
+                f"skip      {first_label} .. {last_label}   "
+                f"{n_grains} grains complete "
+                f"({skip_run_days_total} days, {skip_run_entries_total} entries)"
+            )
+        skip_run_first = None
+        skip_run_last = None
+        skip_run_days_total = 0
+        skip_run_entries_total = 0
+
+    def _stream(report: GrainReport) -> None:
+        """Per-grain progress callback — emits one line in text mode."""
+        nonlocal skip_run_first, skip_run_last, skip_run_days_total, skip_run_entries_total
+        reports.append(report)
+        if fmt is not OutputFormat.text:
+            return
+        label = _format_grain_label(report.grain)
+        days_in_grain = (report.grain.end - report.grain.start).days + 1
+        if report.status is FetchStatus.skip:
+            if quiet_skips:
+                if skip_run_first is None:
+                    skip_run_first = report
+                skip_run_last = report
+                skip_run_days_total += days_in_grain
+                skip_run_entries_total += report.entries
+                return
+            typer.echo(
+                f"skip      {label}   complete ({days_in_grain} days, {report.entries} entries)"
+            )
+            return
+        # Non-skip status — flush any pending skip run first.
+        if quiet_skips and skip_run_first is not None:
+            _flush_skip_run()
+        if report.status is FetchStatus.fetch:
+            empty = "  (empty month)" if report.entries == 0 and grain_kind == "month" else ""
+            typer.echo(
+                f"fetch     {label}   {days_in_grain} days  "
+                f"[######################]  {report.entries} entries{empty}"
+            )
+        elif report.status is FetchStatus.fallback:
+            typer.echo(
+                f"fallback  {label}   succeeded at sub-grain  "
+                f"({days_in_grain} days, {report.entries} entries)"
+            )
+
+    with _open_loseit(ctx) as li:
+        try:
+            summary = li.backup(
+                root=root,
+                grain=grain_kind,
+                start=start_d,
+                end=end_d,
+                probe_from=probe_from_d,
+                resume=resume,
+                refresh_foods=refresh_foods,
+                sleep_seconds=sleep_seconds,
+                dry_run=dry_run,
+                progress=_stream,
+            )
+        except ValueError as exc:
+            _emit_error(fmt, "backup_invalid", str(exc))
+            raise typer.Exit(code=2) from exc
+
+    # Flush any tail skip-run (only matters with --quiet-skips).
+    if fmt is OutputFormat.text and quiet_skips:
+        _flush_skip_run()
+
+    if fmt is not OutputFormat.text:
+        envelope: dict[str, Any] = {
+            "action": "backup",
+            "root": str(summary.root),
+            "grain": grain_kind,
+            "dry_run": dry_run,
+            "months_total": summary.months_total,
+            "months_skipped": summary.months_skipped,
+            "months_partial": summary.months_partial,
+            "months_fetched": summary.months_fetched,
+            "months_fell_back": summary.months_fell_back,
+            "days_fetched": summary.days_fetched,
+            "days_with_entries": summary.days_with_entries,
+            "new_foods_described": summary.new_foods_described,
+            "foods_redescribed_today": summary.foods_redescribed_today,
+            "archive_size_bytes": summary.archive_size_bytes,
+            "grains": [
+                {
+                    "kind": r.grain.kind,
+                    "start": r.grain.start.isoformat(),
+                    "end": r.grain.end.isoformat(),
+                    "status": r.status.value if hasattr(r.status, "value") else str(r.status),
+                    "days_with_entries": r.days_with_entries,
+                    "entries": r.entries,
+                }
+                for r in reports
+            ],
+        }
+        _emit_structured(fmt, envelope)
+        return
+
+    # Text mode summary block (spec §3.1).
+    typer.echo("")
+    if dry_run:
+        typer.echo("plan")
+        typer.echo(
+            f"  range:              {start or 'discovered'} -> "
+            f"{end or 'today'}  ({summary.months_total} grains)"
+        )
+        typer.echo(f"  grain:              {grain_kind}")
+        typer.echo(
+            f"  already on disk:    {summary.months_skipped}  (skip)"
+        )
+        typer.echo(
+            f"  partial on disk:    {summary.months_partial}  (partial)"
+        )
+        typer.echo(
+            f"  no file yet:        {summary.months_fetched}  (fetch)"
+        )
+        typer.echo(f"  root:               {summary.root}")
+        typer.echo("no RPCs sent.")
+        return
+
+    typer.echo("summary")
+    typer.echo(
+        f"  months total:        {summary.months_total}"
+    )
+    typer.echo(
+        f"  months skipped:      {summary.months_skipped}"
+    )
+    typer.echo(
+        f"  months partial:      {summary.months_partial}"
+    )
+    typer.echo(
+        f"  months fetched:      {summary.months_fetched}"
+    )
+    typer.echo(
+        f"  months fell back:    {summary.months_fell_back}"
+    )
+    typer.echo(f"  days fetched:        {summary.days_fetched}")
+    typer.echo(f"  days with entries:   {summary.days_with_entries}")
+    typer.echo(
+        f"  unique foods:        {summary.new_foods_described} new, "
+        f"{summary.foods_redescribed_today} re-described today"
+    )
+    typer.echo(f"  root:                {summary.root}")
+
+
+@app.command(name="restore-backup")
+def restore_backup(
+    ctx: typer.Context,
+    root: Annotated[
+        Path,
+        typer.Option(
+            "--root",
+            help="Backup root directory. Default: same as `backup`.",
+        ),
+    ] = DEFAULT_BACKUP_ROOT,
+    grain: Annotated[
+        str,
+        typer.Option(
+            "--grain",
+            help="Grain layout to walk. day|week|month (default month).",
+        ),
+    ] = "month",
+    start: Annotated[
+        str | None,
+        typer.Option(
+            "--start",
+            help="Earliest grain to restore (YYYY-MM-DD). Default: archive's earliest.",
+        ),
+    ] = None,
+    end: Annotated[
+        str | None,
+        typer.Option(
+            "--end",
+            help="Latest grain to restore (YYYY-MM-DD). Default: archive's latest.",
+        ),
+    ] = None,
+    skip_restore_on_nonempty_grain_time_ranges: Annotated[
+        bool,
+        typer.Option(
+            "--skip-restore-on-nonempty-grain-time-ranges",
+            help=(
+                "Cheap mode (spec §7.2): skip any grain whose server "
+                "diary has any entries. Default: off (safe-mode upsert)."
+            ),
+        ),
+    ] = False,
+    strict_account: Annotated[
+        bool,
+        typer.Option(
+            "--strict-account/--no-strict-account",
+            help=(
+                "Refuse to restore from a grain file pinned to a different "
+                "account. Default: on (spec §8)."
+            ),
+        ),
+    ] = True,
+    sleep_seconds: Annotated[
+        float,
+        typer.Option(
+            "--sleep-seconds",
+            help="Seconds between log calls (default 1.0).",
+        ),
+    ] = 1.0,
+    upsert_window_minutes: Annotated[
+        float,
+        typer.Option(
+            "--upsert-window-minutes",
+            help="Safe-mode match-key fuzz window in minutes (default 10).",
+        ),
+    ] = 10.0,
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run",
+            help="Print the plan and exit. No log_food RPCs sent.",
+        ),
+    ] = False,
+    quiet_skips: Annotated[
+        bool,
+        typer.Option(
+            "--quiet-skips",
+            help="Collapse contiguous skip ranges to one line each (cheap mode).",
+        ),
+    ] = False,
+) -> None:
+    """Walk grain files in ``root`` and replay missing entries to the server (§3.2)."""
+    from lose_it.backup import CheapRestoreGrainReport, SafeRestoreGrainReport
+
+    fmt = _output_format(ctx)
+    grain_kind = _parse_grain_kind(grain)
+    start_d = _parse_date_str(start, name="--start")
+    end_d = _parse_date_str(end, name="--end")
+    cheap_mode = skip_restore_on_nonempty_grain_time_ranges
+
+    logger.info(
+        "cli.restore_backup: root={r} grain={g} mode={m} dry_run={dr}",
+        r=str(root),
+        g=grain_kind,
+        m="cheap" if cheap_mode else "safe",
+        dr=dry_run,
+    )
+
+    cheap_reports: list[CheapRestoreGrainReport] = []
+    safe_reports: list[SafeRestoreGrainReport] = []
+
+    # --quiet-skips cheap-mode state.
+    skip_run_first: CheapRestoreGrainReport | None = None
+    skip_run_last: CheapRestoreGrainReport | None = None
+    skip_run_days = 0
+    skip_run_entries = 0
+
+    def _flush_cheap_skip_run() -> None:
+        nonlocal skip_run_first, skip_run_last, skip_run_days, skip_run_entries
+        if skip_run_first is None or skip_run_last is None:
+            return
+        first_label = _grain_file_rel(skip_run_first.grain_path, root)
+        last_label = _grain_file_rel(skip_run_last.grain_path, root)
+        n_grains = sum(
+            1
+            for r in cheap_reports
+            if r.status == "skip"
+            and r.grain_path >= skip_run_first.grain_path
+            and r.grain_path <= skip_run_last.grain_path
+        )
+        typer.echo(
+            f"skip      {first_label} .. {last_label}   "
+            f"{n_grains} grains complete ({skip_run_days} days scanned, "
+            f"{skip_run_entries} entries on disk)"
+        )
+        skip_run_first = None
+        skip_run_last = None
+        skip_run_days = 0
+        skip_run_entries = 0
+
+    def _stream_cheap(report: CheapRestoreGrainReport) -> None:
+        nonlocal skip_run_first, skip_run_last, skip_run_days, skip_run_entries
+        cheap_reports.append(report)
+        if fmt is not OutputFormat.text:
+            return
+        label = _grain_file_rel(report.grain_path, root)
+        if report.status == "skip":
+            if quiet_skips:
+                if skip_run_first is None:
+                    skip_run_first = report
+                skip_run_last = report
+                skip_run_days += report.days_scanned
+                skip_run_entries += report.entries_in_grain
+                return
+            hit = report.hit_day.isoformat() if report.hit_day else "?"
+            typer.echo(
+                f"skip      {label}   {report.days_scanned} days scanned, "
+                f"non-empty on {hit} -> skip"
+            )
+            return
+        if quiet_skips and skip_run_first is not None:
+            _flush_cheap_skip_run()
+        verb = "would log" if dry_run else "to log"
+        typer.echo(
+            f"restore   {label}   {report.days_scanned} days scanned, all empty  "
+            f"({report.entries_in_grain} entries {verb})"
+        )
+
+    def _stream_safe(report: SafeRestoreGrainReport) -> None:
+        safe_reports.append(report)
+        if fmt is not OutputFormat.text:
+            return
+        label = _grain_file_rel(report.grain_path, root)
+        typer.echo(
+            f"{label}   {report.days_with_entries} days with entries  "
+            f"[######################]"
+        )
+        logged_note = (
+            f"   (logged {report.entries_logged} new entries)"
+            if report.entries_logged > 0
+            else ""
+        )
+        typer.echo(
+            f"                 present  {report.entries_present:>2}   "
+            f"upsert  {report.days_upserted:>2}   empty  {report.days_empty:>2}"
+            f"{logged_note}"
+        )
+
+    with _open_loseit(ctx) as li:
+        user_id = li.config.user_id or ""
+        if fmt is OutputFormat.text:
+            typer.echo(f"account:              loseit user_id {user_id}")
+            typer.echo(f"backup root:          {root}")
+            typer.echo(f"grain:                {grain_kind}")
+            if cheap_mode:
+                typer.echo("mode:                 simple (skip grain on first non-empty day in range)")
+                typer.echo("")
+                typer.echo("scanning server for existing data...")
+            else:
+                typer.echo("mode:                 safe (upsert by food_id + modified_at ± window)")
+                typer.echo("")
+
+        try:
+            summary = li.restore_backup(
+                root=root,
+                grain=grain_kind,
+                start=start_d,
+                end=end_d,
+                strict_account=strict_account,
+                skip_restore_on_nonempty_grain_time_ranges=cheap_mode,
+                upsert_window=timedelta(minutes=upsert_window_minutes),
+                sleep_seconds=sleep_seconds,
+                dry_run=dry_run,
+                progress=_stream_cheap if cheap_mode else _stream_safe,
+            )
+        except ValueError as exc:
+            _emit_error(fmt, "restore_invalid", str(exc))
+            raise typer.Exit(code=2) from exc
+
+    if fmt is OutputFormat.text and cheap_mode and quiet_skips:
+        _flush_cheap_skip_run()
+
+    if fmt is not OutputFormat.text:
+        envelope: dict[str, Any] = {
+            "action": "restore_backup",
+            "mode": "cheap" if cheap_mode else "safe",
+            "root": str(summary.root),
+            "grain": grain_kind,
+            "dry_run": dry_run,
+            "grains_scanned": summary.grains_scanned,
+            "grains_skipped": summary.grains_skipped,
+            "grains_restored": summary.grains_restored,
+            "entries_logged": summary.entries_logged,
+            "days_scanned": summary.days_scanned,
+            "days_fully_present": summary.days_fully_present,
+            "days_upserted": summary.days_upserted,
+            "entries_already_present": summary.entries_already_present,
+        }
+        if cheap_mode:
+            envelope["grains"] = [
+                {
+                    "path": str(r.grain_path),
+                    "status": r.status,
+                    "days_scanned": r.days_scanned,
+                    "hit_day": r.hit_day.isoformat() if r.hit_day else None,
+                    "entries_in_grain": r.entries_in_grain,
+                    "entries_logged": r.entries_logged,
+                }
+                for r in cheap_reports
+            ]
+        else:
+            envelope["grains"] = [
+                {
+                    "path": str(r.grain_path),
+                    "days_with_entries": r.days_with_entries,
+                    "days_present": r.days_present,
+                    "days_upserted": r.days_upserted,
+                    "days_empty": r.days_empty,
+                    "entries_present": r.entries_present,
+                    "entries_logged": r.entries_logged,
+                }
+                for r in safe_reports
+            ]
+        _emit_structured(fmt, envelope)
+        return
+
+    # Text-mode summary block.
+    typer.echo("")
+    typer.echo("summary")
+    typer.echo(f"  grains scanned:       {summary.grains_scanned}")
+    if cheap_mode:
+        typer.echo(f"  grains skipped:       {summary.grains_skipped}")
+        typer.echo(f"  grains restored:      {summary.grains_restored}")
+        if dry_run:
+            typer.echo(f"  entries to log:       {sum(r.entries_in_grain for r in cheap_reports if r.status == 'restore')}")
+        else:
+            typer.echo(f"  entries logged:       {summary.entries_logged}")
+    else:
+        typer.echo(f"  days scanned:         {summary.days_scanned}")
+        typer.echo(f"  days fully present:   {summary.days_fully_present}")
+        typer.echo(f"  days upserted:        {summary.days_upserted}")
+        typer.echo(f"  entries already present: {summary.entries_already_present}")
+        typer.echo(f"  entries logged:       {summary.entries_logged}")
+    typer.echo(f"  root:                 {summary.root}")
 
 
 @app.command()

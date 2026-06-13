@@ -26,6 +26,9 @@
   - [`diary`](#diary)
   - [`describe-food`](#describe-food)
   - [`delete`](#delete)
+  - [`backup`](#backup)
+  - [`restore-backup`](#restore-backup)
+  - [`restore-trash`](#restore-trash)
   - [`whoami`](#whoami)
   - [Script-friendly output: `--output json` / `-o json`](#script-friendly-output---output-json---o-json)
   - [LLM-friendly output: `--output toon` / `-o toon`](#llm-friendly-output---output-toon---o-toon)
@@ -249,13 +252,17 @@ $ loseit --help
  Unofficial Lose It! food logger / diary CLI.
 
 ╭─ Commands ──────────────────────────────────────────────────────╮
-│ login         Import the liauth JWT from Chrome or Brave.       │
-│ search        Search the LoseIt food database.                  │
-│ log           Search for a food and log it to a meal.           │
-│ diary         List the diary for a given date (default: today). │
-│ describe-food Inspect one or more foods by ID; fetch concurrent.│
-│ delete        Delete a diary entry by meal + index.             │
-│ whoami        Print the resolved client configuration.          │
+│ login          Import the liauth JWT from Chrome or Brave.      │
+│ search         Search the LoseIt food database.                 │
+│ log            Search for a food and log it to a meal.          │
+│ diary          List the diary for a given date (default: today).│
+│ describe-food  Inspect one or more foods by ID; fetch concurrent│
+│ delete         Delete a diary entry. Writes to trash first.     │
+│ backup         Archive the diary to ~/.local/share/loseit/      │
+│ restore-backup Re-log archived entries that are missing on the  │
+│                server. Safe-mode upsert by default.             │
+│ restore-trash  Replay the most recent loseit delete trash record│
+│ whoami         Print the resolved client configuration.         │
 ╰─────────────────────────────────────────────────────────────────╯
 ```
 
@@ -491,6 +498,8 @@ The `per_serving_g` / `per_serving_ml` values are what unlock cross-class `--ser
 
 ### `delete`
 
+Every delete is recoverable. Before the wire-delete fires, the full entry payload is written to a **trash sink** (default: a JSONL file at `~/.local/share/loseit/trash.jsonl`, mode `0600`). If the trash write fails, the delete is **aborted** — your entry stays on the server.
+
 **Bash:**
 
 ```bash
@@ -501,8 +510,234 @@ $ loseit delete --meal lunch --pick 1 --yes
 
 ```text
 🗑️  Deleting from lunch: Tortilla Wraps, High Fiber, Low Carb, Xtreme Wellness (Mission) × 1.0
+  trash sink: /Users/you/.local/share/loseit/trash.jsonl#42
+  (run 'loseit restore-trash' to undo the most recent delete)
 ✅ Deleted
 ```
+
+<details>
+<summary>click to view details — trash flags + recovery</summary>
+
+```text
+--trash-file PATH      Override the trash file path.
+                       Default: ~/.local/share/loseit/trash.jsonl.
+--print-deleted        Echo the full deleted entry to stdout (TOON).
+                       Default: on. Useful when the CLI runs in a
+                       container — the agent's transcript becomes
+                       a second copy of the trash record.
+--no-trash             Explicit opt-out. Refuses unless paired with
+                       --i-know-this-is-unrecoverable.
+--i-know-this-is-unrecoverable
+                       Acknowledge that --no-trash discards any
+                       chance of recovery.
+```
+
+To undo the most recent delete:
+
+```bash
+$ loseit restore-trash
+```
+
+(see the [`restore-trash`](#restore-trash) section below).
+
+</details>
+
+### `backup`
+
+Archive your whole diary to local disk. One TOON file per **grain** (default: month), atomic per-grain so a Ctrl-C is safe to resume. By default uses the bulk-fetch endpoint — **1 RPC per grain**, not one per day.
+
+**Bash:**
+
+```bash
+$ loseit backup
+```
+
+**Output:**
+
+```text
+discovering earliest day...
+  probed 2019-08              hit
+  narrowing within 2019-08:
+    probed 2019-08-01 .. 2019-08-13   empty
+    probed 2019-08-14              hit
+earliest day:         2019-08-14
+range:                2019-08-14 -> 2026-06-12  (2495 days, 83 months)
+grain:                month
+root:                 /Users/you/.local/share/loseit/backup
+
+fetch     2019/08.toon   18 days  [######################]   3 entries
+fetch     2019/09.toon   30 days  [######################]  12 entries
+...
+fetch     2026/06.toon   12 days  [######################]  42 entries
+
+summary
+  months fetched:     83  (skipped 0,  partial 0,  fetched 83,  fell back 0)
+  days fetched:       2495
+  days with entries:  2358
+  unique foods:       312 described,  0 re-described today
+  archive size:       11.4 MB
+  root:               /Users/you/.local/share/loseit/backup
+```
+
+Re-runs **resume** — already-complete grain files are skipped with `0` RPCs:
+
+```bash
+$ loseit backup --quiet-skips     # collapse contiguous skips to one line
+```
+
+```text
+skip      2019/08.toon .. 2026/04.toon   80 grains complete (2349 days, 4146 entries)
+partial   2026/05.toon   need 8 more days (3 already on disk)
+            fetch 2026-05-04 .. 2026-05-31  [######################]  14 entries
+fetch     2026/06.toon   12 days  [######################]  42 entries
+```
+
+<details>
+<summary>click to view details — all flags</summary>
+
+```text
+--root PATH            Backup root. Default: ~/.local/share/loseit/backup.
+--grain {day,week,month}
+                       Granularity of the on-disk files. Default: month.
+--start YYYY-MM-DD     First date to fetch (inclusive).
+                       Default: discover via probe.
+--end   YYYY-MM-DD     Last date to fetch (inclusive). Default: today.
+--probe-from YYYY-MM-DD
+                       Earliest date the discovery probe will consider.
+                       Default: 2015-01-01.
+--sleep-seconds FLOAT  Seconds between per-day fetches. Default: 1.0.
+--resume / --no-resume Skip grain files already complete on disk.
+                       Default: --resume.
+--refresh-foods        Re-fetch food descriptions even if cached.
+--quiet-skips          Collapse contiguous skip ranges into one line.
+--dry-run              Print the plan and exit — no RPCs sent.
+```
+
+Grain file format (TOON, human-grep-able):
+
+```text
+~/.local/share/loseit/backup/
+  index.toon                          <- discovery cache
+  foods.toon                          <- food description cache
+  2019/
+    08.toon                           <- August 2019: entries
+    09.toon
+    ...
+  2026/
+    06.toon
+```
+
+If a month-level fetch oversizes, the splitter falls back to week-grain, then day-grain. Status column in the output reflects the fall-back: `fallback  2024/12.toon   succeeded at day grain  (17 days, 76 entries)`.
+
+</details>
+
+### `restore-backup`
+
+Re-log archived entries that are missing on the server. **Safe by default** — never double-logs, never deletes.
+
+**Bash:**
+
+```bash
+$ loseit restore-backup
+```
+
+**Output:**
+
+```text
+account:              loseit user_id 12345678
+backup root:          /Users/you/.local/share/loseit/backup
+grain:                month
+mode:                 safe (upsert by food_id + modified_at ± 10m)
+
+2019/08.toon  18 days with entries  [######################]
+                 present  18   upsert  0   empty  0
+...
+2026/05.toon  18 days with entries  [######################]
+                 present  16   upsert  2   empty  0   (logged 5 new entries)
+2026/06.toon   8 days with entries  [######################]
+                 present   8   upsert  0   empty  0
+
+summary
+  grains scanned:       83
+  days scanned:         2358
+  entries already present: 4213
+  entries logged:           5
+```
+
+A second run against an unchanged server logs **0** entries. The upsert key matches existing server rows by `food_id` + `modified_at ± 10 min`.
+
+<details>
+<summary>click to view details — modes, flags</summary>
+
+Two modes:
+
+- **Safe mode (default)** — per-day entry-level upsert. Reads every day-with-entries from the server; only logs entries the server doesn't already have. The match key is `(food_id, modified_at ± 10 min)`. ⚠️ Note: the spec originally called for `created_at` here, but empirical decoding showed `FoodLogEntry.f4` is not a real timestamp (values cluster at 1970). `modified_at` (f5) is the real, reliable timestamp.
+
+- **Cheap mode** — `--skip-restore-on-nonempty-grain-time-ranges`. Walks each grain's days; **skips the whole grain** on the first non-empty day. Cheaper on reads but coarser on writes — if the server has 1 mobile-logged entry in a grain you're trying to restore 50 entries into, this mode restores nothing in that grain.
+
+```text
+--root PATH                          Backup root. Default: ~/.local/share/loseit/backup.
+--grain {day,week,month}             Default: month.
+--start YYYY-MM-DD                   Earliest grain. Default: archive's earliest.
+--end   YYYY-MM-DD                   Latest grain. Default: archive's latest.
+--skip-restore-on-nonempty-grain-time-ranges
+                                     Cheap mode (see above).
+--strict-account / --no-strict-account
+                                     Refuse to restore if the archive's
+                                     account.user_id doesn't match.
+                                     Default: --strict-account.
+--upsert-window-minutes INT          Match window in safe mode. Default: 10.
+--sleep-seconds FLOAT                Default: 1.0.
+--quiet-skips                        Collapse contiguous skips.
+--dry-run                            Print the plan; no RPCs sent.
+```
+
+There is no `--reconcile`, no `--prune-extras`, no delete path. Restore is purely additive in both modes.
+
+</details>
+
+### `restore-trash`
+
+Replay a `loseit delete` trash record back to the server.
+
+**Bash:**
+
+```bash
+$ loseit restore-trash
+```
+
+**Output:**
+
+```text
+restoring trash#42 (last line)
+  food: Tortilla Wraps, ... (Mission)
+  meal: lunch
+  date: 2026-06-12
+  servings: 1.0
+
+logged successfully (new entry id: 5c7218603fd35a86bc4fac771a54560d)
+trash#42 consumed.
+```
+
+<details>
+<summary>click to view details — pick a specific line, keep the trash file</summary>
+
+```text
+--trash-file PATH       Source trash file.
+                        Default: ~/.local/share/loseit/trash.jsonl.
+--line INT              Restore line N (1-based) instead of the last.
+--keep / --consume      Keep the trash line after restoring, or
+                        remove it (default).
+--dry-run               Print which line would be restored, no RPCs.
+```
+
+Restore the second-most-recent delete without consuming the trash record:
+
+```bash
+$ loseit restore-trash --line 2 --keep
+```
+
+</details>
 
 ### `whoami`
 
