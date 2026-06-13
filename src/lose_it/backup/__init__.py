@@ -15,6 +15,11 @@ backup writers and backup readers (per the impl-plan §1 principle:
 
 from __future__ import annotations
 
+from ._discovery import (
+    DiscoveryProbe,
+    DiscoveryResult,
+    discover_earliest_day,
+)
 from ._fs import (
     SCHEMA_VERSION,
     AccountRef,
@@ -38,6 +43,8 @@ from ._fs import (
 __all__ = [
     "SCHEMA_VERSION",
     "AccountRef",
+    "DiscoveryProbe",
+    "DiscoveryResult",
     "FoodCacheEntry",
     "FoodsDoc",
     "GrainBounds",
@@ -46,6 +53,7 @@ __all__ = [
     "IndexDoc",
     "SchemaVersionMismatch",
     "atomic_write_text",
+    "discover_earliest_day",
     "read_foods_file",
     "read_grain_file",
     "read_index_file",
