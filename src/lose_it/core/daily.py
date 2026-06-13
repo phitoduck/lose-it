@@ -3,13 +3,23 @@
 Returns every ``FoodLogEntry`` logged on the target date, with enough field
 data to round-trip into a ``deleteFoodLogEntry`` (which requires the full
 entry body, not just a PK).
+
+Also exposes the bulk variant
+:func:`get_daily_details_range` which wraps the
+``getDailyDetailsIncludingPendingForDateRange`` RPC. The range RPC returns
+one ``DailyDetails`` block per day in ``[start, end]`` inclusive, in the
+same wire shape as the per-day version — we decode the response into a
+``{date: [FoodLogEntry]}`` map so callers don't have to know about day
+numbers downstream.
 """
 
 from __future__ import annotations
 
 import re
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
+
+import httpx
 
 from .._logging import logger
 from ..models import FoodLogEntry
@@ -17,8 +27,8 @@ from ._config import Config
 from ._dates import day_number_for
 from ._decoder import decode_response
 from ._gwt import build_envelope, parse_response
-from ._http import HttpClient
-from .init import get_daydate_key
+from ._http import HttpClient, LoseItError
+from .init import _FALLBACK_DAY_KEY, get_daydate_key
 
 # Type hashes used to walk the decoder's output.
 _FLE_FQCN = "com.loseit.core.client.model.FoodLogEntry/264522954"
@@ -378,3 +388,334 @@ def get_daily_details_raw(http: HttpClient, target_date: date) -> str:
     day_num = day_number_for(target_date)
     day_key = get_daydate_key(http, day_num)
     return http.post_rpc(_build_payload(http.config, target_date, day_key))
+
+
+# ── Bulk range fetch (T0) ────────────────────────────────────────────────────
+
+
+class TooMuchData(Exception):
+    """Raised when a range RPC fails with an oversize / rate-limit / 5xx shape.
+
+    The fetch primitive that lives one layer up (T2 in the backup spec)
+    catches this and recurses into a smaller date grain. Concretely we
+    map HTTP 413 (request entity too large), 429 (rate limited), and
+    any 5xx (server side failure) responses to this exception. GWT-RPC
+    ``//EX[…]`` envelopes whose error text mentions ``oversize`` /
+    ``too large`` / ``size`` are also mapped here — the server has been
+    observed to dress up oversize replies as a GWT error rather than
+    raw HTTP 413 depending on which layer in their stack tripped.
+    """
+
+
+# Sentinels lifted out of the function so tests can monkey-patch them
+# without reaching into the function body.
+_RANGE_RPC_RETRYABLE_STATUSES = frozenset({413, 429})
+
+
+def _is_oversize_gwt_error(text: str) -> bool:
+    """Detect the //EX error shape the range RPC emits on oversize windows."""
+    if not text.startswith("//EX"):
+        return False
+    lower = text.lower()
+    return any(needle in lower for needle in ("oversize", "too large", "size limit"))
+
+
+def build_range_payload(
+    config: Config,
+    start_day_num: int,
+    start_day_key: str,
+    end_day_num: int,
+    end_day_key: str,
+) -> str:
+    """Build the ``getDailyDetailsIncludingPendingForDateRange`` GWT-RPC envelope.
+
+    The wire shape (verified against the captured fixture) is::
+
+        strings:
+            base_url, policy_hash,
+            LoseItRemoteService, getDailyDetailsIncludingPendingForDateRange,
+            ServiceRequestToken, Integer, DayDate, UserId,
+            user_name, Date
+
+        data:
+            url, policy, service, method,           # ref headers
+            4,                                       # arg_count
+            ServiceRequestToken, Integer, DayDate, DayDate,    # arg type refs
+            ServiceRequestToken, 0, UserId, user_id, user_name, hours,
+            Integer, user_id,                       # second arg: integer (user_id again)
+            DayDate, Date, start_day_key, start_day_num, hours,
+            DayDate, Date, end_day_key,   end_day_num,   hours
+
+    The four arguments are: token, an integer (the server uses this as a
+    redundant userId int — both call sites in the wire match), the start
+    DayDate, the end DayDate.
+    """
+    strings = [
+        config.base_url,
+        config.policy_hash,
+        "com.loseit.core.client.service.LoseItRemoteService",
+        "getDailyDetailsIncludingPendingForDateRange",
+        "com.loseit.core.client.service.ServiceRequestToken/1076571655",
+        "java.lang.Integer/3438268394",
+        "com.loseit.core.shared.model.DayDate/1611136587",
+        "com.loseit.core.client.model.UserId/4281239478",
+        config.user_name,
+        "java.util.Date/3385151746",
+    ]
+    data = [
+        "1",
+        "2",
+        "3",
+        "4",
+        "4",
+        "5",
+        "6",
+        "7",
+        "7",
+        "5",
+        "0",
+        "8",
+        config.user_id,
+        "9",
+        str(config.hours_from_gmt),
+        "6",
+        config.user_id,
+        "7",
+        "10",
+        start_day_key,
+        str(start_day_num),
+        str(config.hours_from_gmt),
+        "7",
+        "10",
+        end_day_key,
+        str(end_day_num),
+        str(config.hours_from_gmt),
+    ]
+    return build_envelope(strings, data)
+
+
+def parse_entries_by_day(
+    text: str,
+    default_hours_from_gmt: int = -5,
+    user_name: str = "",
+) -> dict[int, list[FoodLogEntry]]:
+    """Decode a range-RPC response into a ``{day_num: [FoodLogEntry]}`` map.
+
+    The response wraps a ``DailyDetails[]`` array — one block per day in
+    the requested range, in order. Each block's day_num lives in its
+    ``DailyLogEntry.context.f1`` DayDate slot; FoodLogEntries hang off
+    the same ``DailyLogEntry`` subtree. We walk the array, find day_num
+    per block, and call :func:`_entry_from_decoded` on every FLE in the
+    subtree.
+
+    Days with zero entries get an explicit empty list — callers
+    distinguish "fetched, none logged" from "not fetched" purely by
+    presence of the key.
+
+    Entries whose ``food_identifier_code`` is blank get backfilled from
+    the raw token stream in source order, the same way the single-day
+    :func:`parse_entries` does it.
+    """
+    decoded = decode_response(text)
+    if decoded is None:
+        return {}
+
+    # Find the DailyDetails array. The clean shape is
+    # LoseItRemoteServiceResponse.f3.items; on a decoder partial we
+    # fall back to scanning backrefs for any [LDailyDetails;.
+    array_holder: dict | None = None
+    if isinstance(decoded, dict) and decoded.get("__partial__"):
+        for ref in decoded.get("backrefs") or []:
+            if (
+                isinstance(ref, dict)
+                and isinstance(ref.get("__type__"), str)
+                and ref["__type__"].startswith("[Lcom.loseit.core.client.model.DailyDetails;")
+            ):
+                array_holder = ref
+                break
+    elif isinstance(decoded, dict):
+        candidate = decoded.get("f3")
+        if (
+            isinstance(candidate, dict)
+            and isinstance(candidate.get("__type__"), str)
+            and candidate["__type__"].startswith("[Lcom.loseit.core.client.model.DailyDetails;")
+        ):
+            array_holder = candidate
+
+    if array_holder is None:
+        return {}
+
+    out: dict[int, list[FoodLogEntry]] = {}
+    seen_global: set[int] = set()
+
+    for dd_block in array_holder.get("items") or []:
+        if not isinstance(dd_block, dict):
+            continue
+        day_num = _extract_day_num(dd_block)
+        if day_num is None:
+            continue
+        block_entries: list[FoodLogEntry] = []
+        for d in _walk_dicts(dd_block):
+            if d.get("__type__") != _FLE_FQCN:
+                continue
+            ident = id(d)
+            if ident in seen_global:
+                continue
+            seen_global.add(ident)
+            entry = _entry_from_decoded(d, default_hours_from_gmt, user_name=user_name)
+            if entry is not None:
+                block_entries.append(entry)
+        # Days with no entries still get an empty-list slot so callers
+        # can distinguish "checked, nothing logged" from "skipped".
+        out[day_num] = block_entries
+
+    # Backfill missing food_identifier_codes from the raw token stream in
+    # source order — same approach as parse_entries, except we have to
+    # iterate the days in the wire's natural order (the order they
+    # appeared in the DailyDetails array, which is also the iteration
+    # order of ``out`` since Python 3.7 preserves insertion order).
+    flat_entries = [e for entries in out.values() for e in entries]
+    if any(not e.food_identifier_code for e in flat_entries):
+        tokens, _ = parse_response(text)
+        codes = [
+            t for t in tokens if isinstance(t, str) and 4 <= len(t) <= 20 and t.startswith("Do")
+        ]
+        for entry, code in zip(flat_entries, codes, strict=False):
+            if not entry.food_identifier_code:
+                entry.food_identifier_code = code
+    return out
+
+
+def _extract_day_num(dd_block: dict) -> int | None:
+    """Find the day_num for a single ``DailyDetails`` block.
+
+    The reliable spot is ``DailyLogEntry.f1`` — a DayDate. We try that
+    first, then fall back to scanning every DayDate dict in the block
+    (a no-FLE block may not have a DailyLogEntry at all).
+    """
+    log_entry = dd_block.get("f3")
+    if isinstance(log_entry, dict):
+        for v in log_entry.values():
+            if (
+                isinstance(v, dict)
+                and isinstance(v.get("__type__"), str)
+                and v["__type__"].startswith("com.loseit.core.shared.model.DayDate")
+            ):
+                day_num_val = v.get("f1")
+                if isinstance(day_num_val, (int, float)):
+                    return int(day_num_val)
+    # Fallback: scan the whole block.
+    for d in _walk_dicts(dd_block):
+        if isinstance(d.get("__type__"), str) and d["__type__"].startswith(
+            "com.loseit.core.shared.model.DayDate"
+        ):
+            v = d.get("f1")
+            if isinstance(v, (int, float)):
+                return int(v)
+    return None
+
+
+def get_daily_details_range(
+    http: HttpClient,
+    start: date,
+    end: date,
+    *,
+    day_keys: dict[int, str] | None = None,
+) -> dict[date, list[FoodLogEntry]]:
+    """Bulk diary fetch via ``getDailyDetailsIncludingPendingForDateRange``.
+
+    Returns a ``{date: [FoodLogEntry]}`` map covering every day in the
+    inclusive range ``[start, end]``. Days with no entries are present
+    with an empty list — callers should treat absence of a key as
+    "server omitted this day" (shouldn't happen in practice).
+
+    ``day_keys`` is an optional pre-cached ``{day_num: day_key}`` window
+    (typically the one ``get_init`` populates). The server only really
+    cares about ``day_num`` — the day_key string is treated as a cache
+    key — so for day_nums outside the cache we send the
+    ``_FALLBACK_DAY_KEY`` (``"ZZZZZZZ"``) placeholder which the server
+    accepts unconditionally.
+
+    Raises :class:`TooMuchData` on HTTP 413 / 429 / 5xx responses or any
+    GWT ``//EX`` envelope shaped like an oversize / size-limit error;
+    callers (T2) catch this and bisect into a smaller grain.
+    """
+    if end < start:
+        raise ValueError(f"end {end!r} is before start {start!r}")
+
+    logger.info(
+        "daily.get_daily_details_range: start={s} end={e}",
+        s=start.isoformat(),
+        e=end.isoformat(),
+    )
+
+    start_day_num = day_number_for(start)
+    end_day_num = day_number_for(end)
+    keys = day_keys or {}
+    start_key = keys.get(start_day_num, _FALLBACK_DAY_KEY)
+    end_key = keys.get(end_day_num, _FALLBACK_DAY_KEY)
+
+    payload = build_range_payload(
+        http.config,
+        start_day_num=start_day_num,
+        start_day_key=start_key,
+        end_day_num=end_day_num,
+        end_day_key=end_key,
+    )
+
+    try:
+        text = http.post_rpc(payload)
+    except httpx.HTTPStatusError as exc:
+        # The httpx layer raises on non-200 when ``raise_for_status``
+        # is in play; the SDK's HttpClient currently raises LoseItError
+        # instead, but keep this branch for defence in depth.
+        status = exc.response.status_code
+        if status in _RANGE_RPC_RETRYABLE_STATUSES or 500 <= status < 600:
+            raise TooMuchData(
+                f"range RPC failed with HTTP {status} — bisect into smaller grain"
+            ) from exc
+        raise
+    except LoseItError as exc:
+        # HttpClient maps non-200 + //EX to LoseItError; sniff the message
+        # for oversize / 413 / 429 / 5xx markers.
+        msg = str(exc)
+        if _looks_like_too_much_data(msg):
+            raise TooMuchData(f"range RPC failed (likely oversize/throttled): {msg}") from exc
+        raise
+
+    if _is_oversize_gwt_error(text):
+        raise TooMuchData(f"range RPC returned oversize //EX envelope: {text[:200]}")
+
+    by_day_num = parse_entries_by_day(
+        text,
+        default_hours_from_gmt=http.config.hours_from_gmt,
+        user_name=http.config.user_name,
+    )
+
+    # Convert day_num → date and ensure every day in the inclusive
+    # range is present, even if the server elided it (shouldn't happen,
+    # but a missing day from a bulk fetch should still surface as an
+    # empty list rather than KeyError downstream).
+    result: dict[date, list[FoodLogEntry]] = {}
+    for offset in range((end - start).days + 1):
+        d = start + timedelta(days=offset)
+        result[d] = by_day_num.get(start_day_num + offset, [])
+
+    logger.debug(
+        "daily.get_daily_details_range: {n_days} days, {n_entries} total entries",
+        n_days=len(result),
+        n_entries=sum(len(v) for v in result.values()),
+    )
+    return result
+
+
+def _looks_like_too_much_data(message: str) -> bool:
+    """Match the substrings HttpClient emits for 413 / 429 / 5xx / oversize."""
+    lower = message.lower()
+    if "http 413" in lower or "http 429" in lower:
+        return True
+    # 5xx — any "HTTP 5xx" prefix.
+    m = re.search(r"http 5\d{2}", lower)
+    if m is not None:
+        return True
+    return any(needle in lower for needle in ("oversize", "too large", "size limit"))
