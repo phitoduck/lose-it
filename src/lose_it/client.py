@@ -657,6 +657,145 @@ class LoseIt:
 
         return result
 
+    # ── Backup + restore (spec §3.1 / §3.2) ─────────────────────────────
+
+    def backup(
+        self,
+        root: Path = Path("~/.local/share/loseit/backup").expanduser(),
+        *,
+        grain: str = "month",
+        start: date | None = None,
+        end: date | None = None,
+        probe_from: date = date(2015, 1, 1),
+        resume: bool = True,
+        refresh_foods: bool = False,
+        sleep_seconds: float = 1.0,
+        dry_run: bool = False,
+        today: date | None = None,
+        progress: Callable[[Any], None] | None = None,
+    ) -> Any:
+        """End-to-end backup orchestrator (spec §3.1 / §6 / §5).
+
+        Thin façade over :func:`lose_it.backup._orchestrator.backup`;
+        every keyword maps 1-1 to the same-named argument on the
+        underlying function. The CLI (``loseit backup``) wraps this
+        method; see the orchestrator docstring for the full algorithm.
+
+        Args:
+            root: Backup root directory. Default
+                ``~/.local/share/loseit/backup``.
+            grain: ``"day"``, ``"week"``, or ``"month"``. Default
+                ``"month"``.
+            start: First date inclusive. ``None`` → run the discovery
+                probe (spec §5).
+            end: Last date inclusive. ``None`` → today.
+            probe_from: Earliest date discovery considers. Default
+                ``2015-01-01``.
+            resume: Skip grain files that exist + parse + match the
+                running account. Default True.
+            refresh_foods: Reserved; passed through to the
+                describe-cadence helper.
+            sleep_seconds: Throttle between RPCs.
+            dry_run: Run discovery + bookkeeping but issue no fetch /
+                describe RPCs.
+            today: Test injection point for "now".
+            progress: Optional ``(GrainReport) -> None`` callback.
+
+        Returns:
+            :class:`~lose_it.backup.BackupSummary` rolling up per-grain
+            counts.
+        """
+        from lose_it.backup._orchestrator import backup as _backup
+
+        return _backup(
+            self,
+            root=root,
+            grain=grain,  # type: ignore[arg-type]
+            start=start,
+            end=end,
+            probe_from=probe_from,
+            resume=resume,
+            refresh_foods=refresh_foods,
+            sleep_seconds=sleep_seconds,
+            dry_run=dry_run,
+            today=today,
+            progress=progress,
+        )
+
+    def restore_backup(
+        self,
+        root: Path = Path("~/.local/share/loseit/backup").expanduser(),
+        *,
+        grain: str = "month",
+        start: date | None = None,
+        end: date | None = None,
+        strict_account: bool = True,
+        skip_restore_on_nonempty_grain_time_ranges: bool = False,
+        sleep_seconds: float = 1.0,
+        dry_run: bool = False,
+        progress: Callable[[Any], None] | None = None,
+    ) -> Any:
+        """Restore a backup back onto the server (spec §3.2 / §7).
+
+        Two modes (spec §7):
+
+        * **Safe mode (default)** — entry-level upsert via
+          ``(food_id, created_at ± 10m)``. Ships in T7. Until then this
+          method raises :class:`NotImplementedError` with a message
+          pointing the caller at the cheap-mode flag.
+        * **Cheap mode** —
+          ``skip_restore_on_nonempty_grain_time_ranges=True`` (spec
+          §7.2). Walks every day in each grain; on the first non-empty
+          day skips the whole grain; otherwise logs every backup
+          entry. No ``created_at`` dependency.
+
+        Args:
+            root: Backup root directory.
+            grain: ``"day"``, ``"week"``, or ``"month"``. Used to
+                discover grain files under ``root`` (file layout is
+                independent of grain at write time — see spec §3.2).
+            start: Earliest grain to restore. ``None`` → archive's
+                earliest.
+            end: Latest grain to restore. ``None`` → archive's latest.
+            strict_account: Refuse to restore from a grain file
+                pinned to a different account. Default True (spec §8).
+            skip_restore_on_nonempty_grain_time_ranges: When True,
+                use cheap mode. Default False (safe mode — not yet
+                implemented).
+            sleep_seconds: Throttle between RPCs.
+            dry_run: Read pass but no ``log_food`` RPCs.
+            progress: Optional ``(CheapRestoreGrainReport) -> None``
+                callback.
+
+        Returns:
+            :class:`~lose_it.backup.RestoreSummary`.
+
+        Raises:
+            NotImplementedError: Safe mode requested but not yet
+                shipped — pass
+                ``skip_restore_on_nonempty_grain_time_ranges=True``.
+        """
+        if not skip_restore_on_nonempty_grain_time_ranges:
+            raise NotImplementedError(
+                "Safe-mode restore (entry-level upsert by "
+                "food_id + created_at ± 10m) is not yet implemented; "
+                "pass skip_restore_on_nonempty_grain_time_ranges=True "
+                "to use cheap mode (spec §7.2)."
+            )
+        from lose_it.backup._orchestrator import restore_backup_cheap as _restore
+
+        return _restore(
+            self,
+            root=root,
+            grain=grain,  # type: ignore[arg-type]
+            start=start,
+            end=end,
+            strict_account=strict_account,
+            sleep_seconds=sleep_seconds,
+            dry_run=dry_run,
+            progress=progress,
+        )
+
     # ── Bootstrap (login) ───────────────────────────────────────────────
 
     @classmethod
