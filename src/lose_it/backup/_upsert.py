@@ -27,10 +27,10 @@ network, no clock, no filesystem.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date as _date
 from datetime import datetime, timedelta
-from typing import Iterable
 
 from lose_it.backup._fs import GrainEntry
 from lose_it.core._ids import pk_to_hex
