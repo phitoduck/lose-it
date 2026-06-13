@@ -50,6 +50,41 @@ def build_payload(config: Config) -> str:
 _FALLBACK_DAY_KEY = "ZZZZZZZ"
 
 
+def get_init_day_keys(http: HttpClient) -> dict[int, str]:
+    """Return every ``{day_num: day_key}`` pair encoded in the init response.
+
+    Issues a single ``getInitializationData`` RPC and walks the token
+    stream for adjacent ``(day_num, key_string)`` or
+    ``(hours_from_gmt, day_num, key_string)`` triples. That covers both
+    the "recent window" pairs the diary uses and any historical pairs
+    the server happens to include.
+
+    Used by :class:`lose_it.LoseIt`'s ``diary_range`` to bootstrap the
+    day-key cache with a single RPC instead of one per endpoint.
+    """
+    logger.info("get_init_day_keys: fetching full window")
+    text = http.post_rpc(build_payload(http.config))
+    tokens, _ = parse_response(text)
+    keys: dict[int, str] = {}
+    hours_from_gmt = http.config.hours_from_gmt
+    for i in range(len(tokens) - 1):
+        a, b = tokens[i], tokens[i + 1]
+        if isinstance(a, int) and a >= 5000 and isinstance(b, str) and 4 <= len(b) <= 16:
+            keys.setdefault(a, b)
+        # Also match (hours_from_gmt, day_num, key) triples.
+        if (
+            i + 2 < len(tokens)
+            and a == hours_from_gmt
+            and isinstance(b, int)
+            and b >= 5000
+            and isinstance(tokens[i + 2], str)
+            and 4 <= len(tokens[i + 2]) <= 16
+        ):
+            keys.setdefault(b, tokens[i + 2])
+    logger.debug("get_init_day_keys: parsed {n} day_key pairs", n=len(keys))
+    return keys
+
+
 def get_daydate_key(http: HttpClient, target_day_num: int) -> str:
     """Return the DayDate key associated with ``target_day_num``.
 

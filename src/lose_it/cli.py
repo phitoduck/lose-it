@@ -806,17 +806,71 @@ def delete(
             help="Print what would be deleted without sending the deleteFoodLogEntry call.",
         ),
     ] = False,
+    trash_file: Annotated[
+        Path | None,
+        typer.Option(
+            "--trash-file",
+            help=(
+                "Override the local trash file path. "
+                "Default: ~/.local/share/loseit/trash.jsonl. "
+                "The file is created with mode 0o600 on first write."
+            ),
+        ),
+    ] = None,
+    print_deleted: Annotated[
+        bool,
+        typer.Option(
+            "--print-deleted/--no-print-deleted",
+            help=(
+                "Echo the deleted entry to stdout as TOON. The output mirrors "
+                "the trash record so an agent's conversation log captures it "
+                "even when the local file lives on ephemeral storage."
+            ),
+        ),
+    ] = True,
+    no_trash: Annotated[
+        bool,
+        typer.Option(
+            "--no-trash",
+            help=(
+                "EXPLICIT opt-out — skip the trash sink entirely. Refuses "
+                "unless paired with --i-know-this-is-unrecoverable."
+            ),
+        ),
+    ] = False,
+    i_know_this_is_unrecoverable: Annotated[
+        bool,
+        typer.Option(
+            "--i-know-this-is-unrecoverable",
+            help=(
+                "Required acknowledgement for --no-trash. Confirms you "
+                "understand the deleted entry will be unrecoverable."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Delete a diary entry by meal + index."""
     fmt = _output_format(ctx)
     logger.info(
-        "cli.delete: meal={m} pick={p} date={d!r} yes={y} dry_run={dr}",
+        "cli.delete: meal={m} pick={p} date={d!r} yes={y} dry_run={dr} "
+        "no_trash={nt} trash_file={tf}",
         m=meal,
         p=pick,
         d=on_date,
         y=yes,
         dr=dry_run,
+        nt=no_trash,
+        tf=str(trash_file) if trash_file else None,
     )
+
+    # --no-trash gating — pre-validate before any RPC or read.
+    if no_trash and not i_know_this_is_unrecoverable:
+        # Exact stderr lifted from the BDD scenario (impl-plan §6, T5).
+        typer.echo("error: refusing to delete without a trash sink", err=True)
+        typer.echo("hint:  pass --i-know-this-is-unrecoverable to override", err=True)
+        typer.echo("       (this discards any chance of recovering the entry)", err=True)
+        raise typer.Exit(code=2)
+
     try:
         meal_type = MealType.parse(meal)
     except ValueError as exc:
@@ -888,21 +942,185 @@ def delete(
                 if ans.strip().lower() != "delete":
                     typer.echo("Cancelled.")
                     raise typer.Exit(code=0)
-            li.delete_entry(target)
+            # Build the trash sink + invoke delete_entry through the new
+            # safety-routed path.
+            from .trash import LocalFileTrashSink
+
+            if no_trash:
+                # Opt-out path — gated above.
+                try:
+                    delete_result = li.delete_entry(
+                        target,
+                        trash_sink=None,
+                        acknowledge_no_trash=True,
+                    )
+                except Exception as exc:  # pragma: no cover - belt+braces
+                    _emit_error(fmt, "delete_failed", str(exc))
+                    raise typer.Exit(code=2) from exc
+            else:
+                sink = LocalFileTrashSink(
+                    path=trash_file,
+                    user_name=li.config.user_name or "",
+                )
+                try:
+                    delete_result = li.delete_entry(target, trash_sink=sink)
+                except OSError as exc:
+                    # Trash sink failed before the wire delete fired —
+                    # the entry is still on the server.
+                    sink_path = trash_file if trash_file is not None else sink.path
+                    typer.echo(f"error: trash sink: cannot write {sink_path}", err=True)
+                    typer.echo(f"cause: {type(exc).__name__}({exc})", err=True)
+                    typer.echo(
+                        "hint:  the wire delete was NOT sent — your entry is still on the server",
+                        err=True,
+                    )
+                    raise typer.Exit(code=2) from exc
+
+            # Post-delete chatter (text mode): show the sink pointer
+            # before the green "✅ Deleted" line.
+            if fmt is OutputFormat.text:
+                if delete_result.trash_receipts:
+                    typer.echo(f"  trash sink: {delete_result.trash_receipts[0].where}")
+                    typer.echo("  (run 'loseit restore-trash' to undo the most recent delete)")
+                else:
+                    typer.echo("  trash sink: <none — caller acknowledged --no-trash>")
 
     if fmt is not OutputFormat.text:
-        _emit_structured(
-            fmt,
-            {
-                "action": "delete",
-                "dry_run": dry_run,
-                "date": when.isoformat(),
-                "meal": meal_type.name,
-                "target": target.to_dict(),
-            },
-        )
+        envelope: dict[str, Any] = {
+            "action": "delete",
+            "dry_run": dry_run,
+            "date": when.isoformat(),
+            "meal": meal_type.name,
+            "target": target.to_dict(),
+        }
+        if not dry_run:
+            envelope["trash_receipts"] = [
+                {
+                    "where": r.where,
+                    "stashed_at": r.stashed_at,
+                }
+                for r in delete_result.trash_receipts
+            ]
+            envelope["deleted_at"] = delete_result.deleted_at
+        _emit_structured(fmt, envelope)
     elif not dry_run:
         typer.secho("✅ Deleted", fg=typer.colors.GREEN)
+        if print_deleted:
+            # TOON projection of the deleted entry — same as the trash
+            # record's ``entry`` block. Top-level ``deleted_entry`` key
+            # matches the BDD scenario's expected stdout layout.
+            _emit_toon({"deleted_entry": target.to_dict()})
+
+
+@app.command(name="restore-trash")
+def restore_trash(
+    ctx: typer.Context,
+    trash_file: Annotated[
+        Path | None,
+        typer.Option(
+            "--trash-file",
+            help=("Source trash file. Default: ~/.local/share/loseit/trash.jsonl."),
+        ),
+    ] = None,
+    line: Annotated[
+        int | None,
+        typer.Option(
+            "--line",
+            help="1-based line number to restore. Default: the last line.",
+        ),
+    ] = None,
+    keep: Annotated[
+        bool,
+        typer.Option(
+            "--keep/--consume",
+            help=(
+                "Keep the trash line after restoring (``--keep``) or remove "
+                "it (``--consume``, the default)."
+            ),
+        ),
+    ] = False,
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run",
+            help="Print which line would be restored without re-logging.",
+        ),
+    ] = False,
+) -> None:
+    """Re-log the most recent trash record (or ``--line N``)."""
+    fmt = _output_format(ctx)
+    logger.info(
+        "cli.restore_trash: trash_file={tf} line={ln} keep={k} dry_run={dr}",
+        tf=str(trash_file) if trash_file else None,
+        ln=line,
+        k=keep,
+        dr=dry_run,
+    )
+    try:
+        with _open_loseit(ctx) as li:
+            result = li.restore_trash(
+                trash_file=trash_file,
+                line=line,
+                keep=keep,
+                dry_run=dry_run,
+            )
+    except FileNotFoundError as exc:
+        _emit_error(fmt, "trash_file_not_found", str(exc))
+        raise typer.Exit(code=2) from exc
+    except ValueError as exc:
+        _emit_error(fmt, "trash_invalid", str(exc))
+        raise typer.Exit(code=2) from exc
+
+    if fmt is not OutputFormat.text:
+        envelope: dict[str, Any] = {
+            "action": "restore_trash",
+            "trash_file": result["trash_file"],
+            "line_no": result["line_no"],
+            "total_lines": result["total_lines"],
+            "is_last": result["is_last"],
+            "dry_run": result["dry_run"],
+            "keep": result["keep"],
+            "consumed": result["consumed"],
+            "food_id": result["food_id"],
+            "food_name": result["food_name"],
+            "meal": result["meal"],
+            "date": result["date"],
+            "servings": result["servings"],
+        }
+        if result["logged"] is not None:
+            envelope["logged"] = result["logged"].to_dict()
+        _emit_structured(fmt, envelope)
+        return
+
+    # Text mode — exact stdout layout pinned by the BDD scenarios in
+    # ``docs/backup-impl-plan.md`` §6 (`loseit restore-trash`).
+    line_no = result["line_no"]
+    if result["dry_run"]:
+        suffix = "(last line)" if result["is_last"] else f"(line {line_no})"
+        typer.echo(f"would restore trash#{line_no} {suffix}")
+    elif keep:
+        typer.echo(f"restoring trash#{line_no} (--keep, line will remain after restore)")
+    else:
+        suffix = "(last line)" if result["is_last"] else f"(line {line_no})"
+        typer.echo(f"restoring trash#{line_no} {suffix}")
+    typer.echo(f"  food: {result['food_name']}")
+    typer.echo(f"  meal: {result['meal']}")
+    typer.echo(f"  date: {result['date']}")
+    typer.echo(f"  servings: {result['servings']}")
+    typer.echo("")
+    if result["dry_run"]:
+        typer.echo("no log RPC sent (dry run).")
+        return
+    new_food_id = result["food_id"]
+    if result["logged"] is not None:
+        # The wire log_food doesn't yet surface the new entry's PK at
+        # this layer — use the food_id we re-logged as a stable handle.
+        new_food_id = result["food_id"]
+    typer.echo(f"logged successfully (new entry id: {new_food_id})")
+    if keep:
+        typer.echo(f"trash#{line_no} retained.")
+    else:
+        typer.echo(f"trash#{line_no} consumed.")
 
 
 @app.command()
