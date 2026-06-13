@@ -119,7 +119,7 @@ def test_cli_delete_no_trash_with_ack_deletes_without_trash(
     sent = [req.content.decode() for req in httpx_mock.get_requests()]
     assert any("deleteFoodLogEntry" in b for b in sent)
     # No trash file was created.
-    default_trash = env / ".local" / "share" / "loseit" / "trash.jsonl"
+    default_trash = env / ".config" / "loseit" / "trash.jsonl"
     assert not default_trash.exists()
 
 
@@ -127,7 +127,7 @@ def test_cli_delete_no_trash_with_ack_deletes_without_trash(
 
 
 def test_cli_delete_default_writes_trash_jsonl(env: Path, runner: CliRunner, httpx_mock) -> None:
-    """Default delete writes one JSONL line to ~/.local/share/loseit/trash.jsonl."""
+    """Default delete writes one JSONL line to ~/.config/loseit/trash.jsonl."""
     httpx_mock.add_response(
         url=SERVICE_URL,
         text=(FIXTURES / "get_initialization_data.txt").read_text(),
@@ -145,7 +145,7 @@ def test_cli_delete_default_writes_trash_jsonl(env: Path, runner: CliRunner, htt
         ["delete", "--meal", "snacks", "--pick", "1", "--yes"],
     )
     assert result.exit_code == 0, result.output
-    trash = env / ".local" / "share" / "loseit" / "trash.jsonl"
+    trash = env / ".config" / "loseit" / "trash.jsonl"
     assert trash.exists()
     assert trash.read_text().count("\n") == 1
     obj = json.loads(trash.read_text().strip())
@@ -191,7 +191,7 @@ def test_cli_delete_custom_trash_file_writes_there(
     assert custom.exists()
     assert custom.read_text().count("\n") == 1
     # Default path was NOT used.
-    default_trash = env / ".local" / "share" / "loseit" / "trash.jsonl"
+    default_trash = env / ".config" / "loseit" / "trash.jsonl"
     assert not default_trash.exists()
 
 
@@ -278,7 +278,7 @@ def test_cli_restore_trash_dry_run_does_not_consume_file(
     env: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """--dry-run prints the plan; the file is unchanged."""
-    trash = env / ".local" / "share" / "loseit" / "trash.jsonl"
+    trash = env / ".config" / "loseit" / "trash.jsonl"
     _seed_trash(trash, food_id="a" * 32, food_name="Stub", servings=0.1, date="2016-02-15")
 
     # Belt-and-braces: forbid any log_food call.
@@ -301,7 +301,7 @@ def test_cli_restore_trash_consumes_by_default(
     env: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """1 line in trash.jsonl -> 0 lines after `loseit restore-trash`."""
-    trash = env / ".local" / "share" / "loseit" / "trash.jsonl"
+    trash = env / ".config" / "loseit" / "trash.jsonl"
     _seed_trash(trash, food_id="a" * 32, food_name="Wrap", servings=0.1, date="2016-02-15")
 
     from lose_it.client import LoseIt as _LoseIt
@@ -340,7 +340,7 @@ def test_cli_restore_trash_keep_preserves_file(
     env: Path, runner: CliRunner, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """3 lines + --keep --line 2 -> 3 lines, line 2 unchanged."""
-    trash = env / ".local" / "share" / "loseit" / "trash.jsonl"
+    trash = env / ".config" / "loseit" / "trash.jsonl"
     _seed_trash_lines(trash, 3)
     before = trash.read_text()
     assert before.count("\n") == 3

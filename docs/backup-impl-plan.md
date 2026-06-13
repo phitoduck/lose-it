@@ -371,7 +371,7 @@ class TrashReceipt: ...
 @runtime_checkable
 class TrashSink(Protocol):
     def stash(self, entry: FoodLogEntry) -> TrashReceipt: ...
-class LocalFileTrashSink: ...    # ~/.local/share/loseit/trash.jsonl
+class LocalFileTrashSink: ...    # ~/.config/loseit/trash.jsonl
 class ConsoleTrashSink: ...      # stdout/stderr, TOON or JSON
 class ChainedTrashSink: ...
 class DeleteSafetyError(Exception): ...
@@ -520,7 +520,7 @@ def test_real_delete_round_trip(safe_window, safe_marker):
 ```
 
 For backup/restore live tests, the same marker plus a **transient
-backup root under `tmp_path`**, never the user's `~/.local/share/loseit/`.
+backup root under `tmp_path`**, never the user's `~/.config/loseit/`.
 
 ## 6. BDD scenarios (Verification step)
 
@@ -538,7 +538,7 @@ and error message. Anything that genuinely lives below the CLI surface
 (e.g., the pure-function upsert match key) is exercised as a
 unit-level invariant in §4's table, not as a BDD here.
 
-> Convention used below: `~/.local/share/loseit/backup` is shortened to
+> Convention used below: `~/.config/loseit/backup` is shortened to
 > `$BACKUP_ROOT`, and `$SAFE_MARKER` is a random hex tag stamped into
 > `food_name` so live tests can identify their own writes (§5).
 
@@ -1355,7 +1355,7 @@ Estimated wall time at `--sleep-seconds 1.0`: ~30s.
 | A bug in restore re-logs entries against a date outside the safe window | `safe_window` fixture refuses to yield outside Feb 2016; restore methods accept an explicit `start`/`end` and the live test never passes anything else. |
 | Trash file lands on ephemeral storage (container) and is lost | `--print-deleted` defaults on; spec §9.6. The agent transcript becomes the recovery path.   |
 | `created_at` semantics drift between SDK extract and server   | T4 ships with a conformance fixture; the live "single Feb-2016 entry" test catches schema drift. |
-| Backup root accidentally points at user's real `~/.local/share/loseit/` during live tests | All live tests pass `root=tmp_path`. CI sets `XDG_DATA_HOME=$TMPDIR/xdg-test`.               |
+| Backup root accidentally points at user's real `~/.config/loseit/` during live tests | All live tests pass `root=tmp_path`. CI sets `XDG_DATA_HOME=$TMPDIR/xdg-test`.               |
 | Discovery probe hammers Lose It! (132 RPCs worst case)        | Default `--probe-from=2015-01-01`; `--sleep-seconds 1.0`; cached in `index.toon` after first success. |
 | Recursive grain split has infinite recursion bug              | T2 unit test "day-grain failure aborts" pins the recursion floor.                            |
 

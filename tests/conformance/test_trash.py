@@ -263,7 +263,7 @@ def test_delete_entry_default_sink_writes_local_file(
     result = li.delete_entry(_make_food_log_entry())
     assert calls == ["delete"]
     assert len(result.trash_receipts) == 1
-    trash_path = tmp_path / ".local" / "share" / "loseit" / "trash.jsonl"
+    trash_path = tmp_path / ".config" / "loseit" / "trash.jsonl"
     assert trash_path.exists()
     assert trash_path.read_text().count("\n") == 1
 

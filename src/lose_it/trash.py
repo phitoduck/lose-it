@@ -16,7 +16,7 @@ Public surface (per ``docs/backup-spec.md`` §9):
 - :class:`DeleteSafetyError` — raised when the caller opts out of a sink
   without acknowledging the loss of recoverability.
 - :class:`LocalFileTrashSink` — default; appends JSONL to
-  ``~/.local/share/loseit/trash.jsonl`` with ``chmod 600``.
+  ``~/.config/loseit/trash.jsonl`` with ``chmod 600``.
 - :class:`ConsoleTrashSink`   — echoes TOON/JSON to stdout or stderr.
 - :class:`ChainedTrashSink`   — fan-out to N sinks; all must succeed.
 
@@ -46,7 +46,7 @@ def default_trash_file() -> Path:
     ``HOME`` via ``monkeypatch.setenv`` without having to patch a module-
     level constant.
     """
-    return Path("~/.local/share/loseit/trash.jsonl").expanduser()
+    return Path("~/.config/loseit/trash.jsonl").expanduser()
 
 
 # Module-level constant kept for callers that import the name; the

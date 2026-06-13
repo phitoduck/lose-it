@@ -478,7 +478,7 @@ class LoseIt:
 
                 - **Default (sentinel):** a fresh
                   :class:`LocalFileTrashSink` writing to
-                  ``~/.local/share/loseit/trash.jsonl`` (mode ``0o600``).
+                  ``~/.config/loseit/trash.jsonl`` (mode ``0o600``).
                 - ``None``: explicit opt-out. Requires
                   ``acknowledge_no_trash=True`` or :class:`DeleteSafetyError`
                   is raised.
@@ -541,7 +541,7 @@ class LoseIt:
         """Re-log a record from the trash file.
 
         Reads one line from ``trash_file`` (defaults to
-        ``~/.local/share/loseit/trash.jsonl``), re-issues
+        ``~/.config/loseit/trash.jsonl``), re-issues
         :meth:`log_food` with the minimum payload set
         (``food_id``, ``meal``, ``servings``, ``when``), and either
         consumes the line (default) or keeps it.
@@ -661,7 +661,7 @@ class LoseIt:
 
     def backup(
         self,
-        root: Path = Path("~/.local/share/loseit/backup").expanduser(),
+        root: Path = Path("~/.config/loseit/backup").expanduser(),
         *,
         grain: str = "month",
         start: date | None = None,
@@ -683,7 +683,7 @@ class LoseIt:
 
         Args:
             root: Backup root directory. Default
-                ``~/.local/share/loseit/backup``.
+                ``~/.config/loseit/backup``.
             grain: ``"day"``, ``"week"``, or ``"month"``. Default
                 ``"month"``.
             start: First date inclusive. ``None`` → run the discovery
@@ -724,7 +724,7 @@ class LoseIt:
 
     def restore_backup(
         self,
-        root: Path = Path("~/.local/share/loseit/backup").expanduser(),
+        root: Path = Path("~/.config/loseit/backup").expanduser(),
         *,
         grain: str = "month",
         start: date | None = None,
