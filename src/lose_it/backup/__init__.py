@@ -28,15 +28,6 @@ from ._fetch import (
     to_grain_entry,
     update_food_cache,
 )
-from ._orchestrator import (
-    BackupSummary,
-    CheapRestoreGrainReport,
-    GrainKind,
-    GrainReport,
-    RestoreSummary,
-    backup,
-    restore_backup_cheap,
-)
 from ._fs import (
     SCHEMA_VERSION,
     AccountRef,
@@ -55,6 +46,17 @@ from ._fs import (
     write_foods_file,
     write_grain_file,
     write_index_file,
+)
+from ._orchestrator import (
+    BackupSummary,
+    CheapRestoreGrainReport,
+    GrainKind,
+    GrainReport,
+    RestoreSummary,
+    SafeRestoreGrainReport,
+    backup,
+    restore_backup_cheap,
+    restore_backup_safe,
 )
 
 __all__ = [
@@ -75,6 +77,7 @@ __all__ = [
     "GrainReport",
     "IndexDoc",
     "RestoreSummary",
+    "SafeRestoreGrainReport",
     "SchemaVersionMismatch",
     "atomic_write_text",
     "backup",
@@ -85,6 +88,7 @@ __all__ = [
     "read_grain_file",
     "read_index_file",
     "restore_backup_cheap",
+    "restore_backup_safe",
     "same_account",
     "to_grain_entry",
     "update_food_cache",

@@ -144,13 +144,55 @@ class CheapRestoreGrainReport:
 
 @dataclass(frozen=True)
 class RestoreSummary:
-    """End-of-run roll-up returned by :func:`restore_backup_cheap`."""
+    """End-of-run roll-up returned by :func:`restore_backup_cheap`
+    and :func:`restore_backup_safe`.
+
+    Cheap-mode populates the ``grains_*`` + ``entries_logged`` fields. Safe-
+    mode additionally populates ``days_scanned``, ``days_fully_present``,
+    ``days_upserted``, ``entries_already_present`` so the spec §3.2 safe-
+    mode summary block has the data it renders.
+    """
 
     grains_scanned: int
     grains_skipped: int
     grains_restored: int
     entries_logged: int
     root: Path
+    # Safe-mode counters (zeroed for cheap-mode runs).
+    days_scanned: int = 0
+    days_fully_present: int = 0
+    days_upserted: int = 0
+    entries_already_present: int = 0
+
+
+@dataclass(frozen=True)
+class SafeRestoreGrainReport:
+    """Per-grain decision the safe-mode restore made.
+
+    Mirrors the per-grain row the CLI renders in spec §3.2's safe-mode
+    output: ``<path>  N days with entries  present  X   upsert  Y   empty  Z``.
+
+    * ``days_with_entries`` — number of days in the archive that have at
+      least one entry (the rows the safe-mode loop will scan).
+    * ``days_present`` — days where every archive entry matched a server
+      entry (no log calls).
+    * ``days_upserted`` — days where at least one archive entry was
+      missing on the server and got logged.
+    * ``days_empty`` — days the archive has no entries for (rare; only
+      surfaces when the file's bounds include such a day).
+    * ``entries_present`` — sum of archive entries that matched a server
+      counterpart across the grain.
+    * ``entries_logged`` — sum of archive entries that were re-logged
+      (zero on dry-runs).
+    """
+
+    grain_path: Path
+    days_with_entries: int
+    days_present: int
+    days_upserted: int
+    days_empty: int
+    entries_present: int
+    entries_logged: int
 
 
 # ── Structural protocols ────────────────────────────────────────────────────
@@ -904,12 +946,194 @@ def restore_backup_cheap(
     )
 
 
+# ── Safe-mode restore (spec §7.1) ───────────────────────────────────────────
+
+
+def restore_backup_safe(
+    li: _OrchestratorClient,
+    *,
+    root: Path,
+    grain: GrainKind = "month",
+    start: date | None = None,
+    end: date | None = None,
+    strict_account: bool = True,
+    upsert_window: timedelta = timedelta(minutes=10),
+    sleep_seconds: float = 1.0,
+    dry_run: bool = False,
+    progress: Callable[[SafeRestoreGrainReport], None] | None = None,
+) -> RestoreSummary:
+    """Safe-mode restore (spec §7.1): per-day entry-level upsert.
+
+    Composes T7's :func:`lose_it.backup._upsert.plan_day` with this
+    track's orchestration: for every day in the archive that has at
+    least one entry,
+
+    1. Fetch the server's diary for that day via :meth:`li.diary`.
+    2. Pass ``(archive_entries_for_day, server_entries)`` to
+       :func:`plan_day` with the configured ``upsert_window``.
+    3. For every :class:`GrainEntry` in the plan's ``missing`` list,
+       issue :meth:`li.log_food` with the spec §4.4 minimum payload
+       (``food_id, meal_ordinal, servings, when=date``).
+
+    Restore is purely additive (spec §7.4) — server-only entries are
+    left alone. The ``dry_run`` switch keeps the read pass intact but
+    suppresses every ``log_food`` call so users can preview a restore.
+
+    Account guard: ``strict_account=True`` (the default) refuses to
+    restore from a grain file whose ``account.user_id`` doesn't match
+    the running client.
+
+    Args:
+        li: A structural :class:`lose_it.LoseIt` (or :class:`_OrchestratorClient`).
+        root: Backup root directory containing the grain-file tree.
+        grain: ``"day" | "week" | "month"`` — what file layout to walk.
+        start: Earliest grain to restore (inclusive). ``None`` → no clip.
+        end: Latest grain to restore (inclusive). ``None`` → no clip.
+        strict_account: Refuse to restore from grain files pinned to a
+            different account. Default True (spec §8).
+        upsert_window: Match-key fuzz window for ``modified_at``.
+            Default ±10 minutes (spec §7.1).
+        sleep_seconds: Throttle between RPCs. ``<= 0`` skips throttling.
+        dry_run: Read server diaries but issue no ``log_food`` RPCs.
+        progress: Optional callback fired with one
+            :class:`SafeRestoreGrainReport` per grain file processed.
+
+    Returns:
+        :class:`RestoreSummary` rolling up per-grain + per-day counters.
+    """
+    # Lazy import keeps the (T7) upsert module out of the cheap-mode
+    # call path — and avoids any chance of a circular import.
+    from lose_it.backup._upsert import plan_day
+
+    account = _account_from_client(li)
+    grain_files = _walk_grain_files(root, grain)
+    logger.info(
+        "restore-safe: root={r} grain={g} files={n} dry_run={d}",
+        r=root,
+        g=grain,
+        n=len(grain_files),
+        d=dry_run,
+    )
+
+    grains_restored = 0
+    entries_logged = 0
+    days_scanned = 0
+    days_fully_present = 0
+    days_upserted = 0
+    entries_already_present = 0
+    first_rpc_emitted = False
+
+    for path in grain_files:
+        doc = read_grain_file(path)
+
+        # Strict-account guard — refuses to restore a file pinned to a
+        # different account when the flag is on.
+        if strict_account and not same_account(doc.account, account):
+            raise ValueError(
+                f"refusing to restore {path}: pinned to account "
+                f"{doc.account.user_id!r} but running as {account.user_id!r}; "
+                f"pass strict_account=False to override (spec §8)"
+            )
+
+        # Window clip — start/end let the caller restrict the walk.
+        gb = doc.grain
+        if start is not None and gb.end < start:
+            continue
+        if end is not None and gb.start > end:
+            continue
+
+        # Bucket the archive entries by date — safe mode operates per
+        # day-with-entries (spec §7.1's flowchart loops over D).
+        archive_by_day: dict[date, list[Any]] = {}
+        for entry in doc.entries:
+            archive_by_day.setdefault(entry.date, []).append(entry)
+        days_with_entries_for_grain = sum(1 for v in archive_by_day.values() if v)
+
+        days_present_for_grain = 0
+        days_upserted_for_grain = 0
+        days_empty_for_grain = 0
+        entries_present_for_grain = 0
+        entries_logged_for_grain = 0
+
+        for d in sorted(archive_by_day.keys()):
+            day_archive = archive_by_day[d]
+            if not day_archive:
+                # Defensive — bucket build skips empty values, but a future
+                # caller could pre-populate the dict with empty lists.
+                days_empty_for_grain += 1
+                continue
+
+            # 1. GET server diary for D (one RPC).
+            if first_rpc_emitted and sleep_seconds > 0:
+                time.sleep(sleep_seconds)
+            server_entries = list(li.diary(d))
+            days_scanned += 1
+            first_rpc_emitted = True
+
+            # 2. Compute the per-day plan.
+            day_plan = plan_day(day_archive, server_entries, window=upsert_window)
+            n_matched = len(day_plan.matched)
+            n_missing = len(day_plan.missing)
+            entries_present_for_grain += n_matched
+            entries_already_present += n_matched
+
+            # 3. For each missing entry, fire a log_food (unless dry-run).
+            if n_missing == 0:
+                # Every archive entry on this day already on the server.
+                days_present_for_grain += 1
+                continue
+
+            days_upserted_for_grain += 1
+            for gentry in day_plan.missing:
+                if sleep_seconds > 0:
+                    time.sleep(sleep_seconds)
+                if not dry_run:
+                    li.log_food(
+                        gentry.food_id,
+                        meal=int(gentry.meal_ordinal),
+                        servings=float(gentry.servings),
+                        when=gentry.date,
+                    )
+                    entries_logged_for_grain += 1
+                    entries_logged += 1
+                # else: dry-run — count would-be logs only via the plan.
+
+        days_fully_present += days_present_for_grain
+        days_upserted += days_upserted_for_grain
+        grains_restored += 1
+        report = SafeRestoreGrainReport(
+            grain_path=path,
+            days_with_entries=days_with_entries_for_grain,
+            days_present=days_present_for_grain,
+            days_upserted=days_upserted_for_grain,
+            days_empty=days_empty_for_grain,
+            entries_present=entries_present_for_grain,
+            entries_logged=entries_logged_for_grain,
+        )
+        if progress is not None:
+            progress(report)
+
+    return RestoreSummary(
+        grains_scanned=len(grain_files),
+        grains_skipped=0,
+        grains_restored=grains_restored,
+        entries_logged=entries_logged,
+        root=root,
+        days_scanned=days_scanned,
+        days_fully_present=days_fully_present,
+        days_upserted=days_upserted,
+        entries_already_present=entries_already_present,
+    )
+
+
 __all__ = [
     "BackupSummary",
     "CheapRestoreGrainReport",
     "GrainKind",
     "GrainReport",
     "RestoreSummary",
+    "SafeRestoreGrainReport",
     "backup",
     "restore_backup_cheap",
+    "restore_backup_safe",
 ]
