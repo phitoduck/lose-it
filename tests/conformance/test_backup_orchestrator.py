@@ -637,22 +637,23 @@ def test_cheap_restore_dry_run_does_not_log(tmp_path):
     assert summary.entries_logged == 0
 
 
-def test_safe_mode_raises_not_implemented():
-    """The ``LoseIt.restore_backup`` default raises until T7 lands.
+def test_safe_mode_default_dispatches_to_restore_backup_safe(tmp_path):
+    """``LoseIt.restore_backup`` defaults to the safe-mode upsert path.
 
-    This contract makes the migration boundary explicit: callers who
-    forget the cheap-mode flag get an error pointing at the flag they
-    can pass, not a silent fallback.
+    Before T8 the default raised ``NotImplementedError``; this test
+    pins the post-T8 contract that the default routes through
+    :func:`restore_backup_safe` (which is itself unit-tested in
+    :mod:`test_backup_restore_safe`).
     """
-    # The method is on :class:`LoseIt`. We don't construct one (that
-    # would require a config/token); we call it through ``__func__`` on
-    # a fake-shaped object so the NotImplementedError fires before any
-    # network setup.
     from lose_it import LoseIt
 
+    # Empty archive — the call should walk zero grain files and return a
+    # well-formed summary, not raise.
     fake = FakeLoseIt()
-    with pytest.raises(NotImplementedError, match="skip_restore_on_nonempty_grain_time_ranges"):
-        LoseIt.restore_backup(fake, root=Path("/tmp/whatever"))  # type: ignore[arg-type]
+    summary = LoseIt.restore_backup(fake, root=tmp_path)  # type: ignore[arg-type]
+    assert summary.grains_scanned == 0
+    assert summary.grains_restored == 0
+    assert summary.entries_logged == 0
 
 
 # ── Helpers used by the discovery test ──────────────────────────────────────

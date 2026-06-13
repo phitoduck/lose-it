@@ -160,6 +160,18 @@ class FoodLogEntry:
         return None
 
     @property
+    def food_id(self) -> str:
+        """Lowercase-hex form of :attr:`food_pk_response` (32 chars), or ``""``.
+
+        Same encoding as :attr:`FoodSearchResult.food_id`, so the value
+        round-trips back through ``hex_to_pk`` / ``LoseIt.get_food`` /
+        ``log_food(food_id=...)``. The entry PK has no equivalent surface —
+        no LoseIt RPC accepts it as input on its own — so it is intentionally
+        kept internal to the SDK rather than exposed alongside ``food_id``.
+        """
+        return pk_to_hex(self.food_pk_response) if len(self.food_pk_response) == 16 else ""
+
+    @property
     def meal_name(self) -> str:
         """Human-readable meal name (``"lunch"``, etc.) for :attr:`meal_ordinal`.
 
@@ -210,8 +222,7 @@ class FoodLogEntry:
             "calories": self.calories,
             "nutrients": raw_nutrients,
             "nutrients_by_label": self.nutrients_by_label,
-            "entry_pk": list(self.entry_pk_response),
-            "food_pk": list(self.food_pk_response),
+            "food_id": self.food_id,
             "entry_day_key": self.entry_day_key,
             "context_day_key": self.context_day_key,
             "day_num": self.day_num,

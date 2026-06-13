@@ -137,8 +137,10 @@ def test_diary_json_output(env, runner: CliRunner, httpx_mock) -> None:
     for e in payload["entries"]:
         assert "food_name" in e and "ortilla" in e["food_name"]
         assert e["meal"] in {"breakfast", "lunch", "dinner", "snacks"}
-        assert len(e["entry_pk"]) == 16
-        assert len(e["food_pk"]) == 16
+        assert len(e["food_id"]) == 32
+        assert "entry_id" not in e
+        assert "entry_pk" not in e
+        assert "food_pk" not in e
 
 
 # ── log --dry-run ───────────────────────────────────────────────────────────

@@ -35,7 +35,7 @@ import contextlib
 import json
 import os
 from collections.abc import Callable
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -731,6 +731,7 @@ class LoseIt:
         end: date | None = None,
         strict_account: bool = True,
         skip_restore_on_nonempty_grain_time_ranges: bool = False,
+        upsert_window: timedelta = timedelta(minutes=10),
         sleep_seconds: float = 1.0,
         dry_run: bool = False,
         progress: Callable[[Any], None] | None = None,
@@ -740,14 +741,15 @@ class LoseIt:
         Two modes (spec §7):
 
         * **Safe mode (default)** — entry-level upsert via
-          ``(food_id, created_at ± 10m)``. Ships in T7. Until then this
-          method raises :class:`NotImplementedError` with a message
-          pointing the caller at the cheap-mode flag.
+          ``(food_id, modified_at ± upsert_window)``. Per-day server
+          reads + match against the archive; missing entries are
+          logged via :meth:`log_food`. Never double-logs, never
+          deletes (spec §7.1 / §7.4).
         * **Cheap mode** —
           ``skip_restore_on_nonempty_grain_time_ranges=True`` (spec
           §7.2). Walks every day in each grain; on the first non-empty
           day skips the whole grain; otherwise logs every backup
-          entry. No ``created_at`` dependency.
+          entry. Cheaper on reads, coarser on writes.
 
         Args:
             root: Backup root directory.
@@ -760,37 +762,47 @@ class LoseIt:
             strict_account: Refuse to restore from a grain file
                 pinned to a different account. Default True (spec §8).
             skip_restore_on_nonempty_grain_time_ranges: When True,
-                use cheap mode. Default False (safe mode — not yet
-                implemented).
+                use cheap mode. Default False (safe mode).
+            upsert_window: Fuzz window for the safe-mode match key
+                (``modified_at`` drift tolerance). Default ±10 minutes
+                (spec §7.1). Ignored in cheap mode.
             sleep_seconds: Throttle between RPCs.
             dry_run: Read pass but no ``log_food`` RPCs.
-            progress: Optional ``(CheapRestoreGrainReport) -> None``
-                callback.
+            progress: Optional callback. In cheap mode receives
+                :class:`~lose_it.backup.CheapRestoreGrainReport`; in
+                safe mode receives
+                :class:`~lose_it.backup.SafeRestoreGrainReport`.
 
         Returns:
             :class:`~lose_it.backup.RestoreSummary`.
-
-        Raises:
-            NotImplementedError: Safe mode requested but not yet
-                shipped — pass
-                ``skip_restore_on_nonempty_grain_time_ranges=True``.
         """
-        if not skip_restore_on_nonempty_grain_time_ranges:
-            raise NotImplementedError(
-                "Safe-mode restore (entry-level upsert by "
-                "food_id + created_at ± 10m) is not yet implemented; "
-                "pass skip_restore_on_nonempty_grain_time_ranges=True "
-                "to use cheap mode (spec §7.2)."
-            )
-        from lose_it.backup._orchestrator import restore_backup_cheap as _restore
+        from lose_it.backup._orchestrator import (
+            restore_backup_cheap as _cheap,
+        )
+        from lose_it.backup._orchestrator import (
+            restore_backup_safe as _safe,
+        )
 
-        return _restore(
+        if skip_restore_on_nonempty_grain_time_ranges:
+            return _cheap(
+                self,
+                root=root,
+                grain=grain,  # type: ignore[arg-type]
+                start=start,
+                end=end,
+                strict_account=strict_account,
+                sleep_seconds=sleep_seconds,
+                dry_run=dry_run,
+                progress=progress,
+            )
+        return _safe(
             self,
             root=root,
             grain=grain,  # type: ignore[arg-type]
             start=start,
             end=end,
             strict_account=strict_account,
+            upsert_window=upsert_window,
             sleep_seconds=sleep_seconds,
             dry_run=dry_run,
             progress=progress,
