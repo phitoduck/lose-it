@@ -31,6 +31,12 @@ def env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     token_file = tmp_path / "token"
     token_file.write_text("fake-jwt-token")
     monkeypatch.setenv("LOSEIT_TOKEN", "fake-jwt-token")
+    # Isolate $HOME so the default LocalFileTrashSink path expands inside
+    # tmp_path — keeps `loseit delete` tests from touching the developer's
+    # real ~/.local/share/loseit/trash.jsonl.
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
 
 
 @pytest.fixture

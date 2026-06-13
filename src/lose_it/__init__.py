@@ -30,18 +30,34 @@ from .models import (
     PrimaryServing,
     UnsavedFoodLogEntry,
 )
+from .trash import (
+    ChainedTrashSink,
+    ConsoleTrashSink,
+    DeleteResult,
+    DeleteSafetyError,
+    LocalFileTrashSink,
+    TrashReceipt,
+    TrashSink,
+)
 
 __all__ = [
+    "ChainedTrashSink",
     "Client",
+    "ConsoleTrashSink",
     "CrossClassConversion",
+    "DeleteResult",
+    "DeleteSafetyError",
     "FoodDescription",
     "FoodLogEntry",
     "FoodSearchResult",
+    "LocalFileTrashSink",
     "LoggedFood",
     "LoginResult",
     "LoseIt",
     "MealType",
     "PrimaryServing",
     "ServingUnit",
+    "TrashReceipt",
+    "TrashSink",
     "UnsavedFoodLogEntry",
 ]
