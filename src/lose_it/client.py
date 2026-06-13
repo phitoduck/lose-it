@@ -31,6 +31,9 @@ first argument. Kept here unchanged so existing code keeps working; once
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import json
+import os
 from collections.abc import Callable
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -69,9 +72,24 @@ from .models import (
     PrimaryServing,
     UnsavedFoodLogEntry,
 )
+from .trash import (
+    DeleteResult,
+    DeleteSafetyError,
+    LocalFileTrashSink,
+    TrashReceipt,
+    TrashSink,
+    default_trash_file,
+)
 
 # Lose It's signin URL — surfaced in LoginResult for the CLI to display.
 _SIGNIN_URL = "https://www.loseit.com/"
+
+# Sentinel for ``delete_entry(trash_sink=...)`` that distinguishes
+# "caller did not pass the kwarg" (use the default LocalFileTrashSink)
+# from "caller passed None" (explicit opt-out, gated by
+# acknowledge_no_trash). ``None`` itself can't carry both meanings.
+_DEFAULT_SINK_SENTINEL: object = object()
+
 
 __all__ = ["Client", "LoseIt"]
 
@@ -385,9 +403,205 @@ class LoseIt:
             dry_run=dry_run,
         )
 
-    def delete_entry(self, entry: FoodLogEntry) -> None:
-        """Delete a diary entry. The whole entry payload is required by the server."""
+    def delete_entry(
+        self,
+        entry: FoodLogEntry,
+        *,
+        trash_sink: TrashSink | None = _DEFAULT_SINK_SENTINEL,  # type: ignore[assignment]
+        acknowledge_no_trash: bool = False,
+        confirm: bool = False,
+    ) -> DeleteResult:
+        """Delete a diary entry via a trash sink + the wire call.
+
+        Every delete writes a recoverable trash record **first** —
+        only after the sink confirms it captured the entry does the
+        ``deleteFoodLogEntry`` RPC fire. See ``docs/backup-spec.md``
+        §9 for the full rationale.
+
+        Args:
+            entry: The diary entry to remove.
+            trash_sink: Where to stash the entry before deletion.
+
+                - **Default (sentinel):** a fresh
+                  :class:`LocalFileTrashSink` writing to
+                  ``~/.local/share/loseit/trash.jsonl`` (mode ``0o600``).
+                - ``None``: explicit opt-out. Requires
+                  ``acknowledge_no_trash=True`` or :class:`DeleteSafetyError`
+                  is raised.
+                - Any object implementing the :class:`TrashSink` protocol
+                  (``stash(entry) -> TrashReceipt``) is used as-is.
+            acknowledge_no_trash: Required when ``trash_sink is None`` —
+                a no-op otherwise. Documents that the caller knows the
+                entry will be unrecoverable.
+            confirm: Reserved for future "type the food name to confirm"
+                flow inside the SDK. Currently unused; the CLI handles
+                interactive confirmation today.
+
+        Returns:
+            :class:`DeleteResult` carrying the entry's JSON projection,
+            the receipts from every sink that absorbed it (zero receipts
+            on explicit opt-out), and the UTC ISO timestamp of the wire
+            delete.
+
+        Raises:
+            DeleteSafetyError: ``trash_sink is None`` and
+                ``acknowledge_no_trash`` is False.
+            Exception: Anything the sink raises during ``stash``. The
+                wire delete is NOT sent in that case — the entry is still
+                on the server.
+        """
+        # Late-resolve the sentinel so we use a fresh sink per call (the
+        # default path expands ``~`` and accepts any LOSEIT_USER-driven
+        # account name the caller passes through).
+        resolved_sink: TrashSink | None
+        if trash_sink is _DEFAULT_SINK_SENTINEL:
+            resolved_sink = LocalFileTrashSink(user_name=self.config.user_name or "")
+        else:
+            resolved_sink = trash_sink  # type: ignore[assignment]
+
+        receipts: list[TrashReceipt] = []
+        if resolved_sink is None:
+            if not acknowledge_no_trash:
+                raise DeleteSafetyError("trash_required")
+        else:
+            # Any exception from ``stash`` propagates and skips the wire
+            # call — that's the whole invariant.
+            receipts.append(resolved_sink.stash(entry))
+
         _entries.delete(self.http, entry)
+
+        return DeleteResult(
+            entry=entry.to_dict(),
+            trash_receipts=receipts,
+            deleted_at=datetime.now(tz=UTC).isoformat(timespec="seconds"),
+        )
+
+    def restore_trash(
+        self,
+        *,
+        trash_file: Path | None = None,
+        line: int | None = None,
+        keep: bool = False,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Re-log a record from the trash file.
+
+        Reads one line from ``trash_file`` (defaults to
+        ``~/.local/share/loseit/trash.jsonl``), re-issues
+        :meth:`log_food` with the minimum payload set
+        (``food_id``, ``meal``, ``servings``, ``when``), and either
+        consumes the line (default) or keeps it.
+
+        Args:
+            trash_file: Source trash file. ``None`` resolves the default.
+            line: 1-based line number to restore. ``None`` → last line.
+            keep: When True, leave the line on disk after restoring.
+            dry_run: When True, return the plan without re-logging or
+                modifying the file.
+
+        Returns:
+            A small dict carrying the plan + outcome — used by the CLI
+            to render the BDD-specified stdout. Keys:
+
+            - ``trash_file``: resolved path.
+            - ``line_no``: which 1-based line was acted on.
+            - ``total_lines``: line count of the file before restore.
+            - ``is_last``: ``line_no == total_lines``.
+            - ``food_id`` / ``food_name`` / ``meal`` / ``date`` /
+              ``servings``: the record's projection.
+            - ``logged``: the :class:`LoggedFood` from ``log_food`` (or
+              ``None`` for dry-run / unresolved food).
+            - ``consumed``: True iff the line was removed from the file.
+            - ``dry_run``: echoes the input.
+            - ``keep``: echoes the input.
+        """
+        path = trash_file if trash_file is not None else default_trash_file()
+        text = path.read_text(encoding="utf-8")
+        # ``splitlines()`` drops the trailing newline if present — we use
+        # ``keepends=False`` and re-assemble below.
+        lines = text.splitlines()
+        if not lines:
+            raise ValueError(f"trash file {path} is empty")
+
+        total = len(lines)
+        line_no = line if line is not None else total
+        if not 1 <= line_no <= total:
+            raise ValueError(f"--line {line_no} out of range (file has {total} lines)")
+        record_raw = lines[line_no - 1]
+        record = json.loads(record_raw)
+        entry_dict = record.get("entry", {})
+
+        food_id = entry_dict.get("food_id") or ""
+        food_name = entry_dict.get("food_name", "")
+        meal_name = entry_dict.get("meal", "snacks")
+        date_str = entry_dict.get("date") or ""
+        servings = float(entry_dict.get("servings", 1.0) or 1.0)
+
+        # Derive ``date`` from ``day_num`` when the trash schema didn't
+        # carry an explicit ``date`` field (T4 owns surfacing ``date`` on
+        # the FLE; until then we fall back to today).
+        when: date | None = None
+        if date_str:
+            try:
+                when = date.fromisoformat(date_str)
+            except ValueError:
+                when = None
+
+        is_last = line_no == total
+        result: dict[str, Any] = {
+            "trash_file": str(path),
+            "line_no": line_no,
+            "total_lines": total,
+            "is_last": is_last,
+            "food_id": food_id,
+            "food_name": food_name,
+            "meal": meal_name,
+            "date": date_str,
+            "servings": servings,
+            "logged": None,
+            "consumed": False,
+            "dry_run": dry_run,
+            "keep": keep,
+        }
+
+        if dry_run:
+            return result
+
+        # Replay through the existing high-level path. We need a
+        # ``MealType`` for log_food's parser — ``meal_name`` already
+        # comes from ``MealType(n).name`` so it round-trips.
+        try:
+            meal_type = MealType.parse(meal_name)
+        except ValueError:
+            meal_type = MealType.snacks
+
+        if not food_id:
+            raise ValueError(f"trash record on line {line_no} has no food_id — cannot re-log")
+
+        logged = self.log_food(
+            food=food_id,
+            meal=meal_type,
+            servings=servings,
+            when=when,
+        )
+        result["logged"] = logged
+
+        if not keep:
+            # Atomic rewrite: build the new content (omitting the line),
+            # write to a tmp file in the same dir, fsync, os.replace.
+            remaining = [ln for i, ln in enumerate(lines, start=1) if i != line_no]
+            new_text = ("\n".join(remaining) + "\n") if remaining else ""
+            tmp = path.with_suffix(path.suffix + ".tmp")
+            tmp.write_text(new_text, encoding="utf-8")
+            os.replace(tmp, path)
+            # Best-effort chmod — the file already existed and the perm
+            # bits transferred via the replace on POSIX. Don't fail
+            # the whole restore over a chmod hiccup.
+            with contextlib.suppress(OSError):
+                os.chmod(path, 0o600)
+            result["consumed"] = True
+
+        return result
 
     # ── Bootstrap (login) ───────────────────────────────────────────────
 
