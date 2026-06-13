@@ -22,6 +22,7 @@ flattened shape without writing the field walk themselves.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -141,6 +142,15 @@ class FoodLogEntry:
     food_identifier_code: str
     # The order is significant — Java's HashMap iteration order, preserved from server.
     nutrients_ordered: list[tuple[int, float]] = field(default_factory=list)
+    # Server-side audit timestamps. ``created_at`` is the FoodLogEntry's
+    # original log time (FLE.f4 epoch-ms long, stored UTC server-side);
+    # ``modified_at`` is the last edit time (FLE.f5). They are the
+    # join key for the backup upsert restore mode (spec §4.4) — stable
+    # across food-metadata edits, drift-tolerant via a ±10 minute
+    # window. Default ``None`` keeps the dataclass instantiable from
+    # fixtures captured before this surface landed.
+    created_at: datetime | None = None
+    modified_at: datetime | None = None
 
     @property
     def calories(self) -> float | None:
@@ -207,6 +217,8 @@ class FoodLogEntry:
             "day_num": self.day_num,
             "food_measure_ordinal": self.food_measure_ordinal,
             "food_measure_unit": self.food_measure_unit,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "modified_at": self.modified_at.isoformat() if self.modified_at else None,
         }
 
 
