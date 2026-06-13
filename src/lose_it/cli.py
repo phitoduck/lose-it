@@ -1340,11 +1340,7 @@ def _format_grain_label(grain: Any) -> str:
         iso_year, iso_week, _wd = grain.start.isocalendar()
         return f"{iso_year:04d}/W{iso_week:02d}.toon"
     if grain.kind == "day":
-        return (
-            f"{grain.start.year:04d}/"
-            f"{grain.start.month:02d}/"
-            f"{grain.start.day:02d}.toon"
-        )
+        return f"{grain.start.year:04d}/{grain.start.month:02d}/{grain.start.day:02d}.toon"
     return f"{grain.start.isoformat()} ({grain.kind})"
 
 
@@ -1471,7 +1467,8 @@ def backup(
             last_label = _format_grain_label(skip_run_last.grain)
             # Per the spec §3.1 example, count grains in the contiguous run.
             n_grains = sum(
-                1 for r in reports
+                1
+                for r in reports
                 if r.status is FetchStatus.skip
                 and r.grain.start >= skip_run_first.grain.start
                 and r.grain.end <= skip_run_last.grain.end
@@ -1583,35 +1580,19 @@ def backup(
             f"{end or 'today'}  ({summary.months_total} grains)"
         )
         typer.echo(f"  grain:              {grain_kind}")
-        typer.echo(
-            f"  already on disk:    {summary.months_skipped}  (skip)"
-        )
-        typer.echo(
-            f"  partial on disk:    {summary.months_partial}  (partial)"
-        )
-        typer.echo(
-            f"  no file yet:        {summary.months_fetched}  (fetch)"
-        )
+        typer.echo(f"  already on disk:    {summary.months_skipped}  (skip)")
+        typer.echo(f"  partial on disk:    {summary.months_partial}  (partial)")
+        typer.echo(f"  no file yet:        {summary.months_fetched}  (fetch)")
         typer.echo(f"  root:               {summary.root}")
         typer.echo("no RPCs sent.")
         return
 
     typer.echo("summary")
-    typer.echo(
-        f"  months total:        {summary.months_total}"
-    )
-    typer.echo(
-        f"  months skipped:      {summary.months_skipped}"
-    )
-    typer.echo(
-        f"  months partial:      {summary.months_partial}"
-    )
-    typer.echo(
-        f"  months fetched:      {summary.months_fetched}"
-    )
-    typer.echo(
-        f"  months fell back:    {summary.months_fell_back}"
-    )
+    typer.echo(f"  months total:        {summary.months_total}")
+    typer.echo(f"  months skipped:      {summary.months_skipped}")
+    typer.echo(f"  months partial:      {summary.months_partial}")
+    typer.echo(f"  months fetched:      {summary.months_fetched}")
+    typer.echo(f"  months fell back:    {summary.months_fell_back}")
     typer.echo(f"  days fetched:        {summary.days_fetched}")
     typer.echo(f"  days with entries:   {summary.days_with_entries}")
     typer.echo(
@@ -1788,13 +1769,10 @@ def restore_backup(
             return
         label = _grain_file_rel(report.grain_path, root)
         typer.echo(
-            f"{label}   {report.days_with_entries} days with entries  "
-            f"[######################]"
+            f"{label}   {report.days_with_entries} days with entries  [######################]"
         )
         logged_note = (
-            f"   (logged {report.entries_logged} new entries)"
-            if report.entries_logged > 0
-            else ""
+            f"   (logged {report.entries_logged} new entries)" if report.entries_logged > 0 else ""
         )
         typer.echo(
             f"                 present  {report.entries_present:>2}   "
@@ -1809,7 +1787,9 @@ def restore_backup(
             typer.echo(f"backup root:          {root}")
             typer.echo(f"grain:                {grain_kind}")
             if cheap_mode:
-                typer.echo("mode:                 simple (skip grain on first non-empty day in range)")
+                typer.echo(
+                    "mode:                 simple (skip grain on first non-empty day in range)"
+                )
                 typer.echo("")
                 typer.echo("scanning server for existing data...")
             else:
@@ -1888,7 +1868,9 @@ def restore_backup(
         typer.echo(f"  grains skipped:       {summary.grains_skipped}")
         typer.echo(f"  grains restored:      {summary.grains_restored}")
         if dry_run:
-            typer.echo(f"  entries to log:       {sum(r.entries_in_grain for r in cheap_reports if r.status == 'restore')}")
+            typer.echo(
+                f"  entries to log:       {sum(r.entries_in_grain for r in cheap_reports if r.status == 'restore')}"
+            )
         else:
             typer.echo(f"  entries logged:       {summary.entries_logged}")
     else:

@@ -55,9 +55,7 @@ def test_food_log_entry_has_created_at_after_decode(test_client, httpx_mock, fix
     assert entries, "expected the fixture to contain at least one FLE"
 
     for e in entries:
-        assert e.created_at is not None, (
-            f"created_at missing for {e.food_name!r}; spec requires it"
-        )
+        assert e.created_at is not None, f"created_at missing for {e.food_name!r}; spec requires it"
         assert e.created_at.tzinfo is not None, (
             f"created_at must be tz-aware (got naive) for {e.food_name!r}"
         )
