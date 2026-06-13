@@ -16,7 +16,7 @@ numbers downstream.
 from __future__ import annotations
 
 import re
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -71,6 +71,18 @@ def _build_payload(config: Config, target_date: date, day_key: str) -> str:
         str(config.hours_from_gmt),
     ]
     return build_envelope(strings, data)
+
+
+def _epoch_ms_to_utc(ms: int | float) -> datetime:
+    """GWT long epoch-ms -> aware datetime in UTC.
+
+    Lose It! stores wall-clock UTC server-side; we surface that exact
+    timezone (offset 0) so callers don't have to think about local-time
+    conversions for backup/restore identity. See spec §4.4 — the upsert
+    join key compares timestamps with a ±10-minute window, which is
+    only meaningful if both sides agree on the zone.
+    """
+    return datetime.fromtimestamp(int(ms) / 1000, tz=UTC)
 
 
 def _pk_bytes_from(pk_obj: Any) -> list[int]:
@@ -284,6 +296,18 @@ def _entry_from_decoded(
     if not food_pk_bytes or not entry_pk_bytes:
         return None
 
+    # FLE.f4 / FLE.f5 — server-side audit timestamps as epoch-ms longs.
+    # f4 is the original log time ("created"), f5 the last edit time
+    # ("modified"). Both are written as GWT base64-longs in the wire
+    # stream and surface as Python ``int`` after the LONG decoder runs;
+    # we guard on positivity so a sentinel 0 (rare, but possible on
+    # partially-synthesized server payloads) decodes to ``None`` rather
+    # than the 1970 epoch.
+    f4 = fle.get("f4")
+    f5 = fle.get("f5")
+    created_at = _epoch_ms_to_utc(f4) if isinstance(f4, (int, float)) and f4 > 0 else None
+    modified_at = _epoch_ms_to_utc(f5) if isinstance(f5, (int, float)) and f5 > 0 else None
+
     return FoodLogEntry(
         food_pk_response=food_pk_bytes,
         entry_pk_response=entry_pk_bytes,
@@ -300,6 +324,8 @@ def _entry_from_decoded(
         food_name=food_name,
         food_brand=food_brand,
         nutrients_ordered=nutrients,
+        created_at=created_at,
+        modified_at=modified_at,
     )
 
 
