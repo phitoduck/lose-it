@@ -554,16 +554,37 @@ Feature: `loseit backup` issues one RPC per month-grain by default
       loseit backup --root /tmp/bkup --start 2016-02-01 --end 2016-02-29
     Then the capture shows EXACTLY 1 POST whose body contains
          "getDailyDetailsIncludingPendingForDateRange"
-    And the file "/tmp/bkup/2016/02.toon" exists and parses
     And NO POSTs containing "getDailyDetailsIncludingPendingForDate"
         (without the "Range" suffix) were issued for the same range
+    And the file "/tmp/bkup/2016/02.toon" exists
+    And reading that file shows (whitespace omitted, top-level keys in order):
+        schema_version: 1
+        account:
+          user_id: "<numeric string>"
+          user_name: <email-like string>
+        grain:
+          kind: month
+          start: 2016-02-01
+          end: 2016-02-29
+        generated_at: <ISO 8601 +00:00 timestamp within the last hour>
+        entries[0]:                           # empty for Feb 2016
 
   Scenario: a 7-day live capture against Feb 2016 returns 7 day blocks
     Given $SAFE_WINDOW = (2016-02-01, 2016-02-28)
     When the user runs:
       loseit backup --root /tmp/bkup --start 2016-02-01 --end 2016-02-07 --grain week
     Then the file "/tmp/bkup/2016/W05.toon" exists
-    And the file's "entries[N]:" section is "entries[0]:" (empty week)
+    And reading that file shows:
+        schema_version: 1
+        account:
+          user_id: "<numeric string>"
+          user_name: <email-like string>
+        grain:
+          kind: week
+          start: 2016-02-01           # Monday of ISO W05
+          end:   2016-02-07           # Sunday of ISO W05
+        generated_at: <recent ISO timestamp>
+        entries[0]:                   # empty for the safe window
     And the summary block reports "days with entries:  0"
 
   Scenario: oversize triggers the recursive fall-back to week, then day
@@ -571,57 +592,145 @@ Feature: `loseit backup` issues one RPC per month-grain by default
           requests and 200 on week-range requests
     When the user runs against the proxy:
       loseit backup --root /tmp/bkup --start 2024-12-01 --end 2024-12-31
-    Then stdout contains "fallback  2024/12.toon   succeeded at week grain"
+    Then stdout includes lines (the EXACTLY-ONE month grain transitions
+         through "attempt -> oversize -> fallback"):
+        fetch     2024/12.toon
+                    attempt month -> oversize response, falling back to week
+                    fetch 2024-12-01 .. 2024-12-31  [...] N entries
+        fallback  2024/12.toon   succeeded at week grain  (31 days, N entries)
     And the network capture shows: 1 month-range POST (got oversize)
                                  + ≥4 week-range POSTs (succeeded)
     And NO per-day POSTs were issued (week succeeded, no day fall-back needed)
+    And reading "/tmp/bkup/2024/12.toon" shows a populated entries array:
+        schema_version: 1
+        ...
+        grain:
+          kind: month
+          start: 2024-12-01
+          end: 2024-12-31
+        ...
+        entries[N]:
+          - date: 2024-12-01
+            day_num: 9131
+            meal: breakfast
+            meal_ordinal: 0
+            food_id: <32-char hex>
+            food_name: <string>
+            servings: <float>
+            calories: <float>
+            created_at: <ISO 8601 +00:00 string>
+            modified_at: <ISO 8601 +00:00 string>
+            ingest_ts: <ISO 8601 +00:00 string, within the last hour>
+          - date: 2024-12-01
+            ...                       # ordered (day_num asc, meal_ordinal asc, created_at asc)
 ```
 
 ### T1 — TOON schema + atomic-write (observable: files on disk)
 
 ```
-Feature: backup files are valid TOON and appear atomically
+Feature: backup files are valid TOON, complete, and appear atomically
 
-  Scenario: a successful backup leaves no half-written temp files
+  Scenario: a successful backup writes a full directory tree
     Given an empty directory at "/tmp/bkup"
     When the user runs:
       loseit backup --root /tmp/bkup --start 2016-02-01 --end 2016-02-29 --grain month
-    Then the file "/tmp/bkup/2016/02.toon" exists
-    And the file is non-empty and starts with "schema_version: 1"
+    Then the directory tree contains exactly these files:
+        /tmp/bkup/index.toon
+        /tmp/bkup/foods.toon
+        /tmp/bkup/2016/02.toon
     And no file matching "/tmp/bkup/**/*.tmp" exists anywhere under the root
+
+  Scenario: index.toon records the discovery cache
+    Given a completed backup as in the previous scenario
+    When the user opens "/tmp/bkup/index.toon"
+    Then the file contents are (whitespace omitted, keys in order):
+        schema_version: 1
+        account:
+          user_id: "<numeric string>"
+          user_name: <email-like string>
+        grain: month
+        discovered_earliest_day: 2016-02-15      # or whatever discovery found
+        discovered_at: <ISO 8601 +00:00 timestamp, recent>
+
+  Scenario: foods.toon caches one row per unique food_id seen
+    Given a completed backup whose archive references 3 distinct food_ids
+    When the user opens "/tmp/bkup/foods.toon"
+    Then the file contents are:
+        schema_version: 1
+        account:
+          user_id: "<numeric string>"
+          user_name: <email-like string>
+        foods{3}:
+          <32-char hex food_id #1>:
+            last_described_at: <ISO 8601 +00:00, today UTC>
+            first_seen_date:   2016-02-15
+            last_seen_date:    2016-02-15
+            name:     <string>
+            brand:    <string>
+            category: <string>
+            primary_serving: { ordinal: <int>, unit: <string>, ... }
+            nutrients_per_serving: { calories: <float>, ... }
+            raw_nutrients_by_ord: { "0": <float>, ... }
+          <32-char hex food_id #2>:
+            ...                                  # same shape
+          <32-char hex food_id #3>:
+            ...
 
   Scenario: a corrupted archive (schema_version: 2) refuses to load
     Given a file "/tmp/bkup/2016/02.toon" whose first line is "schema_version: 2"
+    And the rest of the file is otherwise valid TOON
     When the user runs:
       loseit restore-backup --root /tmp/bkup --dry-run
     Then the command exits non-zero
-    And stderr contains "schema version 2 not supported (this build understands 1)"
+    And stderr contains exactly:
+        error: schema version 2 not supported (this build understands 1)
+        file:  /tmp/bkup/2016/02.toon
+        hint:  upgrade `loseit` or downgrade the archive
     And the file "/tmp/bkup/2016/02.toon" is byte-for-byte unchanged
 
-  Scenario: backup files are human-grep-able TOON
+  Scenario: backup files are human-grep-able TOON (not opaque binary)
     Given a completed backup at "/tmp/bkup" covering Feb 2016 (empty)
     When the user runs:
-      grep -c '^entries' /tmp/bkup/2016/02.toon
-    Then the output is at least 1
-    And the file contains the lines "schema_version: 1" and "grain:" and "account:"
+      grep -c '^schema_version: 1' /tmp/bkup/2016/02.toon
+    Then the output is "1"
+    When the user runs:
+      head -10 /tmp/bkup/2016/02.toon
+    Then the first 10 lines include, in this order, prefixes:
+        schema_version:
+        account:
+          user_id:
+          user_name:
+        grain:
+          kind:
+          start:
+          end:
+        generated_at:
+        entries[
 ```
 
-### T2 — Fetch primitive (observable: backup summary table)
+### T2 — Fetch primitive (observable: backup summary table + grain files)
 
 The spec defines four per-grain statuses — `skip`, `partial`, `fetch`,
 `fallback`. The fetch primitive's correctness is observable through
-which status the CLI prints, and through the describe-cadence counter
-in the summary block.
+which status the CLI prints, the contents of each grain file produced,
+and the describe-cadence counter in the summary block.
 
 ```
 Feature: `loseit backup` reports per-grain status accurately
 
-  Scenario: a clean month fetch prints the "fetch" status
+  Scenario: a clean month fetch prints the "fetch" status and writes a grain file
     Given an empty backup root "/tmp/bkup"
     When the user runs:
       loseit backup --root /tmp/bkup --start 2016-02-01 --end 2016-02-29
-    Then stdout contains a line starting with "fetch     2016/02.toon"
-    And the summary block reports "months fell back:     0"
+    Then stdout includes:
+        fetch     2016/02.toon   29 days  [######################]  0 entries  (empty month)
+    And the summary block reports:
+        months fetched:     1  (skipped 0,  partial 0,  fetched 1,  fell back 0)
+        days fetched:      29
+        days with entries:  0
+        unique foods:       0 described,  0 re-described today
+    And the file "/tmp/bkup/2016/02.toon" exists
+    And the file's `entries[N]:` line reads `entries[0]:`
 
   Scenario: an oversize grain falls back to smaller grains transparently
     Given the server returns "oversize" on the month-level fetch for 2024-12
@@ -629,89 +738,159 @@ Feature: `loseit backup` reports per-grain status accurately
      localhost:8443; the CLI is pointed at it via `LOSEIT_BASE_URL`)
     When the user runs:
       loseit backup --root /tmp/bkup --start 2024-12-15 --end 2024-12-31 --grain month
-    Then stdout contains a "fallback  2024/12.toon   succeeded at day grain" line
-    And the summary block reports "months fell back:    1  (oversize: month -> day)"
-    And the file "/tmp/bkup/2024/12.toon" exists and parses
+    Then stdout includes (in order):
+        fetch     2024/12.toon
+                    attempt month -> oversize response, falling back to day
+                    fetch 2024-12-15 .. 2024-12-31  [######################]  76 entries
+        fallback  2024/12.toon   succeeded at day grain  (17 days, 76 entries)
+    And the summary block reports:
+        months fetched:      1
+        months fell back:    1  (oversize: month -> day)
+    And the file "/tmp/bkup/2024/12.toon" exists
+    And the file's `grain.kind` is still `month` (not `day` — the file
+        layout follows --grain, not the recursion floor used to fetch it)
+    And the file's `entries[N]:` line reads `entries[76]:`
+    And the file's first entry row has the shape:
+        - date: 2024-12-15
+          day_num: <int>
+          meal: <breakfast|lunch|dinner|snacks>
+          meal_ordinal: <0..3>
+          food_id: <32-char hex>
+          ...
+          created_at: <ISO 8601 +00:00>
 
   Scenario: if even a single day fails, backup aborts cleanly
     Given the server returns 500 on every diary request (simulated fixture)
     When the user runs:
       loseit backup --root /tmp/bkup --start 2016-02-15 --end 2016-02-15 --grain day
-    Then the command exits non-zero
-    And stderr contains "aborted at day grain (2016-02-15): server 500"
-    And no file is created under "/tmp/bkup/2016/"
+    Then the command exits with code 2
+    And stderr contains exactly:
+        error: aborted at day grain (2016-02-15): server 500
+        hint:  rerun to retry; the previous grain's progress was discarded
+    And NO file matching "/tmp/bkup/2016/**" exists
+    And NO file matching "/tmp/bkup/**/*.tmp" exists
 
   Scenario: foods are described at most once per UTC calendar day
     Given the user already ran "loseit backup" earlier today and the
           archive contains entries referencing 3 unique foods
+    And the file "/tmp/bkup/foods.toon" contains 3 entries each with a
+          `last_described_at` timestamp from earlier today UTC
     When the user runs again today:
       loseit backup --root /tmp/bkup --start 2016-02-01 --end 2016-02-29
-    Then the summary line "unique foods:" contains "0 re-described today"
+    Then the summary block reports:
+        unique foods:       0 new,  0 re-described today  (3 cached)
+    And opening "/tmp/bkup/foods.toon" shows the same 3 entries with
+        UNCHANGED `last_described_at` timestamps
 
   Scenario: re-running the next UTC day re-describes the foods
     Given the earlier run was on UTC date 2026-06-12
+    And "/tmp/bkup/foods.toon" has 3 entries with last_described_at = 2026-06-12T*
     And the user re-runs at UTC 2026-06-13
     When the user runs:
       loseit backup --root /tmp/bkup --start 2016-02-01 --end 2016-02-29
-    Then the summary line "unique foods:" contains "N re-described today"
-         where N equals the number of unique foods in the archive
+    Then the summary block reports:
+        unique foods:       0 new,  3 re-described today  (3 cached)
+    And opening "/tmp/bkup/foods.toon" shows all 3 entries now have
+        `last_described_at` values whose date portion is `2026-06-13`
 ```
 
-### T3 — Discovery probe (observable: backup output prefix)
+### T3 — Discovery probe (observable: backup output + index.toon)
 
 ```
 Feature: `loseit backup` discovers the earliest log day on first run
 
-  Scenario: first ever run prints discovery progress
+  Scenario: first ever run prints discovery progress and writes index.toon
     Given there is no file at "$BACKUP_ROOT/index.toon"
     When the user runs:
       loseit backup
-    Then stdout's first line is "discovering earliest day..."
-    And stdout includes one "probed YYYY-MM .. YYYY-MM" line per probed year
-    And stdout includes a line "earliest day:         YYYY-MM-DD"
-    And after the run, "$BACKUP_ROOT/index.toon" exists and contains
-        "discovered_earliest_day: <that date>"
+    Then stdout begins with (one line per probed year, in order):
+        discovering earliest day...
+          probed 2015-01 .. 2015-12   12/12 empty
+          probed 2016-01 .. 2016-12   12/12 empty
+          ...
+          probed 2019-08              hit
+          narrowing within 2019-08:
+            probed 2019-08-01 .. 2019-08-13   empty
+            probed 2019-08-14              hit
+        earliest day:         2019-08-14
+        range:                2019-08-14 -> <today>  (<N> days, <M> months)
+        grain:                month
+        root:                 <path>
+    And after the run, "$BACKUP_ROOT/index.toon" exists
+    And opening that file shows:
+        schema_version: 1
+        account:
+          user_id: "<numeric string>"
+          user_name: <email-like string>
+        grain: month
+        discovered_earliest_day: 2019-08-14
+        discovered_at: <ISO 8601 +00:00, within the last hour>
 
-  Scenario: subsequent runs reuse the cached discovery
-    Given "$BACKUP_ROOT/index.toon" already records
-          discovered_earliest_day: 2019-08-14
+  Scenario: subsequent runs reuse the cached discovery (zero probe RPCs)
+    Given "$BACKUP_ROOT/index.toon" already records:
+        discovered_earliest_day: 2019-08-14
+    And a network capture is recording
     When the user runs:
       loseit backup
-    Then stdout's first line is "discovering earliest day... cached (index.toon)"
-    And no "probed" lines appear in the output
+    Then stdout's first line is exactly:
+        discovering earliest day... cached (index.toon)
+    And NO "probed" lines appear in the output
+    And the network capture shows zero POSTs containing
+        "getDailyDetailsIncludingPending" before the first `fetch` line
 
   Scenario: --start short-circuits discovery
     When the user runs:
       loseit backup --start 2024-03-01 --end 2024-03-31
     Then stdout does NOT contain "discovering earliest day"
-    And stdout's first line is "range:                2024-03-01 -> 2024-03-31  (31 days, 1 month)"
+    And stdout's first line is:
+        range:                2024-03-01 -> 2024-03-31  (31 days, 1 month)
 
   Scenario: an account with no entries reports cleanly
     Given the account has no diary entries between 2015-01-01 and today
     (simulated via the local fixture proxy)
     When the user runs:
       loseit backup --dry-run
-    Then stdout contains "no entries ever — nothing to back up"
+    Then stdout contains:
+        no entries ever — nothing to back up
     And the command exits 0
+    And NO file matching "$BACKUP_ROOT/**/*.toon" is created
+        (not even index.toon — "no entries ever" is the only output)
 ```
 
 ### T4 — `created_at` surfaced on diary output
 
-The user-visible artifact of T4 is a `created_at` field on every
-diary entry in `--output json` / `--output toon` mode.
+The user-visible artifact of T4 is a `created_at` (and `modified_at`)
+field on every diary entry in `--output json` / `--output toon` mode.
 
 ```
-Feature: `loseit diary --output json` includes a created_at timestamp
+Feature: `loseit diary --output json` includes created_at + modified_at
 
-  Scenario: every diary entry has a created_at field
+  Scenario: every diary entry exposes both timestamps
     Given the user logged at least one entry on 2016-02-15
     (with $SAFE_MARKER in the food_name, inside the live safe window)
     When the user runs:
       loseit diary --date 2016-02-15 --output json
-    Then the JSON output's "entries" array is non-empty
-    And every element has a "created_at" key
-    And every "created_at" value matches the regex
-        "^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?\+00:00$"
+    Then stdout is valid JSON of the shape:
+        {
+          "date": "2016-02-15",
+          "entries": [
+            {
+              "meal": "snacks",
+              "meal_ordinal": 3,
+              "food_id": "<32-char hex>",
+              "food_name": "<string containing $SAFE_MARKER>",
+              "food_brand": "<string>",
+              "servings": <float>,
+              "calories": <float>,
+              "created_at":  "<ISO 8601 +00:00>",
+              "modified_at": "<ISO 8601 +00:00>",
+              ...
+            }
+          ]
+        }
+    And every "created_at" value matches the regex:
+        ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?\+00:00$
+    And every "modified_at" value matches the same regex
 
   Scenario: created_at is close to wall-clock for a just-logged entry
     Given the current time is recorded as $NOW (UTC)
@@ -721,12 +900,17 @@ Feature: `loseit diary --output json` includes a created_at timestamp
       loseit diary --date 2016-02-15 --output json
     Then the JSON entry tagged with $SAFE_MARKER has a "created_at"
          within 60 seconds of $NOW
+    And that entry's "modified_at" equals its "created_at"
 
-  Scenario: a never-edited entry has modified_at == created_at
-    Given an entry on 2016-02-15 that has never been edited
+  Scenario: an edited entry has modified_at > created_at
+    Given an entry on 2016-02-15 that was logged 5 minutes ago AND just
+          had its servings edited via the website
     When the user runs:
       loseit diary --date 2016-02-15 --output json
-    Then for that entry, "modified_at" == "created_at"
+    Then for that entry:
+        - "created_at"  is ~5 minutes ago
+        - "modified_at" is within the last 60 seconds
+        - modified_at > created_at
 ```
 
 ### T5 — `loseit delete` routes through the trash sink
@@ -740,9 +924,36 @@ Feature: every delete writes a recoverable trash record first
     When the user runs:
       loseit delete --meal snacks --pick 1 --date 2016-02-15 --yes
     Then the command exits 0
-    And stdout contains a line "  trash sink: <abs path>/trash.jsonl#<N+1>"
+    And stdout contains:
+        Deleting from snacks: <food_name including $SAFE_MARKER> × <servings>
+          trash sink: <abs path>/trash.jsonl#<N+1>
+          (run 'loseit restore-trash' to undo the most recent delete)
+        ✅ Deleted
     And the file "$BACKUP_ROOT/../trash.jsonl" has exactly $N+1 lines
-    And the last line is valid JSON whose entry.food_name contains $SAFE_MARKER
+    And line $N+1 is valid JSON with the shape:
+        {
+          "stashed_at": "<ISO 8601 +00:00, within the last second>",
+          "user_name": "<email-like string>",
+          "entry": {
+            "date": "2016-02-15",
+            "day_num": <int>,
+            "meal": "snacks",
+            "meal_ordinal": 3,
+            "food_id": "<32-char hex>",
+            "food_name": "<string containing $SAFE_MARKER>",
+            "food_brand": "<string>",
+            "servings": <float>,
+            "calories": <float>,
+            "nutrients": { "0": <float>, ... },
+            "entry_pk_response": [<16 signed ints>],
+            "food_pk_response":  [<16 signed ints>],
+            "entry_day_key": "<string>",
+            "context_day_key": "<string>",
+            "hours_from_gmt": <int>,
+            "created_at":  "<ISO 8601 +00:00>",
+            "modified_at": "<ISO 8601 +00:00>"
+          }
+        }
     And `loseit diary --date 2016-02-15 --output json` no longer contains
         an entry tagged with $SAFE_MARKER
 
@@ -752,18 +963,24 @@ Feature: every delete writes a recoverable trash record first
     When the user runs:
       loseit delete --meal snacks --pick 1 --date 2016-02-15 --yes \
                     --trash-file /tmp/readonly-trash.jsonl
-    Then the command exits non-zero
-    And stderr contains "trash sink: cannot write /tmp/readonly-trash.jsonl"
+    Then the command exits with code 2
+    And stderr contains exactly:
+        error: trash sink: cannot write /tmp/readonly-trash.jsonl
+        cause: PermissionError(EACCES, "Permission denied")
+        hint:  the wire delete was NOT sent — your entry is still on the server
     And `loseit diary --date 2016-02-15 --output json` still shows the
         $SAFE_MARKER entry — the server-side delete was NOT issued
+    And "/tmp/readonly-trash.jsonl" is byte-for-byte unchanged
 
   Scenario: --no-trash is refused unless explicitly acknowledged
     Given one logged entry on 2016-02-15 tagged with $SAFE_MARKER
     When the user runs:
       loseit delete --meal snacks --pick 1 --date 2016-02-15 --yes --no-trash
-    Then the command exits non-zero
-    And stderr contains "refusing to delete without a trash sink
-                        (pass --i-know-this-is-unrecoverable to override)"
+    Then the command exits with code 2
+    And stderr contains exactly:
+        error: refusing to delete without a trash sink
+        hint:  pass --i-know-this-is-unrecoverable to override
+               (this discards any chance of recovering the entry)
     And `loseit diary --date 2016-02-15 --output json` still shows the entry
 
   Scenario: --no-trash --i-know-this-is-unrecoverable deletes without trash
@@ -773,6 +990,10 @@ Feature: every delete writes a recoverable trash record first
       loseit delete --meal snacks --pick 1 --date 2016-02-15 --yes \
                     --no-trash --i-know-this-is-unrecoverable
     Then the command exits 0
+    And stdout contains:
+        Deleting from snacks: <food_name including $SAFE_MARKER> × <servings>
+          trash sink: <none — caller acknowledged --no-trash>
+        ✅ Deleted
     And the diary no longer shows the $SAFE_MARKER entry
     And "$BACKUP_ROOT/../trash.jsonl" still has exactly $N lines (no new record)
 
@@ -782,15 +1003,26 @@ Feature: every delete writes a recoverable trash record first
       loseit delete --meal snacks --pick 1 --date 2016-02-15 --yes \
                     --trash-file /tmp/new-trash.jsonl
     Then the file "/tmp/new-trash.jsonl" exists
+    And the file has exactly 1 line of valid JSON (shape as the
+        first scenario above)
     And `stat -f '%Lp' /tmp/new-trash.jsonl` (macOS) prints "600"
-    (on Linux: `stat -c '%a' /tmp/new-trash.jsonl` prints "600")
+        (on Linux: `stat -c '%a' /tmp/new-trash.jsonl` prints "600")
 
-  Scenario: --print-deleted echoes the trash record to stdout
+  Scenario: --print-deleted echoes the trash record to stdout as TOON
     When the user runs:
       loseit delete --meal snacks --pick 1 --date 2016-02-15 --yes --print-deleted
-    Then stdout contains a "deleted_entry:" block
-    And the block's "food_id:" matches the deleted entry's food_id
-    And the block's "created_at:" matches the deleted entry's created_at
+    Then stdout (in addition to the "✅ Deleted" line) contains:
+        deleted_entry:
+          date: 2016-02-15
+          meal: snacks
+          food_id: <32-char hex matching the deleted entry>
+          food_name: <string containing $SAFE_MARKER>
+          servings: <float>
+          created_at:  <ISO 8601 +00:00, matches trash.jsonl line>
+          modified_at: <ISO 8601 +00:00>
+          ...
+    And the `food_id` and `created_at` values are byte-for-byte identical
+        to the values in the corresponding trash.jsonl line
 ```
 
 ### T6 — `loseit backup` end-to-end + cheap-mode restore
@@ -798,54 +1030,104 @@ Feature: every delete writes a recoverable trash record first
 ```
 Feature: backup resumes cleanly across interruptions
 
-  Scenario: a completed grain is skipped on the next run
+  Scenario: a completed grain is skipped on the next run (zero RPCs)
     Given an empty backup root "/tmp/bkup"
     And the user has already run `loseit backup --root /tmp/bkup
                                                 --start 2016-02-01
                                                 --end 2016-02-29`
+    And a network capture is recording
     When the user runs the SAME command a second time
-    Then stdout contains exactly one "skip      2016/02.toon   complete (...)" line
-    And the summary block reports "months skipped:      1"
-    And no "fetch" or "partial" lines appear
+    Then stdout includes:
+        skip      2016/02.toon   complete (29 days, 0 entries)
+    And NO "fetch" or "partial" lines appear in stdout
+    And the summary block reports:
+        months total:        1
+        months skipped:      1  (already complete on disk)
+        months partial:      0
+        months fetched:      0
+        months fell back:    0
+        days fetched:        0
+        unique foods:        0 new,  0 re-described today
+    And the network capture shows zero POSTs to /web/service
+    And "/tmp/bkup/2016/02.toon" has the same mtime/size as before the run
 
   Scenario: a single-day backup against the safe window writes the expected file
     Given an empty backup root "/tmp/bkup"
     When the user runs:
       loseit backup --root /tmp/bkup --start 2016-02-15 --end 2016-02-15 --grain day
-    Then the file "/tmp/bkup/2016/02/15.toon" exists
-    And the file's "entries:" section is "entries[0]:" (empty — safe window)
-    And the file "/tmp/bkup/index.toon" exists and records discovered_earliest_day
+    Then the file tree contains:
+        /tmp/bkup/index.toon
+        /tmp/bkup/foods.toon
+        /tmp/bkup/2016/02/15.toon
+    And opening "/tmp/bkup/2016/02/15.toon" shows:
+        schema_version: 1
+        account:
+          user_id: "<numeric string>"
+          user_name: <email-like string>
+        grain:
+          kind: day
+          start: 2016-02-15
+          end:   2016-02-15
+        generated_at: <ISO 8601 +00:00, within the last hour>
+        entries[0]:                              # empty — safe window
+    And "/tmp/bkup/index.toon" records `discovered_earliest_day:` and
+        `discovered_at:` with valid values
 
 Feature: `loseit restore-backup --skip-restore-on-nonempty-grain-time-ranges`
          (cheap mode) leaves non-empty server data alone
 
   Scenario: a server with existing data is fully skipped (dry-run)
-    Given a backup at "/tmp/bkup" containing 2016/02.toon (1 archived entry)
-          AND 2024/03.toon (5 archived entries)
+    Given a backup at "/tmp/bkup" containing:
+            2016/02.toon  (1 archived entry on 2016-02-15)
+            2024/03.toon  (5 archived entries spread across March)
     And the server has at least one entry somewhere in March 2024
     And the server has zero entries throughout February 2016
     When the user runs:
       loseit restore-backup --root /tmp/bkup \
                             --skip-restore-on-nonempty-grain-time-ranges \
                             --dry-run
-    Then stdout contains "skip      2024/03   ... non-empty on day ... -> skip"
-    And stdout contains "restore   2016/02   ... all empty  (1 entries to log)"
-    And the summary block reports "grains restored:       1"
-    And the summary block reports "grains skipped:        1"
-    And the command exits 0 without issuing any log RPCs (no `2026/02.toon`
-        write occurs and no diary change is observable on either grain)
+    Then stdout contains:
+        account:              loseit user_id <numeric string>
+        backup root:          /tmp/bkup
+        grain:                month
+        mode:                 simple (skip grain on first non-empty day in range)
+
+        scanning server for existing data...
+        skip      2024/03   31 days scanned, non-empty on day <int> -> skip
+        restore   2016/02   29 days scanned, all empty  (1 entries to log)
+    And the summary block reports:
+        grains scanned:        2
+        grains skipped:        1  (server already had data in range)
+        grains restored:       1  (would log)
+        entries to log:        1
+    And the command exits 0
+    And NO file changed under "/tmp/bkup" (dry-run is read-only)
+    And `loseit diary --date 2024-03-15` is byte-for-byte unchanged
 
   Scenario: cheap mode logs only when the server day is empty
     Given a hand-crafted archive at "/tmp/bkup/2016/02.toon" containing
-          one entry on 2016-02-15 (food_id known, food_name carries
-          $SAFE_MARKER, servings=0.1, meal=snacks)
+          one entry shaped like:
+            - date: 2016-02-15
+              meal: snacks
+              meal_ordinal: 3
+              food_id: <known 32-char hex>
+              food_name: <string containing $SAFE_MARKER>
+              servings: 0.1
+              created_at: 2016-02-15T12:00:00+00:00
+              modified_at: 2016-02-15T12:00:00+00:00
+              ingest_ts: <recent ISO>
     And the server's diary for 2016-02-15 is empty
     When the user runs:
       loseit restore-backup --root /tmp/bkup \
                             --skip-restore-on-nonempty-grain-time-ranges
     Then the command exits 0
+    And stdout includes (with progress bars elided):
+        restore   2016/02   29 days scanned, all empty  (1 entries to log)
+        2016/02.toon   1 entries  [######################]
+    And the summary block reports:
+        entries logged:        1
     And `loseit diary --date 2016-02-15 --output json` shows exactly one
-        entry tagged with $SAFE_MARKER
+        entry whose food_name contains $SAFE_MARKER and servings == 0.1
     And the test teardown deletes that entry via:
       loseit delete --meal snacks --pick 1 --date 2016-02-15 --yes
 ```
@@ -857,49 +1139,90 @@ Feature: `loseit restore-backup` (default safe mode) never double-logs
 
   Scenario: re-running restore against a populated archive produces no
             new entries
-    Given a hand-crafted archive at "/tmp/bkup" with two entries on
-          2016-02-15 (both tagged with $SAFE_MARKER, distinct food_ids)
+    Given a hand-crafted archive at "/tmp/bkup/2016/02.toon" containing:
+        entries[2]:
+          - date: 2016-02-15
+            meal: snacks
+            meal_ordinal: 3
+            food_id: <hex A>
+            food_name: <string containing $SAFE_MARKER>
+            servings: 0.1
+            created_at: 2016-02-15T12:00:00+00:00
+            ...
+          - date: 2016-02-15
+            meal: snacks
+            meal_ordinal: 3
+            food_id: <hex B>           # different food
+            food_name: <string containing $SAFE_MARKER>
+            servings: 0.2
+            created_at: 2016-02-15T13:30:00+00:00
+            ...
     And the server diary for 2016-02-15 is empty
     When the user runs (first time):
       loseit restore-backup --root /tmp/bkup
     Then the command exits 0
+    And stdout includes:
+        2016/02.toon   1 days with entries  [######################]
+                         present   0   upsert  1   empty  0   (logged 2 new entries)
+    And the summary block reports:
+        entries already present:    0
+        entries logged:             2
     And `loseit diary --date 2016-02-15 --output json` shows exactly 2
-        entries tagged with $SAFE_MARKER
+        entries whose food_name contains $SAFE_MARKER
     When the user runs again (second time):
       loseit restore-backup --root /tmp/bkup
-    Then stdout contains "present   1   upsert  0   empty  0" for 2016/02.toon
+    Then stdout includes:
+        2016/02.toon   1 days with entries  [######################]
+                         present   1   upsert  0   empty  0
+    And the summary block reports:
+        entries already present:    2
+        entries logged:             0
     And `loseit diary --date 2016-02-15 --output json` STILL shows
         exactly 2 entries tagged with $SAFE_MARKER (not 4)
-    And the summary line "entries logged:           0" appears
 
   Scenario: restore is additive — it never deletes server entries
-    Given the archive has entry $A on 2016-02-15
-    And the server has a DIFFERENT entry $B on 2016-02-15 (different food_id,
-        tagged with $SAFE_MARKER_B; $A is tagged with $SAFE_MARKER_A)
+    Given the archive has entry $A on 2016-02-15 tagged with $SAFE_MARKER_A
+    And the server has a DIFFERENT entry $B on 2016-02-15:
+        - food_id != $A.food_id
+        - food_name contains $SAFE_MARKER_B
     When the user runs:
       loseit restore-backup --root /tmp/bkup
-    Then `loseit diary --date 2016-02-15 --output json` shows entries
-        tagged with BOTH $SAFE_MARKER_A AND $SAFE_MARKER_B
-    And no "delete" or "removed" appears anywhere in stdout
+    Then the summary block reports:
+        entries already present:    0   # B doesn't match A
+        entries logged:             1   # A
+    And `loseit diary --date 2016-02-15 --output json` shows TWO entries:
+        one whose food_name contains $SAFE_MARKER_A
+        AND one whose food_name contains $SAFE_MARKER_B
+    And NO "delete" or "removed" string appears anywhere in stdout
 
   Scenario: a re-log inside the ±10 minute window still matches
-    Given the archive has one entry on 2016-02-15 with
-          created_at: 2016-02-15T12:00:00+00:00
+    Given the archive has one entry on 2016-02-15 with:
+        food_id: <hex>
+        created_at: 2016-02-15T12:00:00+00:00
     And the server has the SAME food_id on 2016-02-15 with
-          created_at: 2016-02-15T12:08:00+00:00 (within the 10-minute window)
+        created_at: 2016-02-15T12:08:00+00:00     # 8 min later, within ±10m
     When the user runs:
       loseit restore-backup --root /tmp/bkup
-    Then the summary reports "entries logged:           0"
+    Then stdout includes:
+        2016/02.toon   1 days with entries  [######################]
+                         present   1   upsert  0   empty  0
+    And the summary block reports:
+        entries logged:             0
     And `loseit diary --date 2016-02-15 --output json` shows exactly 1 entry
 
   Scenario: drift outside the ±10 minute window counts as missing
-    Given the archive has one entry on 2016-02-15 with
-          created_at: 2016-02-15T12:00:00+00:00
+    Given the archive has one entry on 2016-02-15 with:
+        food_id: <hex>
+        created_at: 2016-02-15T12:00:00+00:00
     And the server has the SAME food_id on 2016-02-15 with
-          created_at: 2016-02-15T12:11:00+00:00 (just outside ±10m)
+        created_at: 2016-02-15T12:11:00+00:00     # 11 min later, outside ±10m
     When the user runs:
       loseit restore-backup --root /tmp/bkup
-    Then the summary reports "entries logged:           1"
+    Then stdout includes:
+        2016/02.toon   1 days with entries  [######################]
+                         present   0   upsert  1   empty  0   (logged 1 new entry)
+    And the summary block reports:
+        entries logged:             1
     (Live form: we restrict this case to fixture/proxy tests because
      forcing a specific server-side created_at requires a fixture
      server. The safe-window live test only covers the ±10m match
@@ -911,12 +1234,24 @@ Feature: `loseit restore-backup` (default safe mode) never double-logs
 ```
 Feature: `loseit backup` and `loseit restore-trash` polish
 
-  Scenario: --dry-run never sends RPCs
+  Scenario: --dry-run never sends RPCs and writes zero files
     Given an empty backup root "/tmp/bkup"
+    And a network capture is recording
     When the user runs:
       loseit backup --root /tmp/bkup --start 2016-02-01 --end 2016-02-29 --dry-run
     Then the command exits 0
-    And stdout contains "no RPCs sent."
+    And stdout ends with:
+        plan
+          range:              2016-02-01 -> 2016-02-29  (29 days, 1 month)
+          grain:              month
+          already on disk:    0 months  (skip)
+          partial on disk:    0 months  (partial)
+          no file yet:        1 month   (fetch)
+          total RPCs est.:    ~1 grain RPC + ~0 new food descriptions = ~1
+          est. wall time:     ~1 s @ 1s sleep
+          root:               /tmp/bkup
+        no RPCs sent.
+    And the network capture shows zero POSTs to /web/service
     And the directory "/tmp/bkup" still contains zero files
 
   Scenario: --quiet-skips collapses long resume output
@@ -924,39 +1259,68 @@ Feature: `loseit backup` and `loseit restore-trash` polish
           spanning 2019/08.toon .. 2026/03.toon
     When the user runs:
       loseit backup --root $ROOT --quiet-skips
-    Then stdout contains EXACTLY ONE line matching
-         "skip      2019/08.toon .. 2026/03.toon   80 grains complete (...)"
+    Then stdout contains EXACTLY ONE line matching:
+        skip      2019/08.toon .. 2026/03.toon   80 grains complete (2349 days, <int> entries)
     And stdout does NOT contain 80 separate "skip      YYYY/MM.toon" lines
 
 Feature: `loseit restore-trash` replays the trash
 
   Scenario: default replays the last line and consumes it
-    Given "$BACKUP_ROOT/../trash.jsonl" contains exactly one JSON line
-          (the result of an earlier `loseit delete` of an entry on 2016-02-15)
+    Given "$BACKUP_ROOT/../trash.jsonl" contains EXACTLY one JSON line
+          (the result of an earlier `loseit delete` of a snacks entry on
+           2016-02-15 with food_id=<hex>, servings=0.1)
     And the server's diary for 2016-02-15 is empty
     When the user runs:
       loseit restore-trash
     Then the command exits 0
-    And stdout contains "logged successfully (new entry id: ...)"
-    And stdout contains "trash#1 consumed."
-    And "$BACKUP_ROOT/../trash.jsonl" is now empty (0 lines)
-    And `loseit diary --date 2016-02-15 --output json` now includes the
-        restored entry (food_id and date match the consumed line)
+    And stdout contains:
+        restoring trash#1 (last line)
+          food: <food_name from the trash line>
+          meal: snacks
+          date: 2016-02-15
+          servings: 0.1
+
+        logged successfully (new entry id: <32-char hex>)
+        trash#1 consumed.
+    And "$BACKUP_ROOT/../trash.jsonl" exists and is 0 bytes (0 lines)
+    And `loseit diary --date 2016-02-15 --output json` shows exactly one
+        entry whose:
+          food_id    == the food_id from the consumed trash line
+          meal       == "snacks"
+          servings   == 0.1
+          created_at is within 60s of "now" (the re-log just happened)
 
   Scenario: --line N --keep replays a specific line without consuming it
-    Given "$BACKUP_ROOT/../trash.jsonl" contains 3 JSON lines
+    Given "$BACKUP_ROOT/../trash.jsonl" contains 3 JSON lines (lines 1,2,3)
+    And the file's `wc -l` reports 3 before the test
     When the user runs:
       loseit restore-trash --line 2 --keep
     Then the command exits 0
-    And "$BACKUP_ROOT/../trash.jsonl" still has 3 lines
-    And the entry described by line 2 appears in `loseit diary`
-        for the date encoded in that line
+    And stdout contains:
+        restoring trash#2 (--keep, line will remain after restore)
+          food: <food_name from line 2>
+          ...
+        logged successfully (new entry id: <32-char hex>)
+        trash#2 retained.
+    And "$BACKUP_ROOT/../trash.jsonl" `wc -l` STILL reports 3
+    And line 2 is byte-for-byte unchanged
+    And `loseit diary` for the date encoded in line 2 now contains an
+        entry whose food_id matches that line's food_id
 
   Scenario: --dry-run prints the plan without replaying
     Given "$BACKUP_ROOT/../trash.jsonl" contains one line
     When the user runs:
       loseit restore-trash --dry-run
     Then the command exits 0
+    And stdout contains:
+        would restore trash#1 (last line)
+          food: <food_name from line 1>
+          meal: <string>
+          date: <YYYY-MM-DD from line 1>
+          servings: <float from line 1>
+        no log RPC sent (dry run).
+    And `loseit diary` for that date is unchanged
+    And "$BACKUP_ROOT/../trash.jsonl" still has 1 line
     And stdout contains "restoring trash#1 (last line)"
     And stdout contains "no log RPC sent (dry run)."
     And `loseit diary --date 2016-02-15` is unchanged
