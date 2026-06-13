@@ -23,7 +23,7 @@ A single multi-megabyte TOON file would defeat the whole point of TOON
 **grain** — by default, one file per month.
 
 ```
-~/.local/share/loseit/backup/
+~/.config/loseit/backup/
   index.toon                          <- global "what do we have?" summary
   2019/
     08.toon                           <- August 2019: entries
@@ -54,7 +54,7 @@ endpoint (existing or future), and the recursive fall-back in §6.1
 gives no benefit when the natural ceiling for safe bulk fetches is
 already a month.
 
-Default root: `~/.local/share/loseit/backup/`. Override with `--root PATH`.
+Default root: `~/.config/loseit/backup/`. Override with `--root PATH`.
 
 A user opening the folder in Finder sees at a glance what's been
 captured — no scrolling a 50 MB single file looking for date holes.
@@ -74,7 +74,7 @@ day, so the last completed day is always durable.
 
 ```
 Options:
-  --root PATH                 Backup root. Default: ~/.local/share/loseit/backup.
+  --root PATH                 Backup root. Default: ~/.config/loseit/backup.
   --grain {day,week,month}
                               Granularity of the on-disk files. Default: month.
   --start YYYY-MM-DD          First date to fetch (inclusive).
@@ -121,7 +121,7 @@ discovering earliest day...
 earliest day:         2019-08-14
 range:                2019-08-14 -> 2026-06-12  (2495 days, 83 months)
 grain:                month
-root:                 /Users/eric/.local/share/loseit/backup
+root:                 /Users/eric/.config/loseit/backup
 
 fetch     2019/08.toon   18 days  [######################]   3 entries
 fetch     2019/09.toon   30 days  [######################]  12 entries
@@ -135,7 +135,7 @@ summary
   days with entries:  2358
   unique foods:       312 described,  0 re-described today
   archive size:       11.4 MB
-  root:               /Users/eric/.local/share/loseit/backup
+  root:               /Users/eric/.config/loseit/backup
 ```
 
 (Coloring: only **paths, dates, counts, and sizes** are colored — the
@@ -152,7 +152,7 @@ discovering earliest day... cached (index.toon)
 earliest day:         2019-08-14
 range:                2019-08-14 -> 2026-06-12  (2495 days, 83 months)
 grain:                month
-root:                 /Users/eric/.local/share/loseit/backup
+root:                 /Users/eric/.config/loseit/backup
 
 skip      2019/08.toon   complete (18 days, 3 entries)
 skip      2019/09.toon   complete (30 days, 12 entries)
@@ -171,7 +171,7 @@ summary
   days fetched:        20
   days with entries:   18
   unique foods:         0 new,  0 re-described today  (312 cached)
-  root:               /Users/eric/.local/share/loseit/backup
+  root:               /Users/eric/.config/loseit/backup
 ```
 
 The `skip` lines are emitted for every already-complete grain — there
@@ -196,7 +196,7 @@ fetch     2026/06.toon   12 days  [######################]  42 entries
 $ loseit backup --start 2024-03-01 --end 2024-03-31
 range:                2024-03-01 -> 2024-03-31  (31 days, 1 month)
 grain:                month
-root:                 /Users/eric/.local/share/loseit/backup
+root:                 /Users/eric/.config/loseit/backup
 
 fetch     2024/03.toon   31 days  [######################]  118 entries
 
@@ -205,7 +205,7 @@ summary
   days fetched:       31
   days with entries:  29
   unique foods:       43 described  (37 new, 6 re-used, 0 re-described today)
-  root:               /Users/eric/.local/share/loseit/backup
+  root:               /Users/eric/.config/loseit/backup
 ```
 
 #### Example: grain-level fall-back to days
@@ -217,7 +217,7 @@ the algorithm splits it into days transparently:
 $ loseit backup --start 2024-12-15 --end 2024-12-31
 range:                2024-12-15 -> 2024-12-31  (17 days, 1 month)
 grain:                month
-root:                 /Users/eric/.local/share/loseit/backup
+root:                 /Users/eric/.config/loseit/backup
 
 fetch     2024/12.toon
             attempt month -> oversize response, falling back to day
@@ -245,7 +245,7 @@ plan
                        (1 RPC per grain via getDailyDetails...ForDateRange;
                         partial grain re-fetches its whole month)
   est. wall time:     ~15 s @ 1s sleep
-  root:               /Users/eric/.local/share/loseit/backup
+  root:               /Users/eric/.config/loseit/backup
 no RPCs sent.
 ```
 
@@ -306,7 +306,7 @@ Restore is purely additive in both modes — see §7.4.
 ```
 $ loseit restore-backup --dry-run
 account:              loseit user_id 53539329
-backup root:          /Users/eric/.local/share/loseit/backup
+backup root:          /Users/eric/.config/loseit/backup
 grain:                month
 mode:                 safe (upsert by food_id + created_at ± 10m)
 plan
@@ -331,7 +331,7 @@ Per-grain reporting in safe mode is per-day-with-entries:
 ```
 $ loseit restore-backup
 account:              loseit user_id 53539329
-backup root:          /Users/eric/.local/share/loseit/backup
+backup root:          /Users/eric/.config/loseit/backup
 grain:                month
 mode:                 safe (upsert by food_id + created_at ± 10m)
 
@@ -352,7 +352,7 @@ summary
   days upserted:           2
   entries already present: 4213
   entries logged:           5
-  root:                 /Users/eric/.local/share/loseit/backup
+  root:                 /Users/eric/.config/loseit/backup
 ```
 
 #### Example: real restore, cheap mode
@@ -360,7 +360,7 @@ summary
 ```
 $ loseit restore-backup --skip-restore-on-nonempty-grain-time-ranges
 account:              loseit user_id 53539329
-backup root:          /Users/eric/.local/share/loseit/backup
+backup root:          /Users/eric/.config/loseit/backup
 grain:                month
 mode:                 simple (skip grain on first non-empty day in range)
 
@@ -381,7 +381,7 @@ summary
   grains skipped:       81  (server already had data in range)
   grains restored:       2
   entries logged:       74
-  root:                 /Users/eric/.local/share/loseit/backup
+  root:                 /Users/eric/.config/loseit/backup
 ```
 
 The read-RPC count in simple mode is dominated by how quickly each
@@ -975,7 +975,7 @@ using `loseit delete` per entry. Restore stays cheap to reason about.
 | Ctrl-C mid-backup                          | The in-flight grain's progress is lost (grain files are stateless — §4.1). Rerun re-fetches that grain from scratch. Previously-completed grains are still on disk and skipped. |
 | Network blip during a day's fetch          | The grain attempt fails and rolls back. Recursive split-and-retry (§6.1) drops to a smaller grain and retries; on day-grain failure the backup aborts and rerun retries from the same grain. |
 | Lose It! rate-limit / 429                  | `--sleep-seconds` (default 1s) keeps load low. On 429, the grain aborts; the recursive split path treats 429 as "too much data" and tries again at a smaller grain. |
-| Backup ported between machines             | Copy the `~/.local/share/loseit/backup` folder. Rerun.                                     |
+| Backup ported between machines             | Copy the `~/.config/loseit/backup` folder. Rerun.                                     |
 | User switches accounts mid-archive         | `account.user_id` is pinned per file. Running against a different account refuses (`--strict-account`). |
 | Restore into a fresh account (safe mode)   | Every day-with-entries gets one read RPC (returns empty), then every entry logged.         |
 | Restore into the same account (safe mode)  | Every day's entries match by `(food_id, created_at ±10m)`. Zero log RPCs.                  |
@@ -1071,7 +1071,7 @@ The SDK ships three implementations covering the common cases:
 
 | Class                  | What it does                                                   | Default? |
 |------------------------|----------------------------------------------------------------|----------|
-| `LocalFileTrashSink`   | Appends one JSON line to `~/.local/share/loseit/trash.jsonl`. `chmod 600`. | Yes — the CLI uses this. |
+| `LocalFileTrashSink`   | Appends one JSON line to `~/.config/loseit/trash.jsonl`. `chmod 600`. | Yes — the CLI uses this. |
 | `ConsoleTrashSink`     | Writes the entry's TOON (or JSON) projection to stdout/stderr. | No.      |
 | `ChainedTrashSink`     | Fans the call out to N inner sinks; all must succeed.          | No.      |
 
@@ -1086,7 +1086,7 @@ from lose_it.trash import (
 li = LoseIt.from_env()                          # uses LocalFileTrashSink()
 result = li.delete_entry(entry, confirm=True)
 print(result.trash_receipts[0].where)
-# -> "/Users/you/.local/share/loseit/trash.jsonl#42"
+# -> "/Users/you/.config/loseit/trash.jsonl#42"
 
 # Explicit local file with custom path.
 li.delete_entry(
@@ -1176,7 +1176,7 @@ Two reasons this works cleanly for agents:
   so the receipt becomes part of the durable transcript automatically
   — no special wiring needed.
 
-### 9.5 Trash file schema (`~/.local/share/loseit/trash.jsonl`)
+### 9.5 Trash file schema (`~/.config/loseit/trash.jsonl`)
 
 `LocalFileTrashSink` writes one JSON object per line, append-only,
 `chmod 600`. Each line is self-contained.
@@ -1200,7 +1200,7 @@ loseit delete [EXISTING OPTIONS] [TRASH OPTIONS]
 
 Trash options:
   --trash-file PATH       Override the local trash file path.
-                          Default: ~/.local/share/loseit/trash.jsonl.
+                          Default: ~/.config/loseit/trash.jsonl.
   --print-deleted / --no-print-deleted
                           Echo the deleted entry to stdout (TOON if -o text,
                           JSON if -o json, TOON if -o toon). Default: on.
@@ -1217,7 +1217,7 @@ Example:
 ```
 $ loseit delete --meal lunch --pick 1
 Deleting from lunch: Tortilla Wraps, ... (Mission) x 1.0
-  trash sink: /Users/you/.local/share/loseit/trash.jsonl#42
+  trash sink: /Users/you/.config/loseit/trash.jsonl#42
   (run 'loseit restore-trash' to undo the most recent delete)
 
 Type the food name exactly to confirm: 'Tortilla Wraps, ...'
@@ -1240,7 +1240,7 @@ deleted_entry:
 loseit restore-trash [OPTIONS]
 
 Options:
-  --trash-file PATH       Source trash file. Default: ~/.local/share/loseit/trash.jsonl.
+  --trash-file PATH       Source trash file. Default: ~/.config/loseit/trash.jsonl.
   --line INT              Restore the entry on line N (1-based) instead of the last.
   --keep / --consume      Keep the trash line after restoring, or remove it (default).
                           Default: --consume.
@@ -1289,7 +1289,7 @@ out for backup restore.
 class LoseIt:
     def backup(
         self,
-        root: Path = Path("~/.local/share/loseit/backup").expanduser(),
+        root: Path = Path("~/.config/loseit/backup").expanduser(),
         *,
         grain: Literal["day", "week", "month"] = "month",
         start: date | None = None,
@@ -1304,7 +1304,7 @@ class LoseIt:
 
     def restore_backup(
         self,
-        root: Path = Path("~/.local/share/loseit/backup").expanduser(),
+        root: Path = Path("~/.config/loseit/backup").expanduser(),
         *,
         grain: Literal["day", "week", "month"] = "month",
         start: date | None = None,
@@ -1349,7 +1349,7 @@ CLI examples (§3); the SDK itself is silent.
    grain. Should middle-day be the *most-likely-non-empty* day instead
    (e.g. a Wednesday if the user logs more on weekdays)? *(Lean: keep
    it simple — first/middle/last.)*
-3. **Compression.** `~/.local/share/loseit/backup/2019/08.toon.gz` is
+3. **Compression.** `~/.config/loseit/backup/2019/08.toon.gz` is
    ~5x smaller. Worth a `--compress` flag? *(Lean: no for v1.
    Grep-ability wins.)*
 

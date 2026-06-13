@@ -74,7 +74,7 @@ _PROJECT_LICENSE = "MIT"
 # Default backup root (spec §2 / §3.1). Expanded eagerly so ``--help``
 # renders the absolute path the user will actually see on disk rather than
 # a literal ``~``.
-DEFAULT_BACKUP_ROOT = Path("~/.local/share/loseit/backup").expanduser()
+DEFAULT_BACKUP_ROOT = Path("~/.config/loseit/backup").expanduser()
 
 
 def _resolve_version() -> str:
@@ -817,9 +817,11 @@ def delete(
         Path | None,
         typer.Option(
             "--trash-file",
+            envvar="LOSEIT_TRASH_FILE",
             help=(
                 "Override the local trash file path. "
-                "Default: ~/.local/share/loseit/trash.jsonl. "
+                "Default: ~/.config/loseit/trash.jsonl "
+                "(override via $LOSEIT_TRASH_FILE). "
                 "The file is created with mode 0o600 on first write."
             ),
         ),
@@ -1026,7 +1028,11 @@ def restore_trash(
         Path | None,
         typer.Option(
             "--trash-file",
-            help=("Source trash file. Default: ~/.local/share/loseit/trash.jsonl."),
+            envvar="LOSEIT_TRASH_FILE",
+            help=(
+                "Source trash file. Default: ~/.config/loseit/trash.jsonl "
+                "(override via $LOSEIT_TRASH_FILE)."
+            ),
         ),
     ] = None,
     line: Annotated[
@@ -1349,10 +1355,11 @@ def backup(
         Path,
         typer.Option(
             "--root",
+            envvar="LOSEIT_BACKUP_ROOT",
             help=(
                 "Backup root directory. Default: "
-                "~/.local/share/loseit/backup. One grain file per "
-                "calendar/ISO unit lives under here."
+                "~/.config/loseit/backup (override via $LOSEIT_BACKUP_ROOT). "
+                "One grain file per calendar/ISO unit lives under here."
             ),
         ),
     ] = DEFAULT_BACKUP_ROOT,
@@ -1621,7 +1628,11 @@ def restore_backup(
         Path,
         typer.Option(
             "--root",
-            help="Backup root directory. Default: same as `backup`.",
+            envvar="LOSEIT_BACKUP_ROOT",
+            help=(
+                "Backup root directory. Default: same as `backup` "
+                "(~/.config/loseit/backup, override via $LOSEIT_BACKUP_ROOT)."
+            ),
         ),
     ] = DEFAULT_BACKUP_ROOT,
     grain: Annotated[
