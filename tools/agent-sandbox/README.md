@@ -1,53 +1,88 @@
 # agent-sandbox
 
-Single-file pydantic-ai agent (`agent.py`) that drives the `loseit` CLI via a homelab-hosted Ollama model (`qwen3:8b` by default). Runs in Docker with no host filesystem access except a read-only mount of `~/.config/loseit/` for the CLI's credentials.
+Single-file pydantic-ai agent (`agent.py`) that drives the `loseit` CLI via a homelab-hosted `qwen3:8b` Ollama model. Runs in Docker with only the user's `~/.config/loseit/` mounted read-only.
 
-## Quick start
+## Quickstart
 
 ```bash
-# Build (uses git+main for lose-it; pin with --build-arg LOSEIT_REF=v0.3.0)
 docker build -t loseit-agent tools/agent-sandbox
 
-# Run (mount a runs dir to persist per-run logs)
-mkdir -p ./runs
-docker run --rm -it \
+mkdir -p tools/agent-sandbox/runs
+docker run --rm \
   -v ~/.config/loseit:/home/agent/.config/loseit:ro \
-  -v "$PWD/runs:/home/agent/runs" \
-  loseit-agent "log 100g of guacamole as a snack"
+  -v "$PWD/tools/agent-sandbox/runs:/home/agent/runs" \
+  loseit-agent "100g of guacamole as a snack"
 ```
 
-Each run writes one log file at `./runs/run-YYYYMMDD-HHMMSSZ.log` containing the system + user prompt, every tool invocation (args + full return), the complete final message history (every model request/response, tool calls with parsed arguments), and token usage.
+Requires Tailscale up (model is at `https://ollama.priv.mlops-club.org/v1`). Per-run logs land at `runs/run-{UTC}.log`.
 
-The agent's only outbound network needs are:
-- `https://ollama.priv.mlops-club.org/v1` — model endpoint (Tailscale-only, so the host must be on the tailnet)
-- `https://www.loseit.com` + `https://d3hsih69yn4d89.cloudfront.net` — Lose It! API
-- `https://github.com/phitoduck/lose-it` — only at build time
+## Sample run
+
+Prompt: `255g of a mix that was evenly split between asparagus, lentils, and red potatoes and I also had 100g of homemade guacamole`
+
+Final output:
+
+```
+Logged 85g asparagus (19 cal), 85g lentils (99 cal), 85g potatoes (76 cal),
+and 100g guacamole (203 cal). Total: 397 cal (snacks).
+```
+
+<details>
+<summary>What the agent did under the hood (15 tool calls, 5 model turns, ~90s)</summary>
+
+```
+[search]        query="guacamole"
+[search]        query="red potatoes"
+[search]        query="lentils"
+[search]        query="asparagus"
+
+[describe_food] [5aa5…, bcc2…, 8dfd…]                # lentils — top 3 candidates
+[describe_food] [fc32…, 977f…, 0e71…]                # asparagus
+[describe_food] [ca6f…, 86d9…, affe…]                # red potatoes
+[describe_food] [0479…, 5a06…, cc46…]                # guacamole
+
+[diary]         on_date="2026-06-12"                 # snapshot before logging
+
+[log_food]      0479… (Guacamole, brand=Homemade) → 100g
+                ❌ "doesn't have a tablespoon→g conversion … pick a different food entry"
+[log_food]      fc32… (Asparagus, Spears, Cooked) → 85g
+                ✅ 19 cal
+[log_food]      5aa5… (Beans, Lentils, Cooked) → 85g
+                ✅ 99 cal
+[log_food]      ca6f… (Potatoes, Red, Baby, Cooked) → 85g
+                ✅ 76 cal
+[log_food]      cc46… (Guacamole, brand=Chipotle) → 100g
+                ✅ 203 cal     # re-picked an entry that supports grams
+
+[diary]         on_date="2026-06-12"                 # final verification
+```
+
+**Usage:** `RunUsage(input_tokens=64871, output_tokens=4606, requests=5, tool_calls=15)`
+
+The interesting moment is the guacamole retry. The first candidate (`0479…`, brand `Homemade`) is stored only in tablespoons with no gram-conversion factor. The tool's error response includes an explicit `guidance` field telling the model to re-search rather than do unit math. The model picks a different `food_id` (`cc46…`, brand `Chipotle`) which does support grams and logs cleanly.
+
+</details>
 
 ## Tools exposed to the model
 
-One tool per non-destructive loseit subcommand:
+One per non-destructive `loseit` subcommand. `delete` and `login` are deliberately omitted.
 
-| Tool            | Subcommand        |
-|-----------------|-------------------|
-| `search`        | `loseit search`        |
-| `describe_food` | `loseit describe-food` |
-| `log`           | `loseit log` (with `dry_run` param) |
-| `diary`         | `loseit diary`         |
-| `whoami`        | `loseit whoami`        |
-
-Deliberately **not** exposed: `delete` (destructive), `login` (out-of-band auth), `version`.
+| Tool            | Subcommand               |
+|-----------------|--------------------------|
+| `search`        | `loseit search`          |
+| `describe_food` | `loseit describe-food`   |
+| `log_food`      | `loseit log`             |
+| `diary`         | `loseit diary`           |
+| `whoami`        | `loseit whoami`          |
 
 ## Environment variables
 
 | Var | Default | Purpose |
 |-----|---------|---------|
 | `OLLAMA_BASE_URL` | `https://ollama.priv.mlops-club.org/v1` | OpenAI-compatible endpoint |
-| `OLLAMA_MODEL`    | `qwen3:8b` | Model name on Ollama |
+| `OLLAMA_MODEL`    | `qwen3:8b` | Model on Ollama |
 | `AGENT_PROMPT`    | — | Prompt if not passed as argv |
 
 ## Sandbox guarantees
 
-- Non-root user (`agent`, uid 1000)
-- Read-only credential mount (`:ro`)
-- No `--network host`, no Docker socket, no kubeconfig
-- No host home dir mount beyond `~/.config/loseit`
+Non-root user, read-only credential mount, no host bind beyond `~/.config/loseit`, no Docker socket, no kubeconfig. Outbound network needs are limited to the Ollama endpoint and `loseit.com` / its CloudFront origin.
