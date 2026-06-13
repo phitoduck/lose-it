@@ -57,7 +57,7 @@ from .core.auth import (
     refresh_token_from_browser,
     save_token,
 )
-from .core.init import get_daydate_key
+from .core.init import get_daydate_key, get_init_day_keys
 from .enums import MealType, ServingUnit
 from .models import (
     CrossClassConversion,
@@ -302,6 +302,60 @@ class LoseIt:
         if when is None:
             when = date.today()
         return _daily.get_daily_details(self.http, when)
+
+    def diary_range(
+        self,
+        start: date,
+        end: date,
+    ) -> dict[date, list[FoodLogEntry]]:
+        """Bulk diary fetch via ``getDailyDetailsIncludingPendingForDateRange``.
+
+        Returns a per-day map covering every date in ``[start, end]``
+        inclusive — days with no entries are still present with an empty
+        list.
+
+        On the wire this issues exactly **one** range RPC per call. The
+        first time the method is invoked on a given client instance it
+        also issues one ``getInitializationData`` RPC to bootstrap the
+        day-key cache — subsequent calls reuse the cached window. So a
+        backup loop that walks 365 calendar days as 52 weekly slices
+        spends 1 init + 52 range RPCs, never per-day RPCs.
+
+        Raises :class:`lose_it.core.daily.TooMuchData` on
+        413 / 429 / 5xx responses or oversize ``//EX`` envelopes; the
+        backup primitive (T2) catches this and recurses into a smaller
+        grain.
+        """
+        day_keys = self._range_day_keys(start, end)
+        return _daily.get_daily_details_range(
+            self.http,
+            start=start,
+            end=end,
+            day_keys=day_keys,
+        )
+
+    # Per-instance day_key cache for diary_range. Populated lazily on
+    # first call by issuing a single getInitializationData RPC. The server
+    # accepts ``_FALLBACK_DAY_KEY`` for anything outside the init window,
+    # so once we've made the bootstrap call we don't need a second one
+    # for later ranges that happen to fall outside the cached window.
+    _day_key_cache: dict[int, str]
+    _day_key_cache_loaded: bool
+
+    def _range_day_keys(self, start: date, end: date) -> dict[int, str]:
+        """Resolve the ``(start, end)`` day_keys, bootstrapping on demand.
+
+        On the first call this issues exactly one
+        ``getInitializationData`` RPC, parses the entire day-key window
+        out of the response, and caches it on the instance. Subsequent
+        calls reuse the cached window — no extra init RPCs, even if the
+        new range falls outside the cached window (the server accepts
+        the ``ZZZZZZZ`` fallback for any day_num it doesn't recognize).
+        """
+        if not getattr(self, "_day_key_cache_loaded", False):
+            self._day_key_cache = get_init_day_keys(self.http)
+            self._day_key_cache_loaded = True
+        return dict(self._day_key_cache)
 
     def log_food(
         self,
