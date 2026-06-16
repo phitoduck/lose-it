@@ -77,6 +77,8 @@ def derive_config_values(
     token: str,
     browser_name: str,
     *,
+    profile: str | None = None,
+    cookies: dict[str, str] | None = None,
     user_name_override: str | None = None,
     prompt_for_username: Callable[[], str | None] | None = None,
 ) -> DerivedConfigValues:
@@ -104,10 +106,13 @@ def derive_config_values(
 
     user_name: str | None = user_name_override or info.get("user_name")
     if not user_name:
+        # Reuse a caller-supplied cookie jar when available so login decrypts
+        # the cookie store only once (one macOS Keychain prompt, not two).
         # browser_name is treated narrowly here; auth.load_cookies_from_browser
         # validates against its Literal type and returns {} if browser-cookie3
         # isn't importable.
-        cookies = load_cookies_from_browser(browser_name)  # type: ignore[arg-type]
+        if cookies is None:
+            cookies = load_cookies_from_browser(browser_name, profile=profile)  # type: ignore[arg-type]
         user_name = extract_user_name_from_cookies(cookies)
     if not user_name and prompt_for_username is not None:
         user_name = prompt_for_username()

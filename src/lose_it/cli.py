@@ -1147,6 +1147,18 @@ def login(
             help="Which browser to read the liauth cookie from.",
         ),
     ] = Browser.chrome,
+    profile: Annotated[
+        str | None,
+        typer.Option(
+            "--profile",
+            "-p",
+            help=(
+                "Read only this browser profile directory (e.g. 'Default' or "
+                "'Profile 2') instead of scanning every profile. Targets the "
+                "right account and, on macOS, avoids one Keychain prompt per profile."
+            ),
+        ),
+    ] = None,
     token_file: Annotated[
         Path,
         typer.Option(
@@ -1209,8 +1221,9 @@ def login(
     """
     fmt = _output_format(ctx)
     logger.info(
-        "cli.login: browser={b} token_file={tf} config_file={cf} write_config={wc}",
+        "cli.login: browser={b} profile={p} token_file={tf} config_file={cf} write_config={wc}",
         b=browser.value,
+        p=profile,
         tf=str(token_file),
         cf=str(config_file),
         wc=write_config,
@@ -1226,6 +1239,7 @@ def login(
 
     result = LoseIt.login_from_browser(
         browser.value,
+        profile=profile,
         token_file=token_file,
         config_file=config_file,
         user_name=user_name_override,

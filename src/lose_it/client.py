@@ -57,7 +57,7 @@ from .core.auth import (
     DEFAULT_TOKEN_FILE,
     decode_jwt_exp,
     is_token_expired,
-    refresh_token_from_browser,
+    load_cookies_from_browser,
     save_token,
 )
 from .core.init import get_daydate_key, get_init_day_keys
@@ -815,6 +815,7 @@ class LoseIt:
         cls,
         browser: str = "chrome",
         *,
+        profile: str | None = None,
         token_file: Path = DEFAULT_TOKEN_FILE,
         config_file: Path = DEFAULT_CONFIG_FILE,
         user_name: str | None = None,
@@ -839,7 +840,11 @@ class LoseIt:
         prompting and returns a partial result when the username
         can't be auto-resolved).
         """
-        token = refresh_token_from_browser(browser)  # type: ignore[arg-type]
+        # Decrypt the cookie store exactly once and reuse the jar for both the
+        # liauth token and the username sniff below. Two separate loads would
+        # mean two macOS Keychain prompts per login (one per decryption).
+        cookies = load_cookies_from_browser(browser, profile=profile)  # type: ignore[arg-type]
+        token = cookies.get("liauth")
 
         if token is None:
             return LoginResult(
@@ -878,6 +883,8 @@ class LoseIt:
             derived = derive_config_values(
                 token,
                 browser_name=browser,
+                profile=profile,
+                cookies=cookies,
                 user_name_override=user_name,
                 prompt_for_username=prompt_for_username,
             )
