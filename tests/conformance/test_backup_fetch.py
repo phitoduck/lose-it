@@ -379,8 +379,19 @@ def test_describe_cadence_once_per_utc_day(tmp_path):
     assert foods_path.read_bytes() == original_bytes
 
 
-def test_describe_cadence_re_describes_next_utc_day(tmp_path):
-    """A later UTC date forces a re-describe; the cache row updates."""
+def test_describe_cadence_re_describes_next_utc_day(tmp_path, monkeypatch):
+    """A later UTC date forces a re-describe; the cache row updates.
+
+    Pins the wall-clock that :func:`update_food_cache` stamps into
+    ``last_described_at`` so the assertion below stays stable regardless
+    of when CI runs. ``_now_utc`` exists specifically as a test seam for
+    this purpose.
+    """
+    from lose_it.backup import _fetch as _fetch_mod
+
+    frozen_now = datetime(2026, 6, 13, 12, 0, 0, tzinfo=UTC)
+    monkeypatch.setattr(_fetch_mod, "_now_utc", lambda: frozen_now)
+
     foods_path = tmp_path / "foods.toon"
     food_id = "a" * 32
     _seed_foods_file(

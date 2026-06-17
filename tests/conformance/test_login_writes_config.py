@@ -4,10 +4,12 @@ Covers the unit-level YAML writer (`write_yaml_config`) and the
 end-to-end CLI flow that takes a browser cookie → JWT → YAML config so
 the user doesn't have to set any ``LOSEIT_*`` env vars manually.
 
-The browser cookie store is mocked at module boundary
-(`refresh_token_from_browser` / `load_cookies_from_browser`) so the
-tests run without a real Chrome/Brave install and without poking the
-macOS Keychain.
+The browser cookie store is mocked at the module boundary
+(`lose_it.client.load_cookies_from_browser`) so the tests run without a
+real Chrome/Brave install and without poking the macOS Keychain. Login
+decrypts the store once and reuses the jar, so a single patched
+``load_cookies_from_browser`` covers both the liauth token and the
+username sniff.
 """
 
 from __future__ import annotations
@@ -23,7 +25,6 @@ import yaml
 from typer.testing import CliRunner
 
 from lose_it.cli import app
-from lose_it.core import auth as auth_module
 from lose_it.core._settings import write_yaml_config
 
 
@@ -103,8 +104,10 @@ def test_login_writes_config_from_jwt_email(
             "exp": int(time.time()) + 86400,
         }
     )
-    monkeypatch.setattr(auth_module, "refresh_token_from_browser", lambda _b: jwt)
-    monkeypatch.setattr("lose_it.client.refresh_token_from_browser", lambda _b: jwt)
+    monkeypatch.setattr(
+        "lose_it.client.load_cookies_from_browser",
+        lambda *_a, **_k: {"liauth": jwt},
+    )
 
     token_file = tmp_path / "token"
     config_file = tmp_path / "config.yaml"
@@ -150,10 +153,13 @@ def test_login_uses_cookie_when_jwt_has_no_email(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     jwt = _make_jwt({"sub": "777", "exp": int(time.time()) + 86400})
-    monkeypatch.setattr("lose_it.client.refresh_token_from_browser", lambda _b: jwt)
     monkeypatch.setattr(
-        "lose_it.core._login_flow.load_cookies_from_browser",
-        lambda _b: {"loseit_email": "via-cookie@example.com", "other": "x"},
+        "lose_it.client.load_cookies_from_browser",
+        lambda *_a, **_k: {
+            "liauth": jwt,
+            "loseit_email": "via-cookie@example.com",
+            "other": "x",
+        },
     )
 
     token_file = tmp_path / "token"
@@ -193,10 +199,9 @@ def test_user_name_flag_beats_jwt_and_cookies(
             "exp": int(time.time()) + 86400,
         }
     )
-    monkeypatch.setattr("lose_it.client.refresh_token_from_browser", lambda _b: jwt)
     monkeypatch.setattr(
-        "lose_it.core._login_flow.load_cookies_from_browser",
-        lambda _b: {"loseit_email": "from-cookie@example.com"},
+        "lose_it.client.load_cookies_from_browser",
+        lambda *_a, **_k: {"liauth": jwt, "loseit_email": "from-cookie@example.com"},
     )
 
     token_file = tmp_path / "token"
@@ -237,7 +242,10 @@ def test_no_write_config_skips_yaml(
             "exp": int(time.time()) + 86400,
         }
     )
-    monkeypatch.setattr("lose_it.client.refresh_token_from_browser", lambda _b: jwt)
+    monkeypatch.setattr(
+        "lose_it.client.load_cookies_from_browser",
+        lambda *_a, **_k: {"liauth": jwt},
+    )
 
     token_file = tmp_path / "token"
     config_file = tmp_path / "config.yaml"
@@ -273,8 +281,10 @@ def test_json_mode_with_unresolvable_user_name_skips_yaml(
 ) -> None:
     """JSON output mode is non-interactive; never prompt or block."""
     jwt = _make_jwt({"sub": "1", "exp": int(time.time()) + 86400})
-    monkeypatch.setattr("lose_it.client.refresh_token_from_browser", lambda _b: jwt)
-    monkeypatch.setattr("lose_it.core._login_flow.load_cookies_from_browser", lambda _b: {})
+    monkeypatch.setattr(
+        "lose_it.client.load_cookies_from_browser",
+        lambda *_a, **_k: {"liauth": jwt},
+    )
 
     token_file = tmp_path / "token"
     config_file = tmp_path / "config.yaml"
@@ -320,7 +330,10 @@ def test_login_preserves_unrelated_yaml_keys(
             "exp": int(time.time()) + 86400,
         }
     )
-    monkeypatch.setattr("lose_it.client.refresh_token_from_browser", lambda _b: jwt)
+    monkeypatch.setattr(
+        "lose_it.client.load_cookies_from_browser",
+        lambda *_a, **_k: {"liauth": jwt},
+    )
 
     result = runner.invoke(
         app,
@@ -343,3 +356,75 @@ def test_login_preserves_unrelated_yaml_keys(
     assert on_disk["strong_name"] == "USER_PINNED_STRONG"
     assert on_disk["user_id"] == "1"
     assert on_disk["user_name"] == "x@example.com"
+
+
+# ── login command — single cookie-store decryption (one Keychain prompt) ─────
+
+
+def test_login_decrypts_cookie_store_only_once(
+    tmp_path: Path,
+    runner: CliRunner,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: login must read the cookie store exactly once.
+
+    Each ``browser_cookie3`` loader call shells out to the macOS Keychain
+    for the "Chrome Safe Storage" key, so every extra decryption is another
+    Keychain prompt. Login resolves the liauth token *and* sniffs the
+    username from a single decrypted jar — this asserts the loader fires
+    once even with no ``--user-name`` (the path that used to decrypt twice:
+    once for the token, once for the username sniff).
+
+    Patches one layer lower than the other tests here (the real
+    ``browser_cookie3`` loader rather than ``load_cookies_from_browser``)
+    so the decryption *count* is what's actually under test.
+    """
+    import browser_cookie3
+
+    # No email claim → forces the username-sniff branch, which is exactly the
+    # path that historically triggered a second decryption.
+    jwt = _make_jwt({"sub": "555", "exp": int(time.time()) + 86400})
+
+    class _FakeCookie:
+        def __init__(self, name: str, value: str) -> None:
+            self.name = name
+            self.value = value
+
+    calls = {"n": 0}
+
+    def _counting_chrome(
+        cookie_file: str | None = None, domain_name: str = "", **_kw: Any
+    ) -> list[_FakeCookie]:
+        calls["n"] += 1
+        return [_FakeCookie("liauth", jwt)]
+
+    monkeypatch.setattr(browser_cookie3, "chrome", _counting_chrome)
+    # One profile path so the loop body runs exactly once per decryption.
+    monkeypatch.setattr(
+        "lose_it.core.auth._cookie_store_paths",
+        lambda _browser, profile=None: ["/fake/Default/Cookies"],
+    )
+
+    token_file = tmp_path / "token"
+    config_file = tmp_path / "config.yaml"
+    result = runner.invoke(
+        app,
+        [
+            "-o",
+            "json",
+            "login",
+            "--browser",
+            "chrome",
+            "--profile",
+            "Default",
+            "--token-file",
+            str(token_file),
+            "--write-config-to",
+            str(config_file),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["status"] == "ok"
+    assert calls["n"] == 1, f"expected 1 cookie-store decryption, got {calls['n']}"
+    # Token still imported from that single decrypted jar.
+    assert token_file.read_text().strip() == jwt

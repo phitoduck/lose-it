@@ -13,7 +13,11 @@ import base64
 import json
 from typing import Any
 
+import pytest
+
+from lose_it.core import auth as auth_module
 from lose_it.core.auth import (
+    _cookie_store_paths,
     decode_jwt_exp,
     decode_jwt_payload,
     extract_user_info_from_jwt,
@@ -120,3 +124,46 @@ def test_extract_user_name_from_cookies_rejects_values_with_spaces() -> None:
 def test_extract_user_name_from_cookies_returns_none_when_nothing_plausible() -> None:
     cookies = {"session": "deadbeef", "ga": "GA1.2.123"}
     assert extract_user_name_from_cookies(cookies) is None
+
+
+# ── _cookie_store_paths: profile targeting ──────────────────────────────────
+
+
+_FAKE_PROFILES = [
+    "/Chrome/Default/Cookies",
+    "/Chrome/Profile 2/Cookies",
+    "/Chrome/Profile 10/Cookies",
+]
+
+
+@pytest.fixture
+def _fake_chrome_profiles(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pretend Chrome has several profiles so we can test path filtering.
+
+    Forces the darwin glob branch and returns a fixed set of cookie-store
+    paths regardless of the pattern, so the test is host-independent.
+    """
+    monkeypatch.setattr(auth_module.sys, "platform", "darwin")
+    monkeypatch.setattr(auth_module.glob, "glob", lambda _pat: list(_FAKE_PROFILES))
+
+
+def test_cookie_store_paths_returns_all_profiles_by_default(
+    _fake_chrome_profiles: None,
+) -> None:
+    paths = _cookie_store_paths("chrome")
+    assert paths == _FAKE_PROFILES
+
+
+def test_cookie_store_paths_filters_to_named_profile(
+    _fake_chrome_profiles: None,
+) -> None:
+    # Only the matching profile dir survives — this is what collapses the
+    # per-profile macOS Keychain prompt storm down to a single prompt.
+    assert _cookie_store_paths("chrome", profile="Default") == ["/Chrome/Default/Cookies"]
+    assert _cookie_store_paths("chrome", profile="Profile 10") == ["/Chrome/Profile 10/Cookies"]
+
+
+def test_cookie_store_paths_unknown_profile_yields_nothing(
+    _fake_chrome_profiles: None,
+) -> None:
+    assert _cookie_store_paths("chrome", profile="Profile 999") == []

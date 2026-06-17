@@ -56,13 +56,23 @@ _COOKIE_GLOBS: dict[str, dict[BrowserName, tuple[str, ...]]] = {
 }
 
 
-def _cookie_store_paths(browser: BrowserName) -> list[str]:
-    """Expand the per-OS cookie-store globs for ``browser`` into real paths."""
+def _cookie_store_paths(browser: BrowserName, profile: str | None = None) -> list[str]:
+    """Expand the per-OS cookie-store globs for ``browser`` into real paths.
+
+    When ``profile`` is given, only the cookie store under that profile
+    directory is returned (e.g. ``"Default"`` or ``"Profile 2"``). This
+    avoids walking every profile — useful when you know which account is
+    signed into loseit.com, and on macOS it collapses the per-profile
+    Keychain prompt storm down to a single prompt.
+    """
     platform_key = "darwin" if sys.platform == "darwin" else "linux"
     patterns = _COOKIE_GLOBS.get(platform_key, {}).get(browser, ())
     paths: list[str] = []
     for pat in patterns:
         paths.extend(glob.glob(os.path.expanduser(pat)))
+    if profile is not None:
+        # The profile dir is the parent of the Cookies file.
+        paths = [p for p in paths if os.path.basename(os.path.dirname(p)) == profile]
     seen: set[str] = set()
     return [p for p in paths if not (p in seen or seen.add(p))]
 
@@ -180,13 +190,15 @@ def is_token_expired(token: str, *, leeway_seconds: int = 60) -> bool:
 def load_cookies_from_browser(
     browser: BrowserName,
     domain: str = "loseit.com",
+    profile: str | None = None,
 ) -> dict[str, str]:
     """Return every cookie ``browser`` has for ``domain`` as a name → value dict.
 
     Walks every profile under the browser's user-data root and merges them
     (last-write-wins on name collisions, but since each profile is
-    typically a different account the values rarely conflict). Returns
-    ``{}`` if browser-cookie3 isn't importable or no cookie is found.
+    typically a different account the values rarely conflict). Pass
+    ``profile`` (e.g. ``"Default"``) to read just that one profile.
+    Returns ``{}`` if browser-cookie3 isn't importable or no cookie is found.
     """
     try:
         import browser_cookie3  # type: ignore
@@ -198,7 +210,7 @@ def load_cookies_from_browser(
         raise ValueError(f"Unsupported browser {browser!r}; expected one of {SUPPORTED_BROWSERS}")
 
     out: dict[str, str] = {}
-    for path in _cookie_store_paths(browser):
+    for path in _cookie_store_paths(browser, profile):
         try:
             cj = loader(cookie_file=path, domain_name=domain)
         except Exception:
@@ -212,16 +224,23 @@ def load_cookies_from_browser(
 def refresh_token_from_browser(
     browser: BrowserName,
     domain: str = "loseit.com",
+    profile: str | None = None,
 ) -> str | None:
     """Read ``liauth`` directly from ``browser``'s encrypted cookie store.
 
     Walks every profile under that browser's user-data root and returns the
     first ``liauth`` cookie it finds, or ``None`` if no profile has one for
-    ``domain``. First call may trigger a macOS Keychain prompt so the OS
+    ``domain``. Pass ``profile`` (e.g. ``"Default"``) to read just that one
+    profile. First call may trigger a macOS Keychain prompt so the OS
     can release the cookie-store master key.
     """
-    logger.info("auth.refresh_token_from_browser: browser={b} domain={d}", b=browser, d=domain)
-    cookies = load_cookies_from_browser(browser, domain)
+    logger.info(
+        "auth.refresh_token_from_browser: browser={b} domain={d} profile={p}",
+        b=browser,
+        d=domain,
+        p=profile,
+    )
+    cookies = load_cookies_from_browser(browser, domain, profile)
     token = cookies.get("liauth")
     logger.debug(
         "auth.refresh_token_from_browser: {n} total cookies, liauth={found}",
