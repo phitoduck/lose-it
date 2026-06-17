@@ -1287,6 +1287,136 @@ def login(
         )
 
 
+@app.command("check-token")
+def check_token(
+    ctx: typer.Context,
+    token_file: Annotated[
+        Path,
+        typer.Option(
+            "--token-file",
+            help="Where the JWT lives on disk.",
+            envvar="LOSEIT_TOKEN_FILE",
+        ),
+    ] = DEFAULT_TOKEN_FILE,
+) -> None:
+    """Probe the stored ``liauth`` token for local validity (no Keychain prompt).
+
+    Decodes the JWT ``exp`` claim and reports one of:
+
+    \b
+    - ``valid``      — token exists and hasn't expired
+    - ``expired``    — token exists but ``exp`` is past
+    - ``missing``    — no token on disk (and no ``LOSEIT_TOKEN`` env)
+    - ``unreadable`` — token present but its JWT payload won't decode
+
+    Exits ``0`` only when status is ``valid``. Intended for scripts and
+    agents that want to short-circuit a re-login dance — if this returns
+    ``valid``, no need to ask the user which browser profile to source
+    a fresh cookie from.
+    """
+    fmt = _output_format(ctx)
+    logger.info("cli.check-token: token_file={tf}", tf=str(token_file))
+    result = LoseIt.check_token(token_file=token_file)
+
+    if fmt is not OutputFormat.text:
+        _emit_structured(fmt, result.to_dict())
+        if result.status != "valid":
+            raise typer.Exit(code=1)
+        return
+
+    if result.status == "valid":
+        typer.secho(
+            f"✅ Token at {token_file} is valid.",
+            fg=typer.colors.GREEN,
+        )
+        if result.exp_iso is not None:
+            secs = result.seconds_until_expiry or 0
+            days = secs // 86400
+            typer.echo(f"   JWT exp: {result.exp_iso}  (in ~{days} day(s))")
+        return
+
+    if result.status == "missing":
+        typer.secho(f"❌ No token at {token_file}.", fg=typer.colors.RED, err=True)
+        typer.echo("   Run: loseit login --browser chrome", err=True)
+    elif result.status == "expired":
+        typer.secho(
+            f"❌ Token at {token_file} is expired.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        if result.exp_iso is not None:
+            typer.echo(f"   JWT exp: {result.exp_iso}", err=True)
+        typer.echo("   Run: loseit login --browser chrome", err=True)
+    else:  # unreadable
+        typer.secho(
+            f"❌ Token at {token_file} is present but won't decode.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        typer.echo("   Run: loseit login --browser chrome", err=True)
+    raise typer.Exit(code=1)
+
+
+@app.command("list-profiles")
+def list_profiles(
+    ctx: typer.Context,
+    browser: Annotated[
+        Browser,
+        typer.Option(
+            "--browser",
+            "-b",
+            help="Which browser's profile directory to enumerate.",
+        ),
+    ] = Browser.chrome,
+) -> None:
+    """List the browser's profile directories (no cookie decryption).
+
+    Walks the per-OS user-data root for the chosen browser and reports
+    each profile that has a ``Cookies`` file on disk. Friendly names are
+    parsed from the browser's plain-JSON ``Local State`` file when
+    available.
+
+    \b
+    **Does not** decrypt the cookie store, so no macOS Keychain prompt is
+    triggered. Use this to show the user which profiles exist *before*
+    asking them to pass ``--profile <directory>`` to ``loseit login``.
+    """
+    fmt = _output_format(ctx)
+    logger.info("cli.list-profiles: browser={b}", b=browser.value)
+    profiles = LoseIt.list_browser_profiles(browser.value)
+
+    if fmt is not OutputFormat.text:
+        _emit_structured(
+            fmt,
+            {
+                "action": "list-profiles",
+                "browser": browser.value,
+                "count": len(profiles),
+                "profiles": profiles,
+            },
+        )
+        return
+
+    if not profiles:
+        typer.secho(
+            f"  No {browser.value.title()} profiles with a cookie store found.",
+            fg=typer.colors.YELLOW,
+        )
+        typer.echo(
+            f"  (Is {browser.value.title()} installed and have you signed in at least once?)",
+            err=True,
+        )
+        return
+
+    typer.echo(f"\n{browser.value.title()} profiles (use --profile <Directory>):")
+    typer.echo(f"  {'Directory':20} {'Friendly Name'}")
+    typer.echo(f"  {'─' * 20} {'─' * 30}")
+    for p in profiles:
+        directory = (p.get("directory") or "")[:20]
+        name = p.get("name") or "—"
+        typer.echo(f"  {directory:20} {name}")
+
+
 @app.command()
 def whoami(ctx: typer.Context) -> None:
     """Print the resolved client configuration."""

@@ -57,7 +57,9 @@ from .core.auth import (
     DEFAULT_TOKEN_FILE,
     decode_jwt_exp,
     is_token_expired,
+    list_browser_profiles,
     load_cookies_from_browser,
+    load_token,
     save_token,
 )
 from .core.init import get_daydate_key, get_init_day_keys
@@ -70,6 +72,7 @@ from .models import (
     LoggedFood,
     LoginResult,
     PrimaryServing,
+    TokenCheckResult,
     UnsavedFoodLogEntry,
 )
 from .trash import (
@@ -901,3 +904,78 @@ class LoseIt:
             config_file=written_config,
             config_values=config_values_dict,
         )
+
+    @classmethod
+    def check_token(
+        cls,
+        *,
+        token_file: Path = DEFAULT_TOKEN_FILE,
+        leeway_seconds: int = 60,
+    ) -> TokenCheckResult:
+        """Probe the locally stored ``liauth`` JWT for validity.
+
+        Reads ``LOSEIT_TOKEN`` / ``token_file``, decodes the JWT's ``exp``
+        claim, and returns a :class:`TokenCheckResult`. **Local-only** —
+        does not contact loseit.com, does not touch the browser cookie
+        store, and does not trigger any macOS Keychain prompt.
+
+        Agents can call this before deciding whether to ask the user
+        which browser profile to re-login from. A ``"valid"`` result
+        means subsequent CLI commands should authenticate without
+        prompting the user.
+        """
+        try:
+            token = load_token(token_file)
+        except FileNotFoundError as e:
+            return TokenCheckResult(
+                status="missing",
+                token_file=token_file,
+                exp=None,
+                exp_iso=None,
+                seconds_until_expiry=None,
+                message=str(e),
+            )
+
+        exp = decode_jwt_exp(token)
+        if exp is None:
+            return TokenCheckResult(
+                status="unreadable",
+                token_file=token_file,
+                exp=None,
+                exp_iso=None,
+                seconds_until_expiry=None,
+                message="Token is present but its JWT payload is undecodable.",
+            )
+
+        exp_iso = datetime.fromtimestamp(exp, tz=UTC).isoformat()
+        now = int(datetime.now(tz=UTC).timestamp())
+        seconds_until_expiry = exp - now
+
+        if is_token_expired(token, leeway_seconds=leeway_seconds):
+            return TokenCheckResult(
+                status="expired",
+                token_file=token_file,
+                exp=exp,
+                exp_iso=exp_iso,
+                seconds_until_expiry=seconds_until_expiry,
+                message=f"liauth token expired at {exp_iso}.",
+            )
+
+        return TokenCheckResult(
+            status="valid",
+            token_file=token_file,
+            exp=exp,
+            exp_iso=exp_iso,
+            seconds_until_expiry=seconds_until_expiry,
+        )
+
+    @classmethod
+    def list_browser_profiles(cls, browser: str = "chrome") -> list[dict[str, str | None]]:
+        """List the named browser's profile directories without decrypting cookies.
+
+        Thin wrapper over :func:`lose_it.core.auth.list_browser_profiles`.
+        See that function for the schema of each entry. **No Keychain
+        prompt** — this is safe to call ahead of asking the user which
+        profile to log in from.
+        """
+        return list_browser_profiles(browser)  # type: ignore[arg-type]

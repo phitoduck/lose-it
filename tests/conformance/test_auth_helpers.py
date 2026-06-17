@@ -22,6 +22,7 @@ from lose_it.core.auth import (
     decode_jwt_payload,
     extract_user_info_from_jwt,
     extract_user_name_from_cookies,
+    list_browser_profiles,
 )
 
 
@@ -167,3 +168,125 @@ def test_cookie_store_paths_unknown_profile_yields_nothing(
     _fake_chrome_profiles: None,
 ) -> None:
     assert _cookie_store_paths("chrome", profile="Profile 999") == []
+
+
+# ── list_browser_profiles: filesystem-only enumeration (no Keychain) ────────
+
+
+def test_list_browser_profiles_returns_directories_and_friendly_names(
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The user-facing primitive: one entry per profile, friendly name when known.
+
+    Simulates a real Chrome user-data root with two profiles, one of
+    which has a friendly name in ``Local State`` and one of which
+    doesn't. The key behavioural promise: this function reads
+    filesystem only — no cookie decryption, no Keychain access.
+    """
+    user_data = tmp_path / "Chrome"
+    (user_data / "Default").mkdir(parents=True)
+    (user_data / "Default" / "Cookies").write_text("")  # any non-empty placeholder is fine
+    (user_data / "Profile 2").mkdir()
+    (user_data / "Profile 2" / "Cookies").write_text("")
+    (user_data / "Local State").write_text(
+        json.dumps(
+            {
+                "profile": {
+                    "info_cache": {
+                        "Default": {"name": "Eric (Personal)"},
+                        # Profile 2 intentionally absent — exercises the `None` branch.
+                    }
+                }
+            }
+        )
+    )
+
+    monkeypatch.setattr(auth_module.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        auth_module,
+        "_COOKIE_GLOBS",
+        {"darwin": {"chrome": (f"{user_data}/*/Cookies",)}},
+    )
+    monkeypatch.setattr(
+        auth_module,
+        "_USER_DATA_ROOTS",
+        {"darwin": {"chrome": (str(user_data),)}},
+    )
+
+    profiles = list_browser_profiles("chrome")
+    by_dir = {p["directory"]: p for p in profiles}
+
+    assert set(by_dir) == {"Default", "Profile 2"}
+    assert by_dir["Default"]["name"] == "Eric (Personal)"
+    assert by_dir["Profile 2"]["name"] is None
+    # cookie_store path round-trips for the caller (e.g. for debugging).
+    assert by_dir["Default"]["cookie_store"].endswith("/Default/Cookies")
+
+
+def test_list_browser_profiles_handles_missing_local_state(
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If ``Local State`` is missing, profiles still enumerate (no friendly names)."""
+    user_data = tmp_path / "Chrome"
+    (user_data / "Default").mkdir(parents=True)
+    (user_data / "Default" / "Cookies").write_text("")
+
+    monkeypatch.setattr(auth_module.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        auth_module,
+        "_COOKIE_GLOBS",
+        {"darwin": {"chrome": (f"{user_data}/*/Cookies",)}},
+    )
+    monkeypatch.setattr(
+        auth_module,
+        "_USER_DATA_ROOTS",
+        {"darwin": {"chrome": (str(user_data),)}},
+    )
+
+    profiles = list_browser_profiles("chrome")
+    assert [p["directory"] for p in profiles] == ["Default"]
+    assert profiles[0]["name"] is None
+
+
+def test_list_browser_profiles_rejects_unknown_browser() -> None:
+    with pytest.raises(ValueError, match="Unsupported browser"):
+        list_browser_profiles("safari")  # type: ignore[arg-type]
+
+
+def test_list_browser_profiles_does_not_touch_cookie_store(
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression guard: the listing primitive must not import browser_cookie3.
+
+    Any decryption call here would trigger a macOS Keychain prompt —
+    the entire point of `list-profiles` is that it avoids that. We
+    sentinel the loader so a single call would explode the test.
+    """
+    user_data = tmp_path / "Chrome"
+    (user_data / "Default").mkdir(parents=True)
+    (user_data / "Default" / "Cookies").write_text("")
+
+    monkeypatch.setattr(auth_module.sys, "platform", "darwin")
+    monkeypatch.setattr(
+        auth_module,
+        "_COOKIE_GLOBS",
+        {"darwin": {"chrome": (f"{user_data}/*/Cookies",)}},
+    )
+    monkeypatch.setattr(
+        auth_module,
+        "_USER_DATA_ROOTS",
+        {"darwin": {"chrome": (str(user_data),)}},
+    )
+
+    def _explode(*_a: Any, **_k: Any) -> None:
+        raise AssertionError("list_browser_profiles must not decrypt cookies")
+
+    # ``load_cookies_from_browser`` is the only path into browser_cookie3 from
+    # this module. If list_browser_profiles ever grows a call into it, this
+    # test will catch the regression.
+    monkeypatch.setattr(auth_module, "load_cookies_from_browser", _explode)
+
+    list_browser_profiles("chrome")  # must not raise

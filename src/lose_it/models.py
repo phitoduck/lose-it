@@ -394,3 +394,41 @@ class LoginResult:
         if self.message is not None:
             out["message"] = self.message
         return out
+
+
+@dataclass(frozen=True)
+class TokenCheckResult:
+    """Result of ``LoseIt.check_token`` — the local-only token validity probe.
+
+    ``status`` is ``"valid"`` when the JWT exists and its ``exp`` is in
+    the future, ``"expired"`` when ``exp`` has passed, ``"missing"`` when
+    no token is on disk (and no ``LOSEIT_TOKEN`` env override), or
+    ``"unreadable"`` when the JWT can't be decoded.
+
+    This is a **local** check — the JWT signature is not verified and the
+    server is not contacted. A token that passes here can still be
+    rejected by the server (e.g. revoked) on the next RPC, but the
+    "did the user already log in?" question is overwhelmingly answered
+    by ``exp``.
+    """
+
+    status: str  # "valid" | "expired" | "missing" | "unreadable"
+    token_file: Path
+    exp: int | None
+    exp_iso: str | None
+    seconds_until_expiry: int | None
+    message: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """JSON-safe projection — mirrors the ``loseit check-token --output json`` envelope."""
+        out: dict[str, Any] = {
+            "action": "check-token",
+            "status": self.status,
+            "token_file": str(self.token_file),
+            "exp": self.exp,
+            "exp_iso": self.exp_iso,
+            "seconds_until_expiry": self.seconds_until_expiry,
+        }
+        if self.message is not None:
+            out["message"] = self.message
+        return out

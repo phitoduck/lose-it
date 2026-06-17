@@ -32,6 +32,43 @@ If the user has never run `loseit login`, do that once now (they must already be
 loseit login                  # default --browser chrome; or --browser brave
 ```
 
+### Before re-logging the user in — always `check-token` first
+
+**Do not** suggest running `loseit login` reflexively. On macOS, every `loseit login` causes one (or, with multiple Chrome profiles, *several*) Keychain authorization dialogs. That's a meaningful friction cost — don't impose it unless you actually need a fresh token.
+
+Always probe first:
+
+```bash
+loseit -o json check-token
+```
+
+`check-token` is **local-only** — it reads `~/.config/loseit/token`, decodes the JWT's `exp` claim, and prints `valid` / `expired` / `missing` / `unreadable`. It does **not** open the browser cookie store, so it does **not** trigger any Keychain prompt. Exits `0` only when status is `valid`.
+
+Use it as a gate:
+
+- `status: "valid"` → token is good; skip the rest of this section, proceed to STEP 1.
+- `status: "expired"` / `"missing"` / `"unreadable"` → you need a fresh token; continue below.
+
+### If the token is invalid — pick a profile *without* prompting the user blindly
+
+On macOS, every Chrome profile the user has is a separate encrypted cookie store, and `loseit login` (default) scans all of them — one Keychain prompt per profile. With multiple profiles that's a UX disaster. The `--profile <Directory>` flag narrows the scan to one profile.
+
+Before asking the user *which* profile they're signed into loseit.com with, **show them the menu**. `list-profiles` reads the filesystem only (cookie store directory names + the browser's plain-JSON `Local State` for friendly names) — no decryption, no Keychain prompt, fast:
+
+```bash
+loseit -o json list-profiles --browser chrome
+```
+
+Surface the friendly names ("Eric (Personal)", "Eric (Work)", …) alongside each profile directory ("Default", "Profile 2", …). Ask the user which profile is signed into loseit.com, then re-run login pointed at that one profile:
+
+```bash
+loseit login --browser chrome --profile "Profile 2"
+```
+
+The `--profile` value is the **directory** name from `list-profiles`, not the friendly name. Even with `--profile`, the first login from a given profile shows two macOS dialogs (one to use the `Chrome Safe Storage` item, one to access its key) — that's the OS floor, not a remaining bug.
+
+If the user only has one Chrome profile, you don't have to ask — just call `loseit login --browser chrome` and move on.
+
 ### Read the README as your CLI reference
 
 The `lose-it` repo ships a single-file CLI docset at its [`README.md`](https://github.com/phitoduck/lose-it/blob/main/README.md). Fetch it once per session — it's the authoritative reference for every subcommand, flag, output format, the full unit alias list, the JSON/TOON schema, and known quirks. Cheaper than guessing.
@@ -254,8 +291,8 @@ If a food consistently logs at the wrong calorie count, capture the food's `desc
 | Symptom | Fix |
 |---|---|
 | `loseit: command not found` | STEP 0 (uv tool install --reinstall …) |
-| `LoseItAuthError: HTTP 401` | `loseit login` (re-imports cookie or opens signin page) |
-| `❌ Missing required setting(s)` | `loseit login` |
+| `LoseItAuthError: HTTP 401` | Run `loseit check-token` first; only re-`loseit login` if it reports `expired`/`missing`/`unreadable`. On macOS with several Chrome profiles, follow up with `loseit list-profiles` to surface options, then `loseit login --profile <Directory>` to avoid a Keychain-prompt storm. |
+| `❌ Missing required setting(s)` | `loseit login` (after `check-token` says you need to) |
 | Dry-run cal is way off from real label | Re-run `describe-food` on the chosen `food_id` and verify per-serving cal. Try a different candidate. |
 | `loseit log` errors with `unit_not_supported` | The food's stored unit class doesn't match `--serving-unit`. Use `describe-food` to see `primary_serving.unit` and either match it or fall back to `--servings N` in the native unit. |
 | `❌ --food-id and <query>/--pick are mutually exclusive` | You passed both a positional query and `--food-id`. Drop the query — `--food-id` is the entry's stable key and doesn't need a search. |
@@ -271,7 +308,9 @@ If a food consistently logs at the wrong calorie count, capture the food's `desc
 loseit --help
 
 Commands:
-  login         Import the liauth JWT from Chrome or Brave.
+  login         Import the liauth JWT from Chrome or Brave (supports --profile).
+  check-token   Probe the stored JWT for local validity (no Keychain prompt).
+  list-profiles List browser profiles on disk (no Keychain prompt).
   search        Search the LoseIt food database.
   log           Search for a food and log it to a meal.
   diary         List the diary for a given date (default: today).
