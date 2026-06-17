@@ -297,3 +297,96 @@ def refresh_token_from_chrome(domain: str = "loseit.com") -> str | None:
 def refresh_token_from_brave(domain: str = "loseit.com") -> str | None:
     """Shorthand for ``refresh_token_from_browser('brave', domain)``."""
     return refresh_token_from_browser("brave", domain=domain)
+
+
+# Per-OS user-data roots (the directory that holds `Local State` and each
+# profile's `<dir>/Cookies`). Mirrors the structure of ``_COOKIE_GLOBS`` —
+# kept separate because the `Local State` lookup wants the *root*, not the
+# fully-expanded cookie-store globs.
+_USER_DATA_ROOTS: dict[str, dict[BrowserName, tuple[str, ...]]] = {
+    "darwin": {
+        "chrome": ("~/Library/Application Support/Google/Chrome",),
+        "brave": (
+            "~/Library/Application Support/BraveSoftware/Brave-Browser",
+            "~/Library/Application Support/BraveSoftware/Brave-Browser-*",
+        ),
+    },
+    "linux": {
+        "chrome": ("~/.config/google-chrome", "~/.config/google-chrome-*"),
+        "brave": (
+            "~/.config/BraveSoftware/Brave-Browser",
+            "~/.config/BraveSoftware/Brave-Browser-*",
+        ),
+    },
+}
+
+
+def _read_profile_friendly_names(user_data_root: str) -> dict[str, str]:
+    """Parse ``Local State`` for ``profile.info_cache.<dir>.name`` entries.
+
+    ``Local State`` is a plain-JSON file at the browser's user-data root.
+    Reading it does **not** require the Keychain — the cookie-store
+    decryption key is the only part of that store that's protected. If
+    the file is missing or unparseable we return ``{}`` and the caller
+    falls back to the bare directory name.
+    """
+    local_state = os.path.join(user_data_root, "Local State")
+    if not os.path.isfile(local_state):
+        return {}
+    try:
+        with open(local_state, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    info_cache = data.get("profile", {}).get("info_cache", {}) if isinstance(data, dict) else {}
+    out: dict[str, str] = {}
+    if isinstance(info_cache, dict):
+        for dir_name, meta in info_cache.items():
+            if isinstance(meta, dict):
+                name = meta.get("name")
+                if isinstance(name, str) and name:
+                    out[dir_name] = name
+    return out
+
+
+def list_browser_profiles(browser: BrowserName) -> list[dict[str, str | None]]:
+    """List the named ``browser``'s profiles by reading the filesystem only.
+
+    Returns one entry per profile directory that has a ``Cookies`` store
+    on disk. Each entry carries:
+
+    - ``directory`` — the profile directory name as ``--profile`` expects
+      it (e.g. ``"Default"``, ``"Profile 2"``).
+    - ``name`` — the friendly display name from ``Local State``
+      (e.g. ``"Eric (Work)"``) or ``None`` if it can't be resolved.
+    - ``cookie_store`` — absolute path to the profile's ``Cookies`` file.
+
+    **No cookie decryption happens here** — the call does not touch the
+    macOS Keychain. Use this to show the user which profiles exist so
+    they can pick one for ``loseit login --profile <directory>``.
+    """
+    if browser not in SUPPORTED_BROWSERS:
+        raise ValueError(f"Unsupported browser {browser!r}; expected one of {SUPPORTED_BROWSERS}")
+
+    platform_key = "darwin" if sys.platform == "darwin" else "linux"
+
+    friendly: dict[str, str] = {}
+    for pat in _USER_DATA_ROOTS.get(platform_key, {}).get(browser, ()):
+        for root in glob.glob(os.path.expanduser(pat)):
+            friendly.update(_read_profile_friendly_names(root))
+
+    out: list[dict[str, str | None]] = []
+    seen: set[str] = set()
+    for path in _cookie_store_paths(browser):
+        directory = os.path.basename(os.path.dirname(path))
+        if directory in seen:
+            continue
+        seen.add(directory)
+        out.append(
+            {
+                "directory": directory,
+                "name": friendly.get(directory),
+                "cookie_store": path,
+            }
+        )
+    return out

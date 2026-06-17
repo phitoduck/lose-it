@@ -21,6 +21,8 @@
 - [Claude Code SKILL.md](#claude-code-skillmd)
 - [Subcommands](#subcommands)
   - [`login`](#login--import-the-auth-token-and-populate-the-config)
+  - [`check-token`](#check-token--probe-the-stored-jwt-without-touching-the-browser)
+  - [`list-profiles`](#list-profiles--enumerate-browser-profiles-without-a-keychain-prompt)
   - [`search`](#search)
   - [`log`](#log)
   - [`diary`](#diary)
@@ -253,6 +255,8 @@ $ loseit --help
 
 ╭─ Commands ──────────────────────────────────────────────────────╮
 │ login          Import the liauth JWT from Chrome or Brave.      │
+│ check-token    Probe the stored JWT — local-only, no Keychain.  │
+│ list-profiles  List browser profiles on disk — no Keychain.     │
 │ search         Search the LoseIt food database.                 │
 │ log            Search for a food and log it to a meal.          │
 │ diary          List the diary for a given date (default: today).│
@@ -304,6 +308,126 @@ $ loseit login --browser brave
 <summary>click to view details...</summary>
 
 The first run on macOS triggers a Keychain prompt so the OS can unlock the browser's cookie store. After that it's silent. If neither the JWT nor any `loseit.com` cookie carries your username, `loseit login` prompts once and saves it to the YAML. Pass `--user-name alice@example.com` to skip the prompt (handy in CI), or `--no-write-config` to import only the token.
+
+</details>
+
+#### `--profile` — pick which browser profile to read
+
+If you run multiple Chrome profiles (work, personal, etc.), you're probably signed into [loseit.com](https://www.loseit.com/) under exactly one of them — but by default `loseit login` scans **every** profile's cookie store to find the `liauth` cookie. On macOS each scan is a separate Keychain decryption, which means a separate authorization dialog. On a 10-profile machine that's 10+ prompts.
+
+Pass `--profile` (alias `-p`) to read **just one** profile:
+
+**Bash:**
+
+```bash
+$ loseit login --browser chrome --profile "Profile 2"
+```
+
+The argument is the profile *directory* name, exactly as it appears on disk (e.g. `Default`, `Profile 1`, `Profile 2`). It's **not** the friendly display name from Chrome's profile picker — though `loseit list-profiles` shows both side by side so you don't have to remember the mapping.
+
+> 💡 Even with `--profile`, macOS still shows **two** prompts the first time you log in from a given profile: one to use the `Chrome Safe Storage` item's confidential data, one to access the underlying key. Both come from a single `/usr/bin/security` invocation — clicking *Always Allow* on each makes future logins silent.
+
+### `check-token` — probe the stored JWT without touching the browser
+
+Fast, local-only validity check for the `~/.config/loseit/token` JWT. Decodes the `exp` claim and prints one of `valid` / `expired` / `missing` / `unreadable`. **Does not** talk to loseit.com and does **not** decrypt the browser cookie store, so it never triggers a Keychain prompt.
+
+Use it as the first step in any re-login flow — if the token is still good, you can skip the rest.
+
+**Bash:**
+
+```bash
+$ loseit check-token
+```
+
+**Output (valid):**
+
+```text
+✅ Token at /Users/you/.config/loseit/token is valid.
+   JWT exp: 2026-06-22T20:41:44+00:00  (in ~5 day(s))
+```
+
+**Output (missing or expired) — exit code 1:**
+
+```text
+❌ Token at /Users/you/.config/loseit/token is expired.
+   JWT exp: 2026-04-01T12:00:00+00:00
+   Run: loseit login --browser chrome
+```
+
+**Script-friendly:**
+
+```bash
+$ loseit -o json check-token
+{
+  "action": "check-token",
+  "status": "valid",
+  "token_file": "/Users/you/.config/loseit/token",
+  "exp": 1782160904,
+  "exp_iso": "2026-06-22T20:41:44+00:00",
+  "seconds_until_expiry": 501908
+}
+```
+
+<details>
+<summary>click to view details...</summary>
+
+`check-token` exits `0` only when `status == "valid"` — so `loseit check-token >/dev/null 2>&1 || loseit login` is a one-liner gate for "log in if and only if you need to."
+
+The signature is **not** verified (no public key fetch); the server can still reject a token that looks valid here (e.g. revoked). But the overwhelmingly common case — "is the user already logged in?" — is answered by `exp` alone, and this is the cheap way to ask.
+
+</details>
+
+### `list-profiles` — enumerate browser profiles without a Keychain prompt
+
+Show every Chrome (or Brave) profile that has a cookie store on disk, along with its friendly display name from the browser's `Local State` file. **Reads filesystem only** — no cookie decryption, so no Keychain prompt.
+
+Pair with `loseit login --profile <Directory>` when you need to point the importer at one specific profile.
+
+**Bash:**
+
+```bash
+$ loseit list-profiles
+```
+
+**Output:**
+
+```text
+Chrome profiles (use --profile <Directory>):
+  Directory            Friendly Name
+  ──────────────────── ──────────────────────────────
+  Default              Your Chrome
+  Profile 1            Eric (Personal)
+  Profile 2            Eric (Work)
+  Guest Profile        —
+```
+
+Then:
+
+```bash
+$ loseit login --profile "Profile 2"
+```
+
+**Script-friendly:**
+
+```bash
+$ loseit -o json list-profiles --browser chrome
+{
+  "action": "list-profiles",
+  "browser": "chrome",
+  "count": 4,
+  "profiles": [
+    {"directory": "Default",       "name": "Your Chrome",     "cookie_store": "/Users/you/Library/.../Default/Cookies"},
+    {"directory": "Profile 1",     "name": "Eric (Personal)", "cookie_store": "/Users/you/Library/.../Profile 1/Cookies"},
+    {"directory": "Profile 2",     "name": "Eric (Work)",     "cookie_store": "/Users/you/Library/.../Profile 2/Cookies"},
+    {"directory": "Guest Profile", "name": null,              "cookie_store": "/Users/you/Library/.../Guest Profile/Cookies"}
+  ]
+}
+```
+
+<details>
+<summary>click to view details...</summary>
+
+Friendly names are parsed from the browser's plain-JSON `Local State` file (the same one Chrome uses to populate its profile picker). If `Local State` is missing or doesn't have a matching entry, `name` is `null` and the bare directory name is the only thing the user has to go on.
 
 </details>
 
