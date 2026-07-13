@@ -117,6 +117,27 @@ def test_get_food_parses_food_identifier(test_client, httpx_mock, fixture_text) 
     assert result.pk_bytes == pk
 
 
+def test_get_food_null_name_falls_back_to_category(test_client, httpx_mock, fixture_text) -> None:
+    """A null-name FoodIdentifier resolves to the category instead of raising.
+
+    Since 2026-07-13 the server omits name/brand from ``getFood`` responses:
+    ``FoodIdentifier.f3``/``.f4`` come back null and only the category (f1)
+    survives. ``get_food_null_name.txt`` is a live capture (banana) of that
+    shape. Falling back to the category keeps ``describe_food`` and
+    log-by-food-id working — nutrition still resolves by PK.
+    """
+    httpx_mock.add_response(
+        url=SERVICE_URL,
+        text=fixture_text("get_food_null_name.txt"),
+    )
+    pk = list(range(16))
+    result = foods.get_food(test_client.http, pk)
+    assert result.name == "Banana"
+    assert result.category == "Banana"
+    assert result.brand == ""
+    assert result.pk_bytes == pk
+
+
 def test_get_food_raises_when_identifier_missing(test_client, httpx_mock) -> None:
     """A response with no FoodIdentifier raises ``LoseItError``."""
     httpx_mock.add_response(
