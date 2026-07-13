@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import dataclasses
+
 from lose_it.core import daily, entries
 from lose_it.core._gwt import parse_response
 from lose_it.models import UnsavedFoodLogEntry
@@ -71,6 +73,32 @@ def test_delete_request_shape(test_client, httpx_mock, fixture_text):
     assert f"|{target.context_day_key}|{target.day_num}|" in body
     # The food identifier code (DoXxxx) goes into the FoodServingSize section.
     assert f"|{target.food_identifier_code}|" in body
+
+
+def test_delete_empty_identifier_code_sends_placeholder(test_client, httpx_mock, fixture_text):
+    """An entry with no DoXxxx identifier code must not serialize an empty token.
+
+    Diary responses don't always carry a food identifier code for an entry
+    (observed 2026-07-13). Serializing the resulting empty string produces an
+    empty token in the deleteFoodLogEntry envelope, which the server rejects
+    with HTTP 500 ("The call failed on the server"). The payload builder falls
+    back to "AAAAAA" — the base64 zero-long, same trick as the DayDate
+    placeholder key — which the server accepts.
+    """
+    text = fixture_text("get_daily_details_with_tortilla.txt")
+    diary_entries = daily.parse_entries(text, default_hours_from_gmt=-6)
+    assert diary_entries
+    target = dataclasses.replace(diary_entries[0], food_identifier_code="")
+
+    httpx_mock.add_response(
+        url=SERVICE_URL,
+        text=fixture_text("delete_food_log_entry_success.txt"),
+    )
+    entries.delete(test_client.http, target)
+
+    body = httpx_mock.get_request().content.decode()
+    assert "|AAAAAA|" in body
+    assert "||" not in body
 
 
 def test_log_food_grams_portion_uses_food_native_qty_per_serving(

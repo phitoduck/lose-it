@@ -422,7 +422,19 @@ def get_food(http: HttpClient, pk_bytes: list[int]) -> FoodSearchResult:
     brand = identifier.get("f4") or ""
     category = identifier.get("f1") or ""
     if not name:
-        raise LoseItError(f"Food with id {pk_to_hex(pk_bytes)} not found")
+        # Since 2026-07-13 the server omits name/brand from getFood
+        # responses (FoodIdentifier.f3/f4 come back null); only the
+        # category string (f1) survives. Nutrition and serving sizes
+        # still resolve by PK via getUnsavedFoodLogEntry, so fall back
+        # to the category rather than failing the whole lookup.
+        if not category:
+            raise LoseItError(f"Food with id {pk_to_hex(pk_bytes)} not found")
+        logger.warning(
+            "foods.get_food: server returned no name for {h}; using category {c!r}",
+            h=pk_to_hex(pk_bytes),
+            c=category,
+        )
+        name = category
     # Drop the email-local-part placeholder Lose It! stamps on personal-DB
     # entries (mirrors the same scrub in _extract_search_results_from_decoded).
     if http.config.user_name:
