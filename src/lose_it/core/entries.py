@@ -379,7 +379,12 @@ def _build_delete_payload(config: Config, entry: FoodLogEntry) -> str:
         servings_str,
         servings_str,
         "0",
-        entry.food_identifier_code,
+        # An empty identifier code serializes as an empty token, which the
+        # server rejects with HTTP 500 ("The call failed on the server").
+        # Diary responses don't always carry a DoXxxx code for an entry
+        # (observed 2026-07-13); "AAAAAA" — the base64 zero-long — is
+        # accepted in its place, same trick as _FALLBACK_DAY_KEY.
+        entry.food_identifier_code or "AAAAAA",
         entry.entry_day_key,
         "14",
         "15",
