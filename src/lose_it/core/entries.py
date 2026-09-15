@@ -15,9 +15,9 @@ from ._config import Config
 from ._gwt import build_envelope, fmt_num
 from ._http import HttpClient
 
-# Of the FoodMeasurement enum, only these 9 ordinals are accepted by the
+# Of the FoodMeasurement enum, only these 10 ordinals are accepted by the
 # server inside the FoodNutrients HashMap when logging an entry.
-_CORE_NUTRIENT_ORDINALS = {0, 2, 3, 8, 9, 10, 11, 12, 13}
+_CORE_NUTRIENT_ORDINALS = {0, 2, 3, 4, 8, 9, 10, 11, 12, 13}
 
 
 def _uuid_signed_bytes(u: uuid.UUID) -> list[int]:
