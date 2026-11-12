@@ -62,7 +62,7 @@ from .core._portion import PortionError, validate_portion_args
 from .core._settings import DEFAULT_CONFIG_FILE
 from .core.auth import DEFAULT_TOKEN_FILE
 from .enums import MealType, ServingUnit
-from .models import FoodLogEntry, FoodSearchResult
+from .models import CreatedRecipe, FoodLogEntry, FoodSearchResult, RecipeIngredientSpec
 
 # Lose It! signin URL — surfaced when login fails so the user can re-auth.
 _SIGNIN_URL = "https://www.loseit.com/"
@@ -694,6 +694,150 @@ def log(
             f"{prefix} {logged.food.name}{id_str} → {logged.meal_name} {portion_str}{cal_str}",
             fg=typer.colors.YELLOW if dry_run else typer.colors.GREEN,
         )
+
+
+_RECIPE_SPEC_EXAMPLE = """\
+{
+  "name": "Shakshuka",
+  "servings": 4,
+  "ingredients": [
+    {"query": "egg large", "serving_amount": 6, "serving_unit": "each"},
+    {"query": "olive oil", "serving_amount": 2, "serving_unit": "tbsp"},
+    {"food_id": "0123456789abcdef0123456789abcdef", "servings": 1.5}
+  ]
+}"""
+
+
+def _load_recipe_spec(source: str) -> dict[str, Any]:
+    """Read a recipe spec from a JSON file path, or stdin when ``source`` is ``-``."""
+    import sys
+
+    raw = sys.stdin.read() if source == "-" else Path(source).expanduser().read_text()
+    data = json.loads(raw)
+    if not isinstance(data, dict):
+        raise ValueError("recipe spec must be a JSON object")
+    return data
+
+
+def _print_recipe(recipe: CreatedRecipe) -> None:
+    """Render the add-recipe summary for ``--output text``."""
+    prefix = "🟡 DRY RUN — would create recipe" if recipe.dry_run else "✅ Created recipe"
+    typer.secho(
+        f"{prefix} {recipe.name!r} ({recipe.servings:g} serving"
+        f"{'' if recipe.servings == 1 else 's'})",
+        fg=typer.colors.YELLOW if recipe.dry_run else typer.colors.GREEN,
+    )
+    for i, ing in enumerate(recipe.ingredients, start=1):
+        brand = f" ({ing.food.brand})" if ing.food.brand else ""
+        cal = f"  [{ing.calories:.0f} cal]" if ing.calories is not None else ""
+        typer.echo(
+            f"  {i:>2}. {ing.food.name}{brand} — {ing.portion_amount:g} {ing.portion_unit}{cal}"
+        )
+    typer.echo(
+        f"  Total: {recipe.total_calories:.0f} cal · per serving: "
+        f"{recipe.calories_per_serving:.0f} cal"
+    )
+
+
+@app.command(
+    name="add-recipe",
+    epilog="Spec format (JSON):\n\n" + _RECIPE_SPEC_EXAMPLE.replace("\n", "\n\n"),
+)
+def add_recipe(
+    ctx: typer.Context,
+    spec_file: Annotated[
+        str,
+        typer.Argument(
+            help="Path to a JSON recipe spec, or '-' to read it from stdin.",
+            metavar="SPEC",
+        ),
+    ],
+    name: Annotated[
+        str | None,
+        typer.Option("--name", help="Recipe name (overrides the spec's 'name')."),
+    ] = None,
+    servings: Annotated[
+        float | None,
+        typer.Option(
+            "--servings",
+            help="How many servings the whole recipe yields (overrides the spec; default 1).",
+        ),
+    ] = None,
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run",
+            help="Resolve every ingredient and print the totals without sending saveRecipe.",
+        ),
+    ] = False,
+) -> None:
+    """Create a recipe in your Lose It! Recipes list from a JSON spec.
+
+    Each ingredient is resolved like `loseit log`: a search 'query' (+ optional
+    1-indexed 'pick', default 1) or a 'food_id', sized by 'servings' or by
+    'serving_amount' + 'serving_unit'. All ingredients are resolved before
+    anything is written; run with --dry-run first to check the food matches.
+    """
+    fmt = _output_format(ctx)
+    try:
+        spec = _load_recipe_spec(spec_file)
+    except (OSError, ValueError) as exc:  # json.JSONDecodeError is a ValueError
+        _emit_error(fmt, "invalid_spec", f"could not read recipe spec: {exc}")
+        raise typer.Exit(code=2) from exc
+
+    recipe_name = name if name is not None else spec.get("name")
+    try:
+        recipe_servings = float(servings if servings is not None else spec.get("servings", 1.0))
+    except (TypeError, ValueError) as exc:
+        _emit_error(fmt, "invalid_spec", f"'servings' must be a number: {exc}")
+        raise typer.Exit(code=2) from exc
+    raw_ingredients = spec.get("ingredients")
+    logger.info(
+        "cli.add_recipe: name={n!r} servings={s} ingredients={k} dry_run={dr}",
+        n=recipe_name,
+        s=recipe_servings,
+        k=len(raw_ingredients) if isinstance(raw_ingredients, list) else None,
+        dr=dry_run,
+    )
+
+    # ── Arg-only validation (before any HTTP) ───────────────────────────
+    problems: list[str] = []
+    if not isinstance(recipe_name, str) or not recipe_name.strip():
+        problems.append("recipe needs a non-empty 'name' (in the spec or via --name)")
+    if recipe_servings <= 0:
+        problems.append(f"'servings' must be positive (got {recipe_servings:g})")
+    specs: list[RecipeIngredientSpec] = []
+    if not isinstance(raw_ingredients, list) or not raw_ingredients:
+        problems.append("spec needs a non-empty 'ingredients' list")
+    else:
+        for n, item in enumerate(raw_ingredients, start=1):
+            try:
+                ing = RecipeIngredientSpec.from_dict(item)
+                validate_portion_args(ing.servings, ing.serving_amount, ing.serving_unit)
+                specs.append(ing)
+            except PortionError as exc:
+                problems.append(f"ingredient #{n}: {exc}")
+            except (TypeError, ValueError) as exc:
+                problems.append(f"ingredient #{n}: {exc}")
+    if problems:
+        _emit_error(fmt, "invalid_spec", "; ".join(problems), problems=problems)
+        raise typer.Exit(code=2)
+    assert isinstance(recipe_name, str)
+
+    with _open_loseit(ctx) as li:
+        try:
+            recipe = li.create_recipe(recipe_name, specs, recipe_servings, dry_run=dry_run)
+        except PortionError as exc:
+            _emit_error(fmt, exc.code, str(exc), **exc.context)
+            raise typer.Exit(code=2) from exc
+        except ValueError as exc:
+            _emit_error(fmt, "ingredient_not_resolved", str(exc))
+            raise typer.Exit(code=1) from exc
+
+    if fmt is not OutputFormat.text:
+        _emit_structured(fmt, recipe.to_dict())
+    else:
+        _print_recipe(recipe)
 
 
 @app.command()

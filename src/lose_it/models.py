@@ -432,3 +432,112 @@ class TokenCheckResult:
         if self.message is not None:
             out["message"] = self.message
         return out
+
+
+@dataclass
+class RecipeIngredientSpec:
+    """One ingredient line of a recipe to create, before food resolution.
+
+    Identify the food with either ``query`` (searched; ``pick`` selects
+    the 1-indexed result, default the top hit) or ``food_id`` (the
+    32-char hex ID from ``loseit search``). Size the portion with either
+    ``servings`` (canonical multiplier) or ``serving_amount`` +
+    ``serving_unit`` (e.g. ``200`` + ``"g"``) — the same two forms
+    ``loseit log`` accepts.
+    """
+
+    query: str | None = None
+    food_id: str | None = None
+    pick: int = 1
+    servings: float = 1.0
+    serving_amount: float | None = None
+    serving_unit: str | None = None
+
+    _KEYS = ("query", "food_id", "pick", "servings", "serving_amount", "serving_unit")
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> RecipeIngredientSpec:
+        """Build from a JSON object, rejecting unknown keys and bad combinations.
+
+        Extra descriptive keys such as ``"note"`` or ``"original"`` are
+        allowed and ignored, so callers can keep the original recipe line
+        next to the structured fields.
+        """
+        if not isinstance(data, dict):
+            raise ValueError(f"ingredient must be a JSON object, got {type(data).__name__}")
+        spec = cls(
+            query=data.get("query"),
+            food_id=data.get("food_id"),
+            pick=int(data.get("pick", 1)),
+            servings=float(data.get("servings", 1.0)),
+            serving_amount=(
+                float(data["serving_amount"]) if data.get("serving_amount") is not None else None
+            ),
+            serving_unit=data.get("serving_unit"),
+        )
+        spec.validate()
+        return spec
+
+    def validate(self) -> None:
+        """Raise ``ValueError`` on an unusable spec (no HTTP involved)."""
+        if (self.query is None) == (self.food_id is None):
+            raise ValueError("each ingredient needs exactly one of 'query' or 'food_id'")
+        if self.query is not None and not self.query.strip():
+            raise ValueError("ingredient 'query' must not be empty")
+        if self.pick < 1:
+            raise ValueError(f"ingredient 'pick' is 1-indexed (got {self.pick})")
+        if self.servings <= 0:
+            raise ValueError(f"ingredient 'servings' must be positive (got {self.servings})")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {k: getattr(self, k) for k in self._KEYS if getattr(self, k) is not None}
+
+
+@dataclass
+class RecipeIngredientResult:
+    """A resolved ingredient as it was (or would be) saved into a recipe."""
+
+    food: FoodSearchResult
+    canonical_servings: float
+    portion_amount: float
+    portion_unit: str
+    calories: float | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "food": self.food.to_dict(),
+            "servings": self.canonical_servings,
+            "portion_size": self.portion_amount,
+            "measure_unit": self.portion_unit,
+            "calories": self.calories,
+        }
+
+
+@dataclass
+class CreatedRecipe:
+    """Result of ``LoseIt.create_recipe`` (or its dry-run equivalent).
+
+    ``servings`` is how many servings the whole recipe yields;
+    ``calories_per_serving`` is ``total_calories / servings``.
+    """
+
+    name: str
+    servings: float
+    ingredients: list[RecipeIngredientResult]
+    total_calories: float
+    dry_run: bool
+
+    @property
+    def calories_per_serving(self) -> float:
+        return self.total_calories / self.servings
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "action": "add-recipe",
+            "dry_run": self.dry_run,
+            "name": self.name,
+            "servings": self.servings,
+            "total_calories": round(self.total_calories, 2),
+            "calories_per_serving": round(self.calories_per_serving, 2),
+            "ingredients": [i.to_dict() for i in self.ingredients],
+        }

@@ -34,7 +34,7 @@ import asyncio
 import contextlib
 import json
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -46,6 +46,7 @@ from .core import auth as _auth
 from .core import daily as _daily
 from .core import entries as _entries
 from .core import foods as _foods
+from .core import recipes as _recipes
 from .core._config import Config
 from .core._dates import day_number_for
 from .core._http import HttpClient
@@ -65,6 +66,7 @@ from .core.auth import (
 from .core.init import get_daydate_key, get_init_day_keys
 from .enums import MealType, ServingUnit
 from .models import (
+    CreatedRecipe,
     CrossClassConversion,
     FoodDescription,
     FoodLogEntry,
@@ -72,6 +74,8 @@ from .models import (
     LoggedFood,
     LoginResult,
     PrimaryServing,
+    RecipeIngredientResult,
+    RecipeIngredientSpec,
     TokenCheckResult,
     UnsavedFoodLogEntry,
 )
@@ -459,6 +463,123 @@ class LoseIt:
             calories=calories,
             dry_run=dry_run,
         )
+
+    def create_recipe(
+        self,
+        name: str,
+        ingredients: Sequence[RecipeIngredientSpec | dict[str, Any]],
+        servings: float = 1.0,
+        *,
+        dry_run: bool = False,
+    ) -> CreatedRecipe:
+        """Create a recipe in the user's Recipes list (``saveRecipe``).
+
+        Each ingredient is resolved exactly like :meth:`log_food` resolves
+        a food: ``query`` → ``searchFoods`` → ``pick``-th hit (or
+        ``food_id`` → ``getFood``), then ``getUnsavedFoodLogEntry`` for the
+        nutrients, then :func:`resolve_portion` for the amount. All
+        ingredients are resolved before anything is written, so a bad
+        ingredient aborts the whole recipe instead of saving half of it.
+
+        Args:
+            name: Recipe name as it should appear in Lose It!.
+            ingredients: :class:`RecipeIngredientSpec` objects or plain
+                dicts with the same keys (``query``/``food_id``, ``pick``,
+                ``servings`` or ``serving_amount`` + ``serving_unit``).
+            servings: How many servings the whole recipe yields. Logging
+                "1 serving" of the recipe later counts ``total / servings``.
+            dry_run: Resolve and total everything but skip ``saveRecipe``.
+
+        Raises:
+            ValueError: empty name, non-positive servings, no ingredients,
+                an invalid ingredient spec, or a query with no (or too
+                few) search results. The message names the ingredient.
+            PortionError: an ingredient's unit can't be converted for its
+                food (same rules as ``loseit log``).
+        """
+        if not name or not name.strip():
+            raise ValueError("recipe name must not be empty")
+        if servings <= 0:
+            raise ValueError(f"recipe servings must be positive (got {servings})")
+        if not ingredients:
+            raise ValueError("a recipe needs at least one ingredient")
+        specs = [
+            s if isinstance(s, RecipeIngredientSpec) else RecipeIngredientSpec.from_dict(s)
+            for s in ingredients
+        ]
+        lines: list[_recipes.IngredientLine] = []
+        results: list[RecipeIngredientResult] = []
+        for n, spec in enumerate(specs, start=1):
+            line, result = self._resolve_recipe_ingredient(n, spec)
+            lines.append(line)
+            results.append(result)
+
+        total = sum(r.calories or 0.0 for r in results)
+        if not dry_run:
+            _recipes.save_recipe(self.http, name.strip(), lines, servings)
+        return CreatedRecipe(
+            name=name.strip(),
+            servings=servings,
+            ingredients=results,
+            total_calories=total,
+            dry_run=dry_run,
+        )
+
+    def _resolve_recipe_ingredient(
+        self, n: int, spec: RecipeIngredientSpec
+    ) -> tuple[_recipes.IngredientLine, RecipeIngredientResult]:
+        """Resolve ingredient #``n`` to a wire line + a display summary."""
+        spec.validate()
+        if spec.food_id is not None:
+            food = self.get_food(spec.food_id)
+        else:
+            assert spec.query is not None  # validate() guarantees one of the two
+            hits = self.search(spec.query)
+            if len(hits) < spec.pick:
+                raise ValueError(
+                    f"ingredient #{n} ({spec.query!r}): search returned {len(hits)} "
+                    f"result(s), cannot pick #{spec.pick}"
+                )
+            food = hits[spec.pick - 1]
+        unsaved = _foods.get_unsaved_food_log_entry(self.http, food)
+        portion = resolve_portion(
+            unsaved,
+            servings=spec.servings,
+            serving_amount=spec.serving_amount,
+            serving_unit=spec.serving_unit,
+        )
+        if portion.measure_ord_override is not None:
+            assert portion.conversion_factor is not None
+            assert portion.quantity_in_chosen_unit is not None
+            measure = portion.measure_ord_override
+            denominator = 1.0
+            per_serving = portion.conversion_factor
+            quantity = portion.quantity_in_chosen_unit
+        else:
+            measure = (
+                unsaved.food_measure_ordinal
+                if unsaved.food_measure_ordinal is not None
+                else _recipes.SERVING_MEASURE_ORDINAL
+            )
+            denominator = unsaved.canonical_per_serving or 1.0
+            per_serving = unsaved.native_qty_per_serving or 1.0
+            quantity = portion.canonical_servings * per_serving / denominator
+        line = _recipes.IngredientLine(
+            unsaved=unsaved,
+            servings=portion.canonical_servings,
+            measure_ordinal=measure,
+            per_serving_denominator=denominator,
+            unit_qty_per_serving=per_serving,
+            quantity=quantity,
+        )
+        result = RecipeIngredientResult(
+            food=food,
+            canonical_servings=portion.canonical_servings,
+            portion_amount=portion.display_amount,
+            portion_unit=portion.display_unit,
+            calories=scaled_calories(unsaved, portion.canonical_servings),
+        )
+        return line, result
 
     def delete_entry(
         self,

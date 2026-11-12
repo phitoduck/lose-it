@@ -28,6 +28,7 @@
   - [`diary`](#diary)
   - [`describe-food`](#describe-food)
   - [`delete`](#delete)
+  - [`add-recipe`](#add-recipe)
   - [`backup`](#backup)
   - [`restore-backup`](#restore-backup)
   - [`restore-trash`](#restore-trash)
@@ -262,6 +263,7 @@ $ loseit --help
 │ diary          List the diary for a given date (default: today).│
 │ describe-food  Inspect one or more foods by ID; fetch concurrent│
 │ delete         Delete a diary entry. Writes to trash first.     │
+│ add-recipe     Create a recipe in your Recipes list from JSON.  │
 │ backup         Archive the diary to ~/.config/loseit/      │
 │ restore-backup Re-log archived entries that are missing on the  │
 │                server. Safe-mode upsert by default.             │
@@ -666,6 +668,45 @@ $ loseit restore-trash
 
 </details>
 
+### `add-recipe`
+
+<details>
+<summary>click to view details...</summary>
+
+Creates a recipe in your Lose It! **Recipes** list (Settings → Manage → Recipes on the web) from a JSON spec. Each ingredient is resolved exactly like `loseit log` resolves a food: a search `query` (with an optional 1-indexed `pick`, default 1) or a stable `food_id`, sized by `servings` or by `serving_amount` + `serving_unit`. Every ingredient is resolved **before** anything is written, so one bad line aborts the whole recipe. The recipe is saved with a single `saveRecipe` call, the same one the web UI sends.
+
+`servings` is how many servings the whole recipe yields. Logging "1 serving" of the recipe later counts `total ÷ servings`. Extra ingredient keys (e.g. `"original": "1 can chickpeas"`) are ignored, so you can keep the source line next to the structured fields. `--name` / `--servings` override the spec, and `-` reads the spec from stdin.
+
+</details>
+
+**Bash:**
+
+```bash
+$ cat omelette.json
+{
+  "name": "Spinach Omelette",
+  "servings": 2,
+  "ingredients": [
+    {"food_id": "84ace321242590ac4247c047327233cf", "serving_amount": 3, "serving_unit": "each"},
+    {"query": "olive oil", "serving_amount": 1, "serving_unit": "tbsp"},
+    {"query": "spinach raw", "serving_amount": 100, "serving_unit": "g"}
+  ]
+}
+$ loseit add-recipe omelette.json --dry-run
+```
+
+**Output:**
+
+```text
+🟡 DRY RUN — would create recipe 'Spinach Omelette' (2 servings)
+   1. Egg, Large — 3 each  [214 cal]
+   2. Oil, Olive — 1 tbsp  [117 cal]
+   3. Spinach, Baby, Raw — 100 g  [16 cal]
+  Total: 347 cal · per serving: 174 cal
+```
+
+Drop `--dry-run` to create it (`✅ Created recipe …`). With `-o json` the result is `{"action": "add-recipe", "dry_run", "name", "servings", "total_calories", "calories_per_serving", "ingredients": [{"food", "servings", "portion_size", "measure_unit", "calories"}]}`. Spec errors exit `2` with `{"error": "invalid_spec", "problems": [...]}` before any request is sent; an unresolvable ingredient exits `1` with `"error": "ingredient_not_resolved"`.
+
 ### `backup`
 
 Archive your whole diary to local disk. One TOON file per **grain** (default: month), atomic per-grain so a Ctrl-C is safe to resume. By default uses the bulk-fetch endpoint — **1 RPC per grain**, not one per day.
@@ -877,8 +918,8 @@ $ loseit whoami
 user_id        : 12345678
 user_name      : your.username
 hours_from_gmt : -6
-policy_hash    : 8F87EC8969F17AE77B6283D3A83F6D4C
-strong_name    : 351AE5DC0CA36AD3BA9C7CBA7B0E07B8
+policy_hash    : F5AA51DFF7600BE94631854AFC5DEFE9
+strong_name    : 201A8433DE84E0887AA4B65F2AD4F842
 ```
 
 ### Script-friendly output: `--output json` / `-o json`
@@ -1119,8 +1160,8 @@ hours_from_gmt: -6
 
 # Optional — refresh from any /web/service POST in DevTools when requests
 # start failing with IncompatibleRemoteServiceException.
-# policy_hash: 8F87EC8969F17AE77B6283D3A83F6D4C
-# strong_name: 351AE5DC0CA36AD3BA9C7CBA7B0E07B8
+# policy_hash: F5AA51DFF7600BE94631854AFC5DEFE9
+# strong_name: 201A8433DE84E0887AA4B65F2AD4F842
 ```
 
 ### All settings
@@ -1158,6 +1199,8 @@ When LoseIt redeploys, requests start failing with `LoseItError("…Incompatible
 
 - `strong_name` = the `x-gwt-permutation` request header
 - `policy_hash` = the 5th `|`-separated field of the request body
+
+The built-in defaults are refreshed with each release that follows a redeploy (see [docs/regenerate-parser-schemas.md](docs/regenerate-parser-schemas.md)), so upgrading the CLI is usually enough.
 
 ### Not user-specific (and not secrets)
 
