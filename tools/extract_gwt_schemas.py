@@ -150,8 +150,14 @@ def discover_primitive_names(js: str) -> dict[str, str]:
     - Long reader ``BGd`` body uses the base64 helper ``nGd``.
     """
 
-    def find_fn_by_body(snippet: str) -> str | None:
+    def find_fn_by_body(snippet: str | re.Pattern[str]) -> str | None:
         """Find the function whose body contains ``snippet``.
+
+        ``snippet`` is either a literal substring or a compiled regex.
+        Prefer regexes for anything that references another minified
+        helper by name — those names change on every Lose It! redeploy
+        (e.g. ``ewd`` → ``Qud``, ``nGd`` → ``uGd`` in 201A8433…), so a
+        literal snippet silently stops matching.
 
         Brace-balances forward from each ``function NAME(...)`` until we
         either hit the matching close (skip this candidate) or see the
@@ -169,17 +175,25 @@ def discover_primitive_names(js: str) -> dict[str, str]:
                     depth -= 1
                 i += 1
             body = js[header.end() : i - 1]
-            if snippet in body:
+            if isinstance(snippet, str):
+                if snippet in body:
+                    return name
+            elif snippet.search(body):
                 return name
         return None
 
+    ident = r"[A-Za-z_$][A-Za-z0-9_$]*"
     names = {
-        "cast_assert": find_fn_by_body("oSv(a==null||rQ(a,b))"),
-        "read_object": find_fn_by_body("ewd(a.c,a,c)"),
+        # ``<assertFn>(a==null||<instanceofFn>(a,b))``
+        "cast_assert": find_fn_by_body(re.compile(rf"{ident}\(a==null\|\|{ident}\(a,b\)\)")),
+        # Pops a token, resolves negative backrefs, then instantiates
+        # via ``<lookupFn>(a.c,a,c)``.
+        "read_object": find_fn_by_body(re.compile(rf"{ident}\(a\.c,a,c\)")),
         "read_string": find_fn_by_body("a>0?b.d[a-1]:null"),
         "read_boolean": find_fn_by_body("b=!!a.b[--a.a]"),
         "read_double": find_fn_by_body("b=Number(a.b[--a.a])"),
-        "read_long": find_fn_by_body("c=nGd(a)"),
+        # ``var a=b.b[--b.a],…; c=<base64LongFn>(a)``
+        "read_long": find_fn_by_body(re.compile(rf"var a=b\.b\[--b\.a\][\s\S]*?c={ident}\(a\)")),
     }
     missing = [k for k, v in names.items() if v is None]
     if missing:

@@ -18,6 +18,12 @@ You do **not** need to re-run on a cadence. Drive it off the two errors.
 
 ## 2. How to re-run + open PR
 
+> The extractor finds the GWT read primitives by the *shape* of their
+> function bodies, not their minified names (those change every build).
+> If it fails with `Could not locate read primitives`, compare the
+> patterns in `discover_primitive_names()` with the new bundle's
+> read helpers and adjust the regexes.
+
 ```bash
 # 1. Find the current strong_name (= bundle hash for the `en` locale)
 curl -s "https://d3hsih69yn4d89.cloudfront.net/web/web.nocache.js?v=$(date +%s)" \
@@ -33,12 +39,27 @@ curl -s "https://d3hsih69yn4d89.cloudfront.net/web/web.nocache.js?v=$(date +%s)"
 python tools/extract_gwt_schemas.py \
   --permutation <strong_name_from_step_1> \
   --fragments 1 8 10 \
-  --out src/lose_it/client/_schemas.json
+  --out /tmp/new_schemas.json
+
+# 3b. Merge into the checked-in file, keeping signatures the redeploy
+#     retired (e.g. GoalsSummary/907689655 → /26794011 in 201A8433…).
+#     Keys carry the type's CRC, so old and new never collide, and the
+#     conformance fixtures captured against older builds keep decoding.
+python -c '
+import json
+p = "src/lose_it/core/_schemas.json"
+old, new = json.load(open(p)), json.load(open("/tmp/new_schemas.json"))
+for k, v in old["schemas"].items():
+    new["schemas"].setdefault(k, v)
+new["schemas"] = dict(sorted(new["schemas"].items()))
+open(p, "w").write(json.dumps(new, indent=2) + "\n")
+'
 
 # 4. Update the hard-coded permutation defaults in
-#    src/lose_it/client/_settings.py (`strong_name` and
+#    src/lose_it/core/_settings.py (`strong_name` and
 #    `policy_hash` — the latter is the 5th `|`-field of any
-#    `/web/service` POST body; grab from DevTools).
+#    `/web/service` POST body; grab from DevTools). Also bump the
+#    expected defaults in tests/conformance/test_settings.py.
 
 # 5. Verify and PR
 uv run pytest --no-cov
