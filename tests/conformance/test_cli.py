@@ -469,15 +469,23 @@ def test_log_food_id_wrong_length_exits_2(env, runner: CliRunner) -> None:
     assert payload["error"] == "invalid_food_id"
 
 
-def test_log_food_id_mutually_exclusive_with_query(env, runner: CliRunner) -> None:
-    """Passing both --food-id and a positional query exits 2."""
+def test_log_food_id_with_query_skips_search_when_named(env, runner: CliRunner, httpx_mock) -> None:
+    """--food-id + query is allowed; the query is only a name fallback.
+
+    getFood returns a name here, so no searchFoods call is made.
+    """
+    for _ in range(2):  # getFood, getUnsavedFoodLogEntry
+        httpx_mock.add_response(
+            url=SERVICE_URL,
+            text=(FIXTURES / "get_unsaved_tortilla.txt").read_text(),
+        )
     result = runner.invoke(
         app,
-        ["-o", "json", "log", "tortilla", "--food-id", _VALID_FOOD_ID, "--meal", "snacks"],
+        ["-o", "json", "log", "tortilla", "--food-id", _VALID_FOOD_ID, "--dry-run"],
     )
-    assert result.exit_code == 2, result.output
-    payload = json.loads(result.output)
-    assert payload["error"] == "mutually_exclusive"
+    assert result.exit_code == 0, result.output
+    sent_bodies = [req.content.decode() for req in httpx_mock.get_requests()]
+    assert not any("searchFoods" in b for b in sent_bodies)
 
 
 def test_log_food_id_mutually_exclusive_with_pick(env, runner: CliRunner) -> None:

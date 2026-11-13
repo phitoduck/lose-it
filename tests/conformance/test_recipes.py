@@ -212,8 +212,8 @@ def test_builder_rejects_bad_input(test_config: Config, kw: dict, message: str) 
     "data",
     [
         {},
-        {"query": "egg", "food_id": "00" * 16},
         {"query": "   "},
+        {"query": "egg", "grams_per_ml": 0},
         {"query": "egg", "pick": 0},
         {"query": "egg", "servings": -1},
     ],
@@ -221,6 +221,15 @@ def test_builder_rejects_bad_input(test_config: Config, kw: dict, message: str) 
 def test_ingredient_spec_rejects(data: dict) -> None:
     with pytest.raises(ValueError):
         RecipeIngredientSpec.from_dict(data)
+
+
+def test_ingredient_spec_accepts_food_id_with_query_and_density() -> None:
+    spec = RecipeIngredientSpec.from_dict(
+        {"query": "honey", "food_id": "00" * 16, "grams_per_ml": "1.42"}
+    )
+    assert spec.food_id == "00" * 16
+    assert spec.query == "honey"
+    assert spec.grams_per_ml == 1.42
 
 
 def test_ingredient_spec_ignores_descriptive_keys() -> None:

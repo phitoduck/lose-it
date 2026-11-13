@@ -411,6 +411,12 @@ def get_food(http: HttpClient, pk_bytes: list[int]) -> FoodSearchResult:
     input to avoid an extra ``_extract_pk_bytes`` round-trip).
 
     The result can be handed straight to :func:`get_unsaved_food_log_entry`.
+
+    ``name`` may be ``""``: for many generic database foods ("Almond
+    Butter", "Honey") ``getFood`` returns the full food — category,
+    nutrients, serving sizes — but a null name. The name only comes back
+    from ``searchFoods``; :meth:`lose_it.LoseIt.get_food` recovers it when
+    given the query that found the food.
     """
     logger.info("foods.get_food: pk={h}", h=pk_to_hex(pk_bytes))
     text = http.post_rpc(_build_get_food_payload(http.config, pk_bytes))
@@ -422,7 +428,7 @@ def get_food(http: HttpClient, pk_bytes: list[int]) -> FoodSearchResult:
     brand = identifier.get("f4") or ""
     category = identifier.get("f1") or ""
     if not name:
-        raise LoseItError(f"Food with id {pk_to_hex(pk_bytes)} not found")
+        logger.info("foods.get_food: pk={h} has no name in getFood", h=pk_to_hex(pk_bytes))
     # Drop the email-local-part placeholder Lose It! stamps on personal-DB
     # entries (mirrors the same scrub in _extract_search_results_from_decoded).
     if http.config.user_name:
