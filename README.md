@@ -28,6 +28,7 @@
   - [`diary`](#diary)
   - [`describe-food`](#describe-food)
   - [`delete`](#delete)
+  - [`add-recipe`](#add-recipe)
   - [`backup`](#backup)
   - [`restore-backup`](#restore-backup)
   - [`restore-trash`](#restore-trash)
@@ -262,6 +263,7 @@ $ loseit --help
 │ diary          List the diary for a given date (default: today).│
 │ describe-food  Inspect one or more foods by ID; fetch concurrent│
 │ delete         Delete a diary entry. Writes to trash first.     │
+│ add-recipe     Create a recipe in your Recipes list from JSON.  │
 │ backup         Archive the diary to ~/.config/loseit/      │
 │ restore-backup Re-log archived entries that are missing on the  │
 │                server. Safe-mode upsert by default.             │
@@ -527,7 +529,14 @@ $ loseit log "realgood foods chicken" --pick 1 -m snacks --serving-amount 152 --
 <details>
 <summary>click to view details...</summary>
 
-If neither the generic table nor the food's nutrients can supply the conversion, the CLI errors with `unit_not_supported` and tells you which native unit the entry uses.
+If neither the generic table nor the food's nutrients can supply the conversion, the CLI errors with `unit_not_supported`, naming the entry's native unit and listing the units it does support (`supported_units` in JSON output).
+
+Many generic entries (honey, cocoa powder, date syrup, some nut butters) store only a volume, so grams are unreachable from the food's own data — the web UI can't do it either. Pass the ingredient's density with `--grams-per-ml` to bridge volume ↔ weight; it's ignored when the food carries its own conversion:
+
+```bash
+$ loseit log honey --food-id bdbe9887e62daa9fc341cbe4577e80f1 --serving-amount 40 --serving-unit g --grams-per-ml 1.42
+✅ Logged Honey (id bdbe…) → snacks 40 g (115 cal)
+```
 
 Pick indices drift between sessions (Lose It! mutates its index). For drift-proof, scriptable logging, pass the stable `--food-id` instead — it skips the search step entirely:
 
@@ -548,7 +557,7 @@ $ loseit log --food-id 0d5f30bf4231a3da8c3c9608f0630010 --meal snacks --servings
 <details>
 <summary>click to view details...</summary>
 
-`--food-id` is mutually exclusive with the positional `<query>` and `--pick`; pass exactly one.
+`--food-id` is mutually exclusive with `--pick`. It can be combined with the positional `<query>`: for many generic foods ("Almond Butter", "Honey") Lose It! returns no name when the food is looked up by ID, so the CLI searches the query and takes the name from the hit with the same ID. Without a query such foods exit `2` with `food_name_unavailable`. When the ID lookup does return a name, the query is never searched.
 
 </details>
 
@@ -579,7 +588,7 @@ $ loseit diary
 <details>
 <summary>click to view details...</summary>
 
-Inspect one or more foods by ID; emits labeled nutrient + cross-class conversion data. Foods are fetched concurrently via `asyncio.to_thread`, so N foods take ~max(per-request-latency) rather than the sum:
+Inspect one or more foods by ID — or every hit of a search with `--query` / `-q` (narrow to one with `--pick N`); emits labeled nutrient + cross-class conversion data and the `supported_units` each food accepts. Foods are fetched concurrently via `asyncio.to_thread`, so N foods take ~max(per-request-latency) rather than the sum:
 
 </details>
 
@@ -599,6 +608,7 @@ $ loseit -o json describe-food 4465349443cea79c404de42baac3b73e c5d8f3b75e3045f0
       "food_id": "4465349443cea79c404de42baac3b73e",
       "name": "Lightly Breaded Chicken Strips ",
       "brand": "Realgood Foods Co.",
+      "supported_units": ["g", "serving"],
       "primary_serving": {"ordinal": 27, "unit": "serving", "native_qty_per_serving": 1.0},
       "cross_class_conversion": {"per_serving_g": 112.0, "per_serving_ml": null},
       "nutrients_per_serving": {
@@ -616,7 +626,11 @@ $ loseit -o json describe-food 4465349443cea79c404de42baac3b73e c5d8f3b75e3045f0
 <details>
 <summary>click to view details...</summary>
 
-The `per_serving_g` / `per_serving_ml` values are what unlock cross-class `--serving-unit` logging (see `log` above). Useful for debugging which unit combinations a food supports.
+The `per_serving_g` / `per_serving_ml` values are what unlock cross-class `--serving-unit` logging (see `log` above); `supported_units` is the resulting list of `--serving-unit` values that work without `--grams-per-ml`. To find an entry that accepts grams:
+
+```bash
+$ loseit -o json describe-food -q "cocoa powder unsweetened" | jq -r '.foods[] | select(.supported_units | index("g")) | .food_id + "  " + .name'
+```
 
 </details>
 
@@ -665,6 +679,45 @@ $ loseit restore-trash
 (see the [`restore-trash`](#restore-trash) section below).
 
 </details>
+
+### `add-recipe`
+
+<details>
+<summary>click to view details...</summary>
+
+Creates a recipe in your Lose It! **Recipes** list (Settings → Manage → Recipes on the web) from a JSON spec. Each ingredient is resolved exactly like `loseit log` resolves a food: a search `query` (with an optional 1-indexed `pick`, default 1) or a stable `food_id`, sized by `servings` or by `serving_amount` + `serving_unit`. Prefer `food_id` — search ranking shifts between calls, so a `pick` can land on a different food next time — and give the `query` that found it alongside, which supplies the name when Lose It! has none for the ID. An optional `grams_per_ml` (density) lets a volume-only food be measured in grams, like `log --grams-per-ml`. Every ingredient is resolved **before** anything is written, so one bad line aborts the whole recipe. The recipe is saved with a single `saveRecipe` call, the same one the web UI sends.
+
+`servings` is how many servings the whole recipe yields. Logging "1 serving" of the recipe later counts `total ÷ servings`. Extra ingredient keys (e.g. `"original": "1 can chickpeas"`) are ignored, so you can keep the source line next to the structured fields. `--name` / `--servings` override the spec, and `-` reads the spec from stdin.
+
+</details>
+
+**Bash:**
+
+```bash
+$ cat omelette.json
+{
+  "name": "Spinach Omelette",
+  "servings": 2,
+  "ingredients": [
+    {"food_id": "84ace321242590ac4247c047327233cf", "serving_amount": 3, "serving_unit": "each"},
+    {"query": "olive oil", "serving_amount": 1, "serving_unit": "tbsp"},
+    {"query": "spinach raw", "serving_amount": 100, "serving_unit": "g"}
+  ]
+}
+$ loseit add-recipe omelette.json --dry-run
+```
+
+**Output:**
+
+```text
+🟡 DRY RUN — would create recipe 'Spinach Omelette' (2 servings)
+   1. Egg, Large — 3 each  [214 cal]
+   2. Oil, Olive — 1 tbsp  [117 cal]
+   3. Spinach, Baby, Raw — 100 g  [16 cal]
+  Total: 347 cal · per serving: 174 cal
+```
+
+Drop `--dry-run` to create it (`✅ Created recipe …`). With `-o json` the result is `{"action": "add-recipe", "dry_run", "name", "servings", "total_calories", "calories_per_serving", "ingredients": [{"food", "servings", "portion_size", "measure_unit", "calories"}]}`. Spec errors exit `2` with `{"error": "invalid_spec", "problems": [...]}` before any request is sent; an unresolvable ingredient exits `1` with `"error": "ingredient_not_resolved"`; a unit an ingredient's food can't take exits `2` with `"error": "unit_not_supported"`, the 1-based `ingredient` number and its `supported_units`.
 
 ### `backup`
 
@@ -877,8 +930,8 @@ $ loseit whoami
 user_id        : 12345678
 user_name      : your.username
 hours_from_gmt : -6
-policy_hash    : 8F87EC8969F17AE77B6283D3A83F6D4C
-strong_name    : 351AE5DC0CA36AD3BA9C7CBA7B0E07B8
+policy_hash    : F5AA51DFF7600BE94631854AFC5DEFE9
+strong_name    : 201A8433DE84E0887AA4B65F2AD4F842
 ```
 
 ### Script-friendly output: `--output json` / `-o json`
@@ -1119,8 +1172,8 @@ hours_from_gmt: -6
 
 # Optional — refresh from any /web/service POST in DevTools when requests
 # start failing with IncompatibleRemoteServiceException.
-# policy_hash: 8F87EC8969F17AE77B6283D3A83F6D4C
-# strong_name: 351AE5DC0CA36AD3BA9C7CBA7B0E07B8
+# policy_hash: F5AA51DFF7600BE94631854AFC5DEFE9
+# strong_name: 201A8433DE84E0887AA4B65F2AD4F842
 ```
 
 ### All settings
@@ -1158,6 +1211,8 @@ When LoseIt redeploys, requests start failing with `LoseItError("…Incompatible
 
 - `strong_name` = the `x-gwt-permutation` request header
 - `policy_hash` = the 5th `|`-separated field of the request body
+
+The built-in defaults are refreshed with each release that follows a redeploy (see [docs/regenerate-parser-schemas.md](docs/regenerate-parser-schemas.md)), so upgrading the CLI is usually enough.
 
 ### Not user-specific (and not secrets)
 

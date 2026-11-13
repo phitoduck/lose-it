@@ -299,6 +299,10 @@ class FoodDescription:
     cross_class_conversion: CrossClassConversion
     nutrients_per_serving: dict[str, float]
     raw_nutrients_by_ord: dict[int, float]
+    # Unit names ``log`` / ``add-recipe`` accept for this food without a
+    # ``grams_per_ml`` density (e.g. ``["tsp", "tbsp", "cup", "fl_oz", "mL"]``
+    # for volume-only honey — no ``g``).
+    supported_units: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """JSON-safe projection — nested under ``primary_serving`` /
@@ -308,6 +312,7 @@ class FoodDescription:
             "name": self.name,
             "brand": self.brand,
             "category": self.category,
+            "supported_units": list(self.supported_units),
             "primary_serving": self.primary_serving.to_dict(),
             "cross_class_conversion": self.cross_class_conversion.to_dict(),
             "nutrients_per_serving": dict(self.nutrients_per_serving),
@@ -432,3 +437,135 @@ class TokenCheckResult:
         if self.message is not None:
             out["message"] = self.message
         return out
+
+
+@dataclass
+class RecipeIngredientSpec:
+    """One ingredient line of a recipe to create, before food resolution.
+
+    Identify the food with ``query`` (searched; ``pick`` selects the
+    1-indexed result, default the top hit) and/or ``food_id`` (the
+    32-char hex ID from ``loseit search``). ``food_id`` is the stable
+    choice — search ranking shifts between calls, so a ``pick`` index can
+    land on a different food next time. Give both when the food came from
+    a search: ``food_id`` pins it and ``query`` recovers its name, which
+    ``getFood`` omits for many generic foods ("Almond Butter", "Honey").
+
+    Size the portion with either ``servings`` (canonical multiplier) or
+    ``serving_amount`` + ``serving_unit`` (e.g. ``200`` + ``"g"``) — the
+    same two forms ``loseit log`` accepts. ``grams_per_ml`` (density)
+    lets a volume-only food be measured in grams, or a weight-only food
+    in a volume unit.
+    """
+
+    query: str | None = None
+    food_id: str | None = None
+    pick: int = 1
+    servings: float = 1.0
+    serving_amount: float | None = None
+    serving_unit: str | None = None
+    grams_per_ml: float | None = None
+
+    _KEYS = (
+        "query",
+        "food_id",
+        "pick",
+        "servings",
+        "serving_amount",
+        "serving_unit",
+        "grams_per_ml",
+    )
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> RecipeIngredientSpec:
+        """Build from a JSON object, rejecting unknown keys and bad combinations.
+
+        Extra descriptive keys such as ``"note"`` or ``"original"`` are
+        allowed and ignored, so callers can keep the original recipe line
+        next to the structured fields.
+        """
+        if not isinstance(data, dict):
+            raise ValueError(f"ingredient must be a JSON object, got {type(data).__name__}")
+        spec = cls(
+            query=data.get("query"),
+            food_id=data.get("food_id"),
+            pick=int(data.get("pick", 1)),
+            servings=float(data.get("servings", 1.0)),
+            serving_amount=(
+                float(data["serving_amount"]) if data.get("serving_amount") is not None else None
+            ),
+            serving_unit=data.get("serving_unit"),
+            grams_per_ml=(
+                float(data["grams_per_ml"]) if data.get("grams_per_ml") is not None else None
+            ),
+        )
+        spec.validate()
+        return spec
+
+    def validate(self) -> None:
+        """Raise ``ValueError`` on an unusable spec (no HTTP involved)."""
+        if self.query is None and self.food_id is None:
+            raise ValueError("each ingredient needs 'query', 'food_id', or both")
+        if self.query is not None and not self.query.strip():
+            raise ValueError("ingredient 'query' must not be empty")
+        if self.pick < 1:
+            raise ValueError(f"ingredient 'pick' is 1-indexed (got {self.pick})")
+        if self.servings <= 0:
+            raise ValueError(f"ingredient 'servings' must be positive (got {self.servings})")
+        if self.grams_per_ml is not None and self.grams_per_ml <= 0:
+            raise ValueError(
+                f"ingredient 'grams_per_ml' must be positive (got {self.grams_per_ml})"
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {k: getattr(self, k) for k in self._KEYS if getattr(self, k) is not None}
+
+
+@dataclass
+class RecipeIngredientResult:
+    """A resolved ingredient as it was (or would be) saved into a recipe."""
+
+    food: FoodSearchResult
+    canonical_servings: float
+    portion_amount: float
+    portion_unit: str
+    calories: float | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "food": self.food.to_dict(),
+            "servings": self.canonical_servings,
+            "portion_size": self.portion_amount,
+            "measure_unit": self.portion_unit,
+            "calories": self.calories,
+        }
+
+
+@dataclass
+class CreatedRecipe:
+    """Result of ``LoseIt.create_recipe`` (or its dry-run equivalent).
+
+    ``servings`` is how many servings the whole recipe yields;
+    ``calories_per_serving`` is ``total_calories / servings``.
+    """
+
+    name: str
+    servings: float
+    ingredients: list[RecipeIngredientResult]
+    total_calories: float
+    dry_run: bool
+
+    @property
+    def calories_per_serving(self) -> float:
+        return self.total_calories / self.servings
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "action": "add-recipe",
+            "dry_run": self.dry_run,
+            "name": self.name,
+            "servings": self.servings,
+            "total_calories": round(self.total_calories, 2),
+            "calories_per_serving": round(self.calories_per_serving, 2),
+            "ingredients": [i.to_dict() for i in self.ingredients],
+        }

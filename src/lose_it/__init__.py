@@ -18,9 +18,10 @@ typical SDK use needs only one import line::
     from lose_it import LoseIt, FoodSearchResult, LoggedFood
 """
 
-from .client import Client, LoseIt
+from .client import Client, LoseIt, UnnamedFoodError
 from .enums import MealType, ServingUnit
 from .models import (
+    CreatedRecipe,
     CrossClassConversion,
     FoodDescription,
     FoodLogEntry,
@@ -28,6 +29,8 @@ from .models import (
     LoggedFood,
     LoginResult,
     PrimaryServing,
+    RecipeIngredientResult,
+    RecipeIngredientSpec,
     UnsavedFoodLogEntry,
 )
 from .trash import (
@@ -44,6 +47,7 @@ __all__ = [
     "ChainedTrashSink",
     "Client",
     "ConsoleTrashSink",
+    "CreatedRecipe",
     "CrossClassConversion",
     "DeleteResult",
     "DeleteSafetyError",
@@ -56,8 +60,11 @@ __all__ = [
     "LoseIt",
     "MealType",
     "PrimaryServing",
+    "RecipeIngredientResult",
+    "RecipeIngredientSpec",
     "ServingUnit",
     "TrashReceipt",
     "TrashSink",
+    "UnnamedFoodError",
     "UnsavedFoodLogEntry",
 ]

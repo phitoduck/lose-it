@@ -35,7 +35,7 @@ from ._units import CANONICAL_UNIT_NAMES, conversion_factor, resolve_unit
 # FoodMeasurement ordinals used for cross-class lookups.
 _GRAMS = 8
 _ML = 11
-_VOLUME_ORDS = {2, 3, 10, 11}  # tbsp, cup, fl_oz, mL — destination units for mL→X
+_VOLUME_ORDS = {1, 2, 3, 10, 11}  # tsp, tbsp, cup, fl_oz, mL — reachable from mL
 _NUTRIENT_CALORIES = 0
 
 __all__ = [
@@ -43,6 +43,7 @@ __all__ = [
     "ResolvedPortion",
     "resolve_portion",
     "scaled_calories",
+    "supported_units",
     "validate_portion_args",
 ]
 
@@ -54,6 +55,7 @@ ERR_MUTUALLY_EXCLUSIVE_FLAGS = "mutually_exclusive_flags"
 ERR_NON_POSITIVE_SERVING_AMOUNT = "non_positive_serving_amount"
 ERR_UNKNOWN_SERVING_UNIT = "unknown_serving_unit"
 ERR_UNIT_NOT_SUPPORTED = "unit_not_supported"
+ERR_NON_POSITIVE_GRAMS_PER_ML = "non_positive_grams_per_ml"
 
 
 class PortionError(ValueError):
@@ -150,6 +152,7 @@ def resolve_portion(
     servings: float = 1.0,
     serving_amount: float | None = None,
     serving_unit: ServingUnit | str | None = None,
+    grams_per_ml: float | None = None,
 ) -> ResolvedPortion:
     """Validate the portion knobs and resolve them to wire + display values.
 
@@ -167,15 +170,23 @@ def resolve_portion(
        ``CONVERSIONS`` table.
     5. Otherwise look for a per-food cross-class hint in
        ``unsaved.per_serving_g`` / ``unsaved.per_serving_ml``.
-    6. If neither path produces a factor, raise ``PortionError`` with
-       code ``unit_not_supported`` and a message that names both units —
-       the caller can hint the user toward ``--servings`` or a different
-       food entry.
+    5b. Still nothing, and ``grams_per_ml`` (the ingredient's density) is
+       given: bridge volume ↔ weight through it. Many generic entries
+       (honey, cocoa powder, nut butters) store only a volume, so grams
+       are otherwise unreachable — Lose It!'s own UI can't do it either.
+    6. If no path produces a factor, raise ``PortionError`` with
+       code ``unit_not_supported``; the message and ``context`` list the
+       units the food does support (see :func:`supported_units`).
 
     Raises:
         PortionError: any of the codes above.
     """
     chosen_ord = validate_portion_args(servings, serving_amount, serving_unit)
+    if grams_per_ml is not None and grams_per_ml <= 0:
+        raise PortionError(
+            ERR_NON_POSITIVE_GRAMS_PER_ML,
+            f"grams_per_ml must be positive (got {grams_per_ml}).",
+        )
 
     # ── Step 1: legacy --servings path ──────────────────────────────────
     if chosen_ord is None:
@@ -193,41 +204,37 @@ def resolve_portion(
     unit_str = serving_unit.value if isinstance(serving_unit, ServingUnit) else serving_unit
 
     # ── Steps 4-5: compute chosen-unit qty per canonical serving ────────
-    measure_ord = unsaved.food_measure_ordinal
-    native_ord = measure_ord if measure_ord is not None else 0
-    chosen_qty_per_serving: float | None = None
-
-    cf_native_to_chosen = conversion_factor(native_ord, chosen_ord)
-    if cf_native_to_chosen is not None:
-        # Same-class conversion — use the static table.
-        f3 = unsaved.canonical_per_serving or 1.0
-        f4 = unsaved.native_qty_per_serving or 1.0
-        native_qty_per_serving = f4 / f3 if f3 else 1.0
-        chosen_qty_per_serving = native_qty_per_serving * cf_native_to_chosen
-    elif chosen_ord == _GRAMS and unsaved.per_serving_g:
-        # Cross-class: food's own FoodNutrients HashMap carries grams/serving.
-        chosen_qty_per_serving = unsaved.per_serving_g
-    elif chosen_ord in _VOLUME_ORDS and unsaved.per_serving_ml:
-        # Cross-class via mL — chain through the static volume table.
-        cf_ml_to_chosen = conversion_factor(_ML, chosen_ord)
-        if cf_ml_to_chosen is not None:
-            chosen_qty_per_serving = unsaved.per_serving_ml * cf_ml_to_chosen
+    chosen_qty_per_serving = _qty_per_serving(unsaved, chosen_ord, grams_per_ml)
 
     # ── Step 6: failure mode — no factor available ──────────────────────
     if chosen_qty_per_serving is None:
         chosen_name = CANONICAL_UNIT_NAMES.get(chosen_ord, unit_str)
-        native_name = unsaved.food_measure_unit or measure_name(measure_ord)
+        native_name = unsaved.food_measure_unit or measure_name(unsaved.food_measure_ordinal)
+        supported = supported_units(unsaved)
+        # Would a density bridge the gap? Only when the food has a volume
+        # (or weight) side and the request is for the other side.
+        density_helps = grams_per_ml is None and (
+            (chosen_ord == _GRAMS and _per_serving_ml(unsaved) is not None)
+            or (chosen_ord in _VOLUME_ORDS and _per_serving_g(unsaved) is not None)
+        )
+        density_hint = (
+            "pass grams_per_ml (CLI: --grams-per-ml) with the ingredient's "
+            "density to convert between volume and weight, "
+            if density_helps
+            else ""
+        )
         raise PortionError(
             ERR_UNIT_NOT_SUPPORTED,
-            f"{unsaved.name!r} is measured in {native_name!r}; "
-            f"the SDK doesn't have a {native_name}→{chosen_name} conversion "
-            f"factor, and the food doesn't carry the per-serving "
-            f"{chosen_name} value in its nutrients. Pick a different food "
-            f"entry whose native unit is {chosen_name}, or pass servings= "
-            f"to log in the food's native unit.",
+            f"{unsaved.name!r} is measured in {native_name!r} and Lose It! "
+            f"stores no {native_name}→{chosen_name} conversion for it. "
+            f"Units this food supports: {', '.join(supported) or 'none'}. "
+            f"Either {density_hint}pick a food entry that supports "
+            f"{chosen_name}, or use one of the supported units.",
             food=unsaved.name,
             native_unit=native_name,
             requested_unit=chosen_name,
+            supported_units=supported,
+            grams_per_ml_would_help=density_helps,
         )
 
     canonical = serving_amount / chosen_qty_per_serving
@@ -240,6 +247,78 @@ def resolve_portion(
         display_amount=serving_amount,
         display_unit=display_unit,
     )
+
+
+def _native_qty_per_serving(unsaved: UnsavedFoodLogEntry) -> float:
+    """The food's per-canonical-serving quantity in its native unit (``f4/f3``)."""
+    f3 = unsaved.canonical_per_serving or 1.0
+    f4 = unsaved.native_qty_per_serving or 1.0
+    return f4 / f3 if f3 else 1.0
+
+
+def _per_serving_ml(unsaved: UnsavedFoodLogEntry) -> float | None:
+    """mL per canonical serving: the stored slot, else derived from a volume native unit."""
+    if unsaved.per_serving_ml:
+        return unsaved.per_serving_ml
+    cf = conversion_factor(unsaved.food_measure_ordinal or 0, _ML)
+    if cf is not None:
+        return _native_qty_per_serving(unsaved) * cf
+    return None
+
+
+def _per_serving_g(unsaved: UnsavedFoodLogEntry) -> float | None:
+    """Grams per canonical serving: the stored slot, else a gram native unit."""
+    if unsaved.per_serving_g:
+        return unsaved.per_serving_g
+    if unsaved.food_measure_ordinal == _GRAMS:
+        return _native_qty_per_serving(unsaved)
+    return None
+
+
+def _qty_per_serving(
+    unsaved: UnsavedFoodLogEntry,
+    chosen_ord: int,
+    grams_per_ml: float | None = None,
+) -> float | None:
+    """Quantity of ``chosen_ord`` units in one canonical serving, or ``None``.
+
+    Tries, in order: the static same-class table (tbsp→cup, g→g, …), the
+    food's own per-serving gram/mL slots, and finally — only when the
+    caller supplied a density — a volume ↔ weight bridge.
+    """
+    native_ord = unsaved.food_measure_ordinal if unsaved.food_measure_ordinal is not None else 0
+    cf_native_to_chosen = conversion_factor(native_ord, chosen_ord)
+    if cf_native_to_chosen is not None:
+        return _native_qty_per_serving(unsaved) * cf_native_to_chosen
+    if chosen_ord == _GRAMS and unsaved.per_serving_g:
+        return unsaved.per_serving_g
+    cf_ml_to_chosen = conversion_factor(_ML, chosen_ord) if chosen_ord in _VOLUME_ORDS else None
+    if cf_ml_to_chosen is not None and unsaved.per_serving_ml:
+        return unsaved.per_serving_ml * cf_ml_to_chosen
+    if grams_per_ml:
+        if chosen_ord == _GRAMS:
+            ml = _per_serving_ml(unsaved)
+            if ml is not None:
+                return ml * grams_per_ml
+        elif cf_ml_to_chosen is not None:
+            g = _per_serving_g(unsaved)
+            if g is not None:
+                return g / grams_per_ml * cf_ml_to_chosen
+    return None
+
+
+def supported_units(unsaved: UnsavedFoodLogEntry) -> list[str]:
+    """Unit names ``resolve_portion`` accepts for this food without a density.
+
+    Always includes the food's native unit; adds whatever the static
+    same-class table and the food's per-serving gram/mL slots unlock.
+    Ordered by FoodMeasurement ordinal, like :func:`known_unit_names`.
+    """
+    return [
+        name
+        for ord_, name in sorted(CANONICAL_UNIT_NAMES.items())
+        if _qty_per_serving(unsaved, ord_) is not None
+    ]
 
 
 def scaled_calories(unsaved: UnsavedFoodLogEntry, canonical_servings: float) -> float | None:

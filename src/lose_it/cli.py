@@ -55,14 +55,14 @@ import typer
 
 from ._logging import configure as _configure_logging
 from ._logging import logger
-from .client import LoseIt
+from .client import LoseIt, UnnamedFoodError
 from .core._config import MEAL_NAMES, MissingConfigError
 from .core._dates import parse_date_arg
 from .core._portion import PortionError, validate_portion_args
 from .core._settings import DEFAULT_CONFIG_FILE
 from .core.auth import DEFAULT_TOKEN_FILE
 from .enums import MealType, ServingUnit
-from .models import FoodLogEntry, FoodSearchResult
+from .models import CreatedRecipe, FoodLogEntry, FoodSearchResult, RecipeIngredientSpec
 
 # Lose It! signin URL — surfaced when login fails so the user can re-auth.
 _SIGNIN_URL = "https://www.loseit.com/"
@@ -529,8 +529,9 @@ def log(
         str | None,
         typer.Argument(
             help=(
-                "Free-text search query. Mutually exclusive with --food-id. "
-                "Required unless --food-id is given."
+                "Free-text search query. Required unless --food-id is given. "
+                "With --food-id it only supplies the food's name, which Lose "
+                "It! omits for many generic foods looked up by ID."
             ),
         ),
     ] = None,
@@ -572,6 +573,18 @@ def log(
             ),
         ),
     ] = None,
+    grams_per_ml: Annotated[
+        float | None,
+        typer.Option(
+            "--grams-per-ml",
+            help=(
+                "The food's density (g/mL), e.g. 1.42 for honey. Lets "
+                "--serving-unit g work for foods Lose It! only stores by "
+                "volume (and volume units for weight-only foods). Ignored "
+                "when the food carries its own conversion."
+            ),
+        ),
+    ] = None,
     pick: Annotated[
         int | None, typer.Option(help="Auto-pick the Nth search result (1-indexed)")
     ] = None,
@@ -581,9 +594,10 @@ def log(
             "--food-id",
             help=(
                 "Stable 32-char hex food ID (from `loseit search`'s Food ID "
-                "column or JSON `food_id` field). Bypasses the search step and "
-                "goes straight to the unsaved-entry RPC. Mutually exclusive "
-                "with the positional query and --pick."
+                "column or JSON `food_id` field). Prefer it over --pick: "
+                "search ranking shifts between calls. Mutually exclusive "
+                "with --pick; pass the query that found it too if Lose It! "
+                "reports the food has no name."
             ),
         ),
     ] = None,
@@ -621,12 +635,12 @@ def log(
         _emit_error(fmt, "invalid_meal", str(exc))
         raise typer.Exit(code=2) from exc
 
-    # ── Food-selection validation: --food-id vs query/--pick ───────────
-    if food_id is not None and (query is not None or pick is not None):
+    # ── Food-selection validation: --food-id vs --pick ─────────────────
+    if food_id is not None and pick is not None:
         _emit_error(
             fmt,
             "mutually_exclusive",
-            "--food-id and <query>/--pick are mutually exclusive",
+            "--food-id and --pick are mutually exclusive",
         )
         raise typer.Exit(code=2)
     if food_id is None and query is None:
@@ -648,7 +662,7 @@ def log(
         # ── Resolve the food ────────────────────────────────────────────
         if food_id is not None:
             try:
-                selected = li.get_food(food_id)
+                selected = li.get_food(food_id, query=query)
             except ValueError as exc:
                 _emit_error(fmt, "invalid_food_id", str(exc))
                 raise typer.Exit(code=2) from exc
@@ -675,11 +689,15 @@ def log(
                 servings=servings,
                 serving_amount=serving_amount,
                 serving_unit=serving_unit,
+                grams_per_ml=grams_per_ml,
                 when=when,
                 dry_run=dry_run,
             )
         except PortionError as exc:
             _emit_error(fmt, exc.code, str(exc), **exc.context)
+            raise typer.Exit(code=2) from exc
+        except UnnamedFoodError as exc:
+            _emit_error(fmt, "food_name_unavailable", str(exc), food_id=exc.food_id)
             raise typer.Exit(code=2) from exc
 
     # ── Render result ──────────────────────────────────────────────────
@@ -694,6 +712,155 @@ def log(
             f"{prefix} {logged.food.name}{id_str} → {logged.meal_name} {portion_str}{cal_str}",
             fg=typer.colors.YELLOW if dry_run else typer.colors.GREEN,
         )
+
+
+_RECIPE_SPEC_EXAMPLE = """\
+{
+  "name": "Shakshuka",
+  "servings": 4,
+  "ingredients": [
+    {"query": "egg large", "serving_amount": 6, "serving_unit": "each"},
+    {"query": "olive oil", "serving_amount": 2, "serving_unit": "tbsp"},
+    {"food_id": "0123456789abcdef0123456789abcdef", "servings": 1.5},
+    {"query": "honey", "food_id": "bdbe9887e62daa9fc341cbe4577e80f1",
+     "serving_amount": 20, "serving_unit": "g", "grams_per_ml": 1.42}
+  ]
+}"""
+
+
+def _load_recipe_spec(source: str) -> dict[str, Any]:
+    """Read a recipe spec from a JSON file path, or stdin when ``source`` is ``-``."""
+    import sys
+
+    raw = sys.stdin.read() if source == "-" else Path(source).expanduser().read_text()
+    data = json.loads(raw)
+    if not isinstance(data, dict):
+        raise ValueError("recipe spec must be a JSON object")
+    return data
+
+
+def _print_recipe(recipe: CreatedRecipe) -> None:
+    """Render the add-recipe summary for ``--output text``."""
+    prefix = "🟡 DRY RUN — would create recipe" if recipe.dry_run else "✅ Created recipe"
+    typer.secho(
+        f"{prefix} {recipe.name!r} ({recipe.servings:g} serving"
+        f"{'' if recipe.servings == 1 else 's'})",
+        fg=typer.colors.YELLOW if recipe.dry_run else typer.colors.GREEN,
+    )
+    for i, ing in enumerate(recipe.ingredients, start=1):
+        brand = f" ({ing.food.brand})" if ing.food.brand else ""
+        cal = f"  [{ing.calories:.0f} cal]" if ing.calories is not None else ""
+        typer.echo(
+            f"  {i:>2}. {ing.food.name}{brand} — {ing.portion_amount:g} {ing.portion_unit}{cal}"
+        )
+    typer.echo(
+        f"  Total: {recipe.total_calories:.0f} cal · per serving: "
+        f"{recipe.calories_per_serving:.0f} cal"
+    )
+
+
+@app.command(
+    name="add-recipe",
+    epilog="Spec format (JSON):\n\n" + _RECIPE_SPEC_EXAMPLE.replace("\n", "\n\n"),
+)
+def add_recipe(
+    ctx: typer.Context,
+    spec_file: Annotated[
+        str,
+        typer.Argument(
+            help="Path to a JSON recipe spec, or '-' to read it from stdin.",
+            metavar="SPEC",
+        ),
+    ],
+    name: Annotated[
+        str | None,
+        typer.Option("--name", help="Recipe name (overrides the spec's 'name')."),
+    ] = None,
+    servings: Annotated[
+        float | None,
+        typer.Option(
+            "--servings",
+            help="How many servings the whole recipe yields (overrides the spec; default 1).",
+        ),
+    ] = None,
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run",
+            help="Resolve every ingredient and print the totals without sending saveRecipe.",
+        ),
+    ] = False,
+) -> None:
+    """Create a recipe in your Lose It! Recipes list from a JSON spec.
+
+    Each ingredient is resolved like `loseit log`: a search 'query' (+ optional
+    1-indexed 'pick', default 1) or a 'food_id', sized by 'servings' or by
+    'serving_amount' + 'serving_unit'. Prefer 'food_id' (search ranking shifts
+    between calls); add the 'query' that found it when Lose It! has no name
+    for the ID. 'grams_per_ml' (density) lets a volume-only food be measured
+    in grams. All ingredients are resolved before anything is written; run
+    with --dry-run first to check the food matches.
+    """
+    fmt = _output_format(ctx)
+    try:
+        spec = _load_recipe_spec(spec_file)
+    except (OSError, ValueError) as exc:  # json.JSONDecodeError is a ValueError
+        _emit_error(fmt, "invalid_spec", f"could not read recipe spec: {exc}")
+        raise typer.Exit(code=2) from exc
+
+    recipe_name = name if name is not None else spec.get("name")
+    try:
+        recipe_servings = float(servings if servings is not None else spec.get("servings", 1.0))
+    except (TypeError, ValueError) as exc:
+        _emit_error(fmt, "invalid_spec", f"'servings' must be a number: {exc}")
+        raise typer.Exit(code=2) from exc
+    raw_ingredients = spec.get("ingredients")
+    logger.info(
+        "cli.add_recipe: name={n!r} servings={s} ingredients={k} dry_run={dr}",
+        n=recipe_name,
+        s=recipe_servings,
+        k=len(raw_ingredients) if isinstance(raw_ingredients, list) else None,
+        dr=dry_run,
+    )
+
+    # ── Arg-only validation (before any HTTP) ───────────────────────────
+    problems: list[str] = []
+    if not isinstance(recipe_name, str) or not recipe_name.strip():
+        problems.append("recipe needs a non-empty 'name' (in the spec or via --name)")
+    if recipe_servings <= 0:
+        problems.append(f"'servings' must be positive (got {recipe_servings:g})")
+    specs: list[RecipeIngredientSpec] = []
+    if not isinstance(raw_ingredients, list) or not raw_ingredients:
+        problems.append("spec needs a non-empty 'ingredients' list")
+    else:
+        for n, item in enumerate(raw_ingredients, start=1):
+            try:
+                ing = RecipeIngredientSpec.from_dict(item)
+                validate_portion_args(ing.servings, ing.serving_amount, ing.serving_unit)
+                specs.append(ing)
+            except PortionError as exc:
+                problems.append(f"ingredient #{n}: {exc}")
+            except (TypeError, ValueError) as exc:
+                problems.append(f"ingredient #{n}: {exc}")
+    if problems:
+        _emit_error(fmt, "invalid_spec", "; ".join(problems), problems=problems)
+        raise typer.Exit(code=2)
+    assert isinstance(recipe_name, str)
+
+    with _open_loseit(ctx) as li:
+        try:
+            recipe = li.create_recipe(recipe_name, specs, recipe_servings, dry_run=dry_run)
+        except PortionError as exc:
+            _emit_error(fmt, exc.code, str(exc), **exc.context)
+            raise typer.Exit(code=2) from exc
+        except ValueError as exc:
+            _emit_error(fmt, "ingredient_not_resolved", str(exc))
+            raise typer.Exit(code=1) from exc
+
+    if fmt is not OutputFormat.text:
+        _emit_structured(fmt, recipe.to_dict())
+    else:
+        _print_recipe(recipe)
 
 
 @app.command()
@@ -726,42 +893,82 @@ def diary(
 def describe_food(
     ctx: typer.Context,
     food_ids: Annotated[
-        list[str],
+        list[str] | None,
         typer.Argument(
             help=(
                 "One or more 32-char hex food IDs (from `lose-it search` "
                 "output). Each ID's full nutrient + serving-size data is "
-                "fetched concurrently and emitted in JSON."
+                "fetched concurrently and emitted in JSON. Omit when using "
+                "--query."
             ),
         ),
-    ],
+    ] = None,
+    query: Annotated[
+        str | None,
+        typer.Option(
+            "--query",
+            "-q",
+            help=(
+                "Search and describe the hits instead of passing IDs — every "
+                "hit, or just the --pick'th. Shows each hit's supported_units, "
+                "so you can choose an entry that accepts e.g. grams."
+            ),
+        ),
+    ] = None,
+    pick: Annotated[
+        int | None,
+        typer.Option(help="With --query: describe only the Nth search result (1-indexed)."),
+    ] = None,
 ) -> None:
-    """Inspect one or more foods by ID; fetch concurrently.
+    """Inspect foods by ID or by search query; fetch concurrently.
 
-    Each ID is described via :meth:`LoseIt.describe_food` in a thread, so
+    Each food is described via :meth:`LoseIt.describe_food` in a thread, so
     N foods take ~max(per-request-latency) rather than sum. Invalid IDs
     or fetch failures surface as ``{"food_id", "error", "message"}`` rows
     rather than killing the whole batch.
     """
     fmt = _output_format(ctx)
-    logger.info("cli.describe_food: n={n}", n=len(food_ids))
+    food_ids = food_ids or []
+    if bool(food_ids) == (query is not None):
+        _emit_error(fmt, "missing_food", "pass either food IDs or --query (not both)")
+        raise typer.Exit(code=2)
+    if pick is not None and query is None:
+        _emit_error(fmt, "mutually_exclusive", "--pick only applies with --query")
+        raise typer.Exit(code=2)
+    logger.info("cli.describe_food: n={n} query={q!r} pick={p}", n=len(food_ids), q=query, p=pick)
 
-    def _safe_describe(li: LoseIt, fid: str) -> dict[str, Any]:
+    def _safe_describe(li: LoseIt, food: str | FoodSearchResult) -> dict[str, Any]:
+        fid = food if isinstance(food, str) else food.food_id
         try:
-            desc = li.describe_food(fid)
+            desc = li.describe_food(food)
         except ValueError as exc:
             return {"food_id": fid, "error": "invalid_food_id", "message": str(exc)}
         except Exception as exc:
             return {"food_id": fid, "error": "fetch_failed", "message": str(exc)}
         return desc.to_dict()
 
-    async def _describe_many(li: LoseIt) -> list[dict[str, Any]]:
+    async def _describe_many(
+        li: LoseIt, targets: list[str] | list[FoodSearchResult]
+    ) -> list[dict[str, Any]]:
         return await asyncio.gather(
-            *(asyncio.to_thread(_safe_describe, li, fid) for fid in food_ids)
+            *(asyncio.to_thread(_safe_describe, li, food) for food in targets)
         )
 
     with _open_loseit(ctx) as li:
-        results = asyncio.run(_describe_many(li))
+        targets: list[str] | list[FoodSearchResult] = food_ids
+        if query is not None:
+            hits = li.search(query)
+            if pick is not None:
+                if not 1 <= pick <= len(hits):
+                    _emit_error(
+                        fmt,
+                        "no_results" if not hits else "pick_out_of_range",
+                        f"search for {query!r} returned {len(hits)} result(s), cannot pick #{pick}",
+                    )
+                    raise typer.Exit(code=1)
+                hits = [hits[pick - 1]]
+            targets = hits
+        results = asyncio.run(_describe_many(li, targets))
 
     if fmt is not OutputFormat.text:
         _emit_structured(fmt, {"count": len(results), "foods": results})
@@ -777,6 +984,7 @@ def describe_food(
             typer.secho(f"\n📋 {r['name']}", fg=typer.colors.CYAN, bold=True)
             typer.echo(f"   brand={r['brand']!r} category={r['category']!r}")
             typer.echo(f"   food_id={r['food_id']}")
+            typer.echo(f"   supported units: {', '.join(r['supported_units']) or 'none'}")
             ps = r["primary_serving"]
             typer.echo(
                 f"   1 serving = {ps['native_qty_per_serving']} {ps['unit']} (ord={ps['ordinal']})"

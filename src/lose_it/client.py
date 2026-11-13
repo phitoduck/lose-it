@@ -34,7 +34,7 @@ import asyncio
 import contextlib
 import json
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -46,12 +46,13 @@ from .core import auth as _auth
 from .core import daily as _daily
 from .core import entries as _entries
 from .core import foods as _foods
+from .core import recipes as _recipes
 from .core._config import Config
 from .core._dates import day_number_for
 from .core._http import HttpClient
 from .core._ids import hex_to_pk
 from .core._login_flow import derive_config_values
-from .core._portion import resolve_portion, scaled_calories
+from .core._portion import PortionError, resolve_portion, scaled_calories, supported_units
 from .core._settings import DEFAULT_CONFIG_FILE, write_yaml_config
 from .core.auth import (
     DEFAULT_TOKEN_FILE,
@@ -65,6 +66,7 @@ from .core.auth import (
 from .core.init import get_daydate_key, get_init_day_keys
 from .enums import MealType, ServingUnit
 from .models import (
+    CreatedRecipe,
     CrossClassConversion,
     FoodDescription,
     FoodLogEntry,
@@ -72,6 +74,8 @@ from .models import (
     LoggedFood,
     LoginResult,
     PrimaryServing,
+    RecipeIngredientResult,
+    RecipeIngredientSpec,
     TokenCheckResult,
     UnsavedFoodLogEntry,
 )
@@ -83,6 +87,35 @@ from .trash import (
     TrashSink,
     default_trash_file,
 )
+
+
+class UnnamedFoodError(ValueError):
+    """A food resolved by ID came back without a name, so it can't be written.
+
+    ``getFood`` omits the name for many generic database foods ("Almond
+    Butter", "Honey"); only ``searchFoods`` returns it. Writing such a
+    food would create a blank diary entry / recipe line, so writes refuse
+    it. Pass the search query that found the food alongside the ID
+    (``query=`` / ``loseit log QUERY --food-id ID`` / an ingredient with
+    both ``query`` and ``food_id``) to recover the name.
+    """
+
+    def __init__(self, food_id: str, query: str | None = None) -> None:
+        self.food_id = food_id
+        self.query = query
+        if query:
+            detail = (
+                f"Lose It! returned no name for food {food_id} and it isn't among "
+                f"the search results for {query!r}. Pass the query that found it."
+            )
+        else:
+            detail = (
+                f"Lose It! returns no name for food {food_id} when it's looked up by "
+                f"ID (common for generic foods). Pass the search query that found "
+                f"it together with the ID so the name can be recovered."
+            )
+        super().__init__(detail)
+
 
 # Lose It's signin URL — surfaced in LoginResult for the CLI to display.
 _SIGNIN_URL = "https://www.loseit.com/"
@@ -241,16 +274,28 @@ class LoseIt:
         """
         return _foods.search(self.http, query)
 
-    def get_food(self, food_id: str | list[int]) -> FoodSearchResult:
+    def get_food(self, food_id: str | list[int], *, query: str | None = None) -> FoodSearchResult:
         """Look up a food by ID (hex string or raw 16-byte list).
 
         Accepts the lowercase-hex form exposed by ``loseit search``'s
         ``Food ID`` column / JSON ``food_id`` field, or the raw
         ``pk_bytes`` list returned by :meth:`search`. Hex strings get
         validated/decoded via :func:`lose_it.core._ids.hex_to_pk`.
+
+        ``getFood`` returns no name for many generic foods. When that
+        happens and ``query`` is given, the query is searched and the hit
+        with the same ID supplies the name/brand. Otherwise the result's
+        ``name`` is ``""`` — fine for reading nutrients, refused by
+        :meth:`log_food` / :meth:`create_recipe` (:class:`UnnamedFoodError`).
         """
         pk_bytes = hex_to_pk(food_id) if isinstance(food_id, str) else list(food_id)
-        return _foods.get_food(self.http, pk_bytes)
+        food = _foods.get_food(self.http, pk_bytes)
+        if food.name or not query:
+            return food
+        for hit in self.search(query):
+            if list(hit.pk_bytes) == pk_bytes:
+                return hit
+        return food
 
     def get_food_template(self, food: FoodSearchResult | str | list[int]) -> UnsavedFoodLogEntry:
         """Fetch the unsaved-entry template for a food (nutrient + serving sizes).
@@ -263,26 +308,33 @@ class LoseIt:
             food = self.get_food(food)
         return _foods.get_unsaved_food_log_entry(self.http, food)
 
-    def describe_food(self, food_id: str) -> FoodDescription:
+    def describe_food(self, food: str | FoodSearchResult) -> FoodDescription:
         """Return the full nutrient + serving profile for one food.
+
+        ``food`` is a hex food ID or a :class:`FoodSearchResult` (e.g. a
+        :meth:`search` hit — skips ``getFood`` and keeps the hit's name,
+        which ``getFood`` omits for many generic foods).
 
         Internally: ``get_food`` → ``get_unsaved_food_log_entry`` →
         synthesize a :class:`FoodDescription`. Cheaper than calling
         those two RPCs by hand and remembering which fields to project.
         """
-        return self._describe_one(food_id)
+        return self._describe_one(food)
 
-    def _describe_one(self, food_id: str) -> FoodDescription:
+    def _describe_one(self, food: str | FoodSearchResult) -> FoodDescription:
         """Internal: single-food describe, also used as the per-task body
         of :meth:`describe_foods`. Letting both call paths share it keeps
         the projection shape pinned in one place.
         """
-        pk_bytes = hex_to_pk(food_id)
-        food = _foods.get_food(self.http, pk_bytes)
+        if isinstance(food, str):
+            food_id = food
+            food = _foods.get_food(self.http, hex_to_pk(food_id))
+        else:
+            food_id = food.food_id
         unsaved = _foods.get_unsaved_food_log_entry(self.http, food)
         return FoodDescription(
             food_id=food_id,
-            name=unsaved.name,
+            name=unsaved.name or food.name,
             brand=unsaved.brand,
             category=unsaved.category,
             primary_serving=PrimaryServing(
@@ -297,9 +349,10 @@ class LoseIt:
             ),
             nutrients_per_serving=dict(unsaved.nutrients_by_label),
             raw_nutrients_by_ord=dict(unsaved.nutrients),
+            supported_units=supported_units(unsaved),
         )
 
-    def describe_foods(self, food_ids: list[str]) -> list[FoodDescription]:
+    def describe_foods(self, food_ids: Sequence[str | FoodSearchResult]) -> list[FoodDescription]:
         """Describe multiple foods concurrently.
 
         Each ID is fetched in parallel via ``asyncio.to_thread`` over the
@@ -386,6 +439,7 @@ class LoseIt:
         *,
         serving_amount: float | None = None,
         serving_unit: ServingUnit | str | None = None,
+        grams_per_ml: float | None = None,
         when: date | None = None,
         dry_run: bool = False,
     ) -> LoggedFood:
@@ -405,6 +459,9 @@ class LoseIt:
             serving_unit: A :class:`ServingUnit` member or its string
                 form (``"mL"``, ``"g"``, ``"cup"``, …). Common aliases
                 like ``"cups"`` / ``"milliliter"`` are also resolved.
+            grams_per_ml: The food's density. Only consulted when the food
+                stores no conversion between volume and weight, e.g. to
+                log ``40 g`` of a honey entry that only knows tablespoons.
             when: Target date. ``None`` → today.
             dry_run: Skip the ``updateFoodLogEntry`` RPC and the
                 day-key lookup; still returns a :class:`LoggedFood` with
@@ -416,6 +473,8 @@ class LoseIt:
 
         Raises:
             ValueError: ``meal`` not recognized.
+            UnnamedFoodError: ``food`` resolved without a name (see
+                :meth:`get_food`); pass a named :class:`FoodSearchResult`.
             PortionError: invalid portion-size combination (see
                 :func:`lose_it.core._portion.resolve_portion`).
         """
@@ -424,12 +483,15 @@ class LoseIt:
             when = date.today()
         if not isinstance(food, FoodSearchResult):
             food = self.get_food(food)
+        if not food.name:
+            raise UnnamedFoodError(food.food_id)
         unsaved = _foods.get_unsaved_food_log_entry(self.http, food)
         portion = resolve_portion(
             unsaved,
             servings=servings,
             serving_amount=serving_amount,
             serving_unit=serving_unit,
+            grams_per_ml=grams_per_ml,
         )
         calories = scaled_calories(unsaved, portion.canonical_servings)
 
@@ -459,6 +521,133 @@ class LoseIt:
             calories=calories,
             dry_run=dry_run,
         )
+
+    def create_recipe(
+        self,
+        name: str,
+        ingredients: Sequence[RecipeIngredientSpec | dict[str, Any]],
+        servings: float = 1.0,
+        *,
+        dry_run: bool = False,
+    ) -> CreatedRecipe:
+        """Create a recipe in the user's Recipes list (``saveRecipe``).
+
+        Each ingredient is resolved exactly like :meth:`log_food` resolves
+        a food: ``query`` → ``searchFoods`` → ``pick``-th hit (or
+        ``food_id`` → ``getFood``, with ``query`` only recovering the name
+        when ``getFood`` omits it), then ``getUnsavedFoodLogEntry`` for the
+        nutrients, then :func:`resolve_portion` for the amount. All
+        ingredients are resolved before anything is written, so a bad
+        ingredient aborts the whole recipe instead of saving half of it.
+
+        Args:
+            name: Recipe name as it should appear in Lose It!.
+            ingredients: :class:`RecipeIngredientSpec` objects or plain
+                dicts with the same keys (``query``/``food_id``, ``pick``,
+                ``servings`` or ``serving_amount`` + ``serving_unit``).
+            servings: How many servings the whole recipe yields. Logging
+                "1 serving" of the recipe later counts ``total / servings``.
+            dry_run: Resolve and total everything but skip ``saveRecipe``.
+
+        Raises:
+            ValueError: empty name, non-positive servings, no ingredients,
+                an invalid ingredient spec, or a query with no (or too
+                few) search results. The message names the ingredient.
+            PortionError: an ingredient's unit can't be converted for its
+                food (same rules as ``loseit log``).
+        """
+        if not name or not name.strip():
+            raise ValueError("recipe name must not be empty")
+        if servings <= 0:
+            raise ValueError(f"recipe servings must be positive (got {servings})")
+        if not ingredients:
+            raise ValueError("a recipe needs at least one ingredient")
+        specs = [
+            s if isinstance(s, RecipeIngredientSpec) else RecipeIngredientSpec.from_dict(s)
+            for s in ingredients
+        ]
+        lines: list[_recipes.IngredientLine] = []
+        results: list[RecipeIngredientResult] = []
+        for n, spec in enumerate(specs, start=1):
+            line, result = self._resolve_recipe_ingredient(n, spec)
+            lines.append(line)
+            results.append(result)
+
+        total = sum(r.calories or 0.0 for r in results)
+        if not dry_run:
+            _recipes.save_recipe(self.http, name.strip(), lines, servings)
+        return CreatedRecipe(
+            name=name.strip(),
+            servings=servings,
+            ingredients=results,
+            total_calories=total,
+            dry_run=dry_run,
+        )
+
+    def _resolve_recipe_ingredient(
+        self, n: int, spec: RecipeIngredientSpec
+    ) -> tuple[_recipes.IngredientLine, RecipeIngredientResult]:
+        """Resolve ingredient #``n`` to a wire line + a display summary."""
+        spec.validate()
+        if spec.food_id is not None:
+            food = self.get_food(spec.food_id, query=spec.query)
+            if not food.name:
+                err = UnnamedFoodError(spec.food_id, spec.query)
+                raise ValueError(f"ingredient #{n}: {err}") from err
+        else:
+            assert spec.query is not None  # validate() guarantees one of the two
+            hits = self.search(spec.query)
+            if len(hits) < spec.pick:
+                raise ValueError(
+                    f"ingredient #{n} ({spec.query!r}): search returned {len(hits)} "
+                    f"result(s), cannot pick #{spec.pick}"
+                )
+            food = hits[spec.pick - 1]
+        unsaved = _foods.get_unsaved_food_log_entry(self.http, food)
+        try:
+            portion = resolve_portion(
+                unsaved,
+                servings=spec.servings,
+                serving_amount=spec.serving_amount,
+                serving_unit=spec.serving_unit,
+                grams_per_ml=spec.grams_per_ml,
+            )
+        except PortionError as exc:
+            raise PortionError(
+                exc.code, f"ingredient #{n}: {exc}", ingredient=n, **exc.context
+            ) from exc
+        if portion.measure_ord_override is not None:
+            assert portion.conversion_factor is not None
+            assert portion.quantity_in_chosen_unit is not None
+            measure = portion.measure_ord_override
+            denominator = 1.0
+            per_serving = portion.conversion_factor
+            quantity = portion.quantity_in_chosen_unit
+        else:
+            measure = (
+                unsaved.food_measure_ordinal
+                if unsaved.food_measure_ordinal is not None
+                else _recipes.SERVING_MEASURE_ORDINAL
+            )
+            denominator = unsaved.canonical_per_serving or 1.0
+            per_serving = unsaved.native_qty_per_serving or 1.0
+            quantity = portion.canonical_servings * per_serving / denominator
+        line = _recipes.IngredientLine(
+            unsaved=unsaved,
+            servings=portion.canonical_servings,
+            measure_ordinal=measure,
+            per_serving_denominator=denominator,
+            unit_qty_per_serving=per_serving,
+            quantity=quantity,
+        )
+        result = RecipeIngredientResult(
+            food=food,
+            canonical_servings=portion.canonical_servings,
+            portion_amount=portion.display_amount,
+            portion_unit=portion.display_unit,
+            calories=scaled_calories(unsaved, portion.canonical_servings),
+        )
+        return line, result
 
     def delete_entry(
         self,
